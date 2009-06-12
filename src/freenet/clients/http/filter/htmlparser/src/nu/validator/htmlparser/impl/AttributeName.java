@@ -593,6 +593,11 @@ public final class AttributeName
 //        System.out.println("};");
 //    }
 
+    
+   
+
+    
+    
     // START GENERATED CODE
     public static final AttributeName D = new AttributeName(ALL_NO_NS, SAME_LOCAL("d"), ALL_NO_PREFIX, ALL_NCNAME, false);
     public static final AttributeName K = new AttributeName(ALL_NO_NS, SAME_LOCAL("k"), ALL_NO_PREFIX, ALL_NCNAME, false);
@@ -1175,7 +1180,7 @@ public final class AttributeName
     public static final AttributeName GLYPH_ORIENTATION_VERTICAL = new AttributeName(ALL_NO_NS, SAME_LOCAL("glyph-orientation-vertical"), ALL_NO_PREFIX, ALL_NCNAME, false);
     public static final AttributeName COLOR_INTERPOLATION_FILTERS = new AttributeName(ALL_NO_NS, SAME_LOCAL("color-interpolation-filters"), ALL_NO_PREFIX, ALL_NCNAME, false);
     public static final AttributeName GLYPH_ORIENTATION_HORIZONTAL = new AttributeName(ALL_NO_NS, SAME_LOCAL("glyph-orientation-horizontal"), ALL_NO_PREFIX, ALL_NCNAME, false);
-    private final static @NoLength AttributeName[] ATTRIBUTE_NAMES = {
+    public final static @NoLength AttributeName[] ATTRIBUTE_NAMES = {
     D,
     K,
     R,

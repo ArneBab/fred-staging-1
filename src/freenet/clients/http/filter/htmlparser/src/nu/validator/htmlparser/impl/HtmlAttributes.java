@@ -327,13 +327,15 @@ public final class HtmlAttributes implements Attributes {
     }
 
     // ]NOCPP]
-
+    
     void addAttribute(AttributeName name, String value
             // [NOCPP[
             , XmlViolationPolicy xmlnsPolicy
     // ]NOCPP]        
     ) throws SAXException {
         // [NOCPP[
+    	
+    	
         if (name == AttributeName.ID) {
             idValue = value;
         }

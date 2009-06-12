@@ -74,7 +74,9 @@ public final class ElementName
     {
     	elementToCheck=elementToCheck.toLowerCase();
     	
-    	for(int i=0;i<ELEMENT_NAMES.length;i++)
+    	
+    	//TODO: Can make this search efficient
+    	for(int i=0;i<ELEMENT_NAMES.length && ELEMENT_NAMES[i].name.length()<=elementToCheck.length();i++)
     	{
     		if(ELEMENT_NAMES[i].name==elementToCheck)
     			return true;

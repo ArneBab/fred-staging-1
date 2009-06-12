@@ -89,7 +89,7 @@ public class HtmlParser implements XMLReader {
 
     private SAXStreamer saxStreamer = null; // work around javac bug
 
-    private SAXTreeBuilder saxTreeBuilder = null; // work around javac bug
+    
 
     private ContentHandler contentHandler = null;
 
@@ -155,17 +155,11 @@ public class HtmlParser implements XMLReader {
      */
     private void lazyInit() {
         if (tokenizer == null) {
-            if (streamabilityViolationPolicy == XmlViolationPolicy.ALLOW) {
-                this.saxTreeBuilder = new SAXTreeBuilder();
-                this.treeBuilder = this.saxTreeBuilder;
-                this.saxStreamer = null;
-                this.tokenizer = new Driver(treeBuilder, true);
-            } else {
+ 
                 this.saxStreamer = new SAXStreamer();
                 this.treeBuilder = this.saxStreamer;
-                this.saxTreeBuilder = null;
                 this.tokenizer = new Driver(treeBuilder);
-            }
+ 
             this.tokenizer.setErrorHandler(errorHandler);
             this.treeBuilder.setErrorHandler(treeBuilderErrorHandler);
             this.tokenizer.setCheckingNormalization(checkingNormalization);
@@ -400,14 +394,8 @@ public class HtmlParser implements XMLReader {
         try {
             treeBuilder.setFragmentContext(null);
             tokenize(input);
-        } finally {
-            if (saxTreeBuilder != null) {
-                Document document = saxTreeBuilder.getDocument();
-                if (document != null) {
-                    new TreeParser(contentHandler, lexicalHandler).parse(document);
-                }
-            }
-        }
+        } catch (Exception e) {}
+        
     }
 
     /**
@@ -424,12 +412,7 @@ public class HtmlParser implements XMLReader {
         try {
             treeBuilder.setFragmentContext(context.intern());
             tokenize(input);
-        } finally {
-            if (saxTreeBuilder != null) {
-                DocumentFragment fragment = saxTreeBuilder.getDocumentFragment();
-                new TreeParser(contentHandler, lexicalHandler).parse(fragment);
-            }
-        }
+        } catch(Exception e) {}
     }
     
     /**

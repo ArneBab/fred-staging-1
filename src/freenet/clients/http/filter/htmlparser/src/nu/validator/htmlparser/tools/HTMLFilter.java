@@ -35,7 +35,7 @@ import javax.xml.transform.TransformerException;
 import nu.validator.htmlparser.common.XmlViolationPolicy;
 import nu.validator.htmlparser.sax.HtmlParser;
 import nu.validator.htmlparser.sax.HtmlSerializer;
-import nu.validator.htmlparser.sax.XmlSerializer;
+
 
 import nu.validator.htmlparser.test.SystemErrErrorHandler;
 
@@ -53,11 +53,9 @@ public class HTMLFilter {
             TransformerException {
         InputStream in;
         OutputStream out;
-      
-        in = new FileInputStream("/home/ashish/search.html");
+        in = new FileInputStream("/home/ashish/index.html");
         out = new FileOutputStream("/home/ashish/searchparse.html");
         ContentHandler serializer = new HtmlSerializer(out);
-
         HtmlParser parser = new HtmlParser(XmlViolationPolicy.ALLOW);
         parser.setStreamabilityViolationPolicy(XmlViolationPolicy.ALLOW);
         parser.setErrorHandler(new SystemErrErrorHandler());
