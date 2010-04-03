@@ -14,6 +14,7 @@ import java.util.HashSet;
 import freenet.clients.http.HTTPRequestImpl;
 import freenet.clients.http.StaticToadlet;
 import freenet.clients.http.filter.HTMLFilter.ParsedTag;
+import freenet.clients.http.filter.TagReplacerCallback;
 import freenet.keys.FreenetURI;
 import freenet.l10n.NodeL10n;
 import freenet.support.HTMLEncoder;
@@ -46,7 +47,7 @@ public class GenericReadFilterCallback implements FilterCallback, URIProcessor {
 	private final FoundURICallback cb;
 	private final TagReplacerCallback trc;
 	
-	public GenericReadFilterCallback(URI uri, FoundURICallback cb,TagReplacerCallback trc) {
+	public GenericReadFilterCallback(URI uri, FoundURICallback cb, TagReplacerCallback trc) {
 		this.baseURI = uri;
 		this.cb = cb;
 		this.trc=trc;
