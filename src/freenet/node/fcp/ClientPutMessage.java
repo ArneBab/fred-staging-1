@@ -78,6 +78,7 @@ public class ClientPutMessage extends DataCarryingMessage {
 	final int extraInsertsSplitfileHeaderBlock;
 	final InsertContext.CompatibilityMode compatibilityMode;
 	final boolean localRequestOnly;
+	final boolean filterData;
 	
 	public static final short UPLOAD_FROM_DIRECT = 0;
 	public static final short UPLOAD_FROM_DISK = 1;
@@ -89,6 +90,7 @@ public class ClientPutMessage extends DataCarryingMessage {
 		binaryBlob = fs.getBoolean("BinaryBlob", false);
 		global = Fields.stringToBool(fs.get("Global"), false);
 		localRequestOnly = fs.getBoolean("LocalRequestOnly", false);
+		filterData = fs.getBoolean("FilterData", false);
 		String s = fs.get("CompatibilityMode");
 		InsertContext.CompatibilityMode cmode = null;
 		if(s == null)
@@ -283,6 +285,7 @@ public class ClientPutMessage extends DataCarryingMessage {
 		sfs.putSingle("PriorityClass", Short.toString(priorityClass));
 		sfs.putSingle("PersistenceType", ClientRequest.persistenceTypeString(persistenceType));
 		sfs.putSingle("DontCompress", Boolean.toString(dontCompress));
+		sfs.putSingle("FilterData", Boolean.toString(filterData));
 		if (compressorDescriptor != null)
 			sfs.putSingle("Codecs", compressorDescriptor);
 		sfs.putSingle("Global", Boolean.toString(global));
