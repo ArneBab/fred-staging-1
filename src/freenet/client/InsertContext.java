@@ -75,6 +75,8 @@ public class InsertContext implements Cloneable {
 	/** Backward compatibility support for network level metadata. 
 	 * Not an enum because of back compatibility and because db4o tends to do bad things to enums i.e. copy the values. */
 	private long compatibilityMode;
+	/** Whether this insert should parsed by the content filter*/
+	public boolean filterData;
 	
 	public CompatibilityMode getCompatibilityMode() {
 		return CompatibilityMode.values()[(int)compatibilityMode];
@@ -86,7 +88,7 @@ public class InsertContext implements Cloneable {
 
 	public InsertContext(
 			int maxRetries, int rnfsToSuccess, int splitfileSegmentDataBlocks, int splitfileSegmentCheckBlocks,
-			ClientEventProducer eventProducer, boolean canWriteClientCache, boolean forkOnCacheable, boolean localRequestOnly, String compressorDescriptor, int extraInsertsSingleBlock, int extraInsertsSplitfileHeaderBlock, CompatibilityMode compatibilityMode) {
+			ClientEventProducer eventProducer, boolean canWriteClientCache, boolean forkOnCacheable, boolean localRequestOnly, String compressorDescriptor, int extraInsertsSingleBlock, int extraInsertsSplitfileHeaderBlock, CompatibilityMode compatibilityMode, boolean filterData) {
 		dontCompress = false;
 		splitfileAlgorithm = Metadata.SPLITFILE_ONION_STANDARD;
 		this.consecutiveRNFsCountAsSuccess = rnfsToSuccess;
@@ -101,6 +103,7 @@ public class InsertContext implements Cloneable {
 		this.extraInsertsSplitfileHeaderBlock = extraInsertsSplitfileHeaderBlock;
 		this.compatibilityMode = compatibilityMode.ordinal();
 		this.localRequestOnly = localRequestOnly;
+		this.filterData = filterData;
 	}
 
 	public InsertContext(InsertContext ctx, SimpleEventProducer producer) {
@@ -117,6 +120,7 @@ public class InsertContext implements Cloneable {
 		this.extraInsertsSplitfileHeaderBlock = ctx.extraInsertsSplitfileHeaderBlock;
 		this.compatibilityMode = ctx.compatibilityMode;
 		this.localRequestOnly = ctx.localRequestOnly;
+		this.filterData = ctx.filterData;
 	}
 	
 	/** Make public, but just call parent for a field for field copy */
