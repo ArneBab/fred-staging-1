@@ -4,16 +4,21 @@
 package freenet.client.async;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 import com.db4o.ObjectContainer;
 
 import freenet.client.ClientMetadata;
+import freenet.client.DefaultMIMETypes;
 import freenet.client.InsertBlock;
 import freenet.client.InsertContext;
 import freenet.client.InsertException;
 import freenet.client.Metadata;
 import freenet.client.events.SendingToNetworkEvent;
 import freenet.client.events.SplitfileProgressEvent;
+import freenet.client.filter.ContentFilter;
+import freenet.client.filter.InsertFilterCallback;
 import freenet.keys.BaseClientKey;
 import freenet.keys.FreenetURI;
 import freenet.node.RequestClient;
@@ -21,6 +26,7 @@ import freenet.support.Logger;
 import freenet.support.SimpleFieldSet;
 import freenet.support.Logger.LogLevel;
 import freenet.support.api.Bucket;
+import freenet.support.io.Closer;
 
 /** A high level insert. */
 public class ClientPutter extends BaseClientPutter implements PutCompletionCallback {
@@ -28,7 +34,7 @@ public class ClientPutter extends BaseClientPutter implements PutCompletionCallb
 	/** Callback for when the insert completes. */
 	final ClientPutCallback client;
 	/** The data to insert. */
-	final Bucket data;
+	Bucket data;
 	/** The URI to insert it to. Can be CHK@. */
 	final FreenetURI targetURI;
 	/** The ClientMetadata i.e. the MIME type and any other client-visible metadata. */
@@ -149,6 +155,21 @@ public class ClientPutter extends BaseClientPutter implements PutCompletionCallb
 					if(!binaryBlob) {
 						ClientMetadata meta = cm;
 						if(meta != null) meta = persistent() ? meta.clone() : meta;
+						Bucket filteredData = context.getBucketFactory(persistent()).makeBucket(-1);
+						InputStream input = null;
+						OutputStream output = null;
+						try {
+							input = data.getInputStream();
+							output = filteredData.getOutputStream();
+							ContentFilter.filter(input, output, DefaultMIMETypes.guessMIMEType(targetFilename, false), null, new InsertFilterCallback());
+							data.free();
+							data = filteredData;
+							input.close();
+							output.close();
+						} finally {
+							Closer.close(input);
+							Closer.close(output);
+						}
 						currentState =
 							new SingleFileInserter(this, this, new InsertBlock(data, meta, persistent() ? targetURI.clone() : targetURI), isMetadata, ctx, 
 									false, getCHKOnly, false, null, null, false, targetFilename, earlyEncode, false, persistent(), 0, 0, null);
