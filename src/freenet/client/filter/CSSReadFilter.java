@@ -53,11 +53,6 @@ public class CSSReadFilter implements ContentDataFilter, CharsetExtractor {
 		
 	}
 
-	public void writeFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
-	        FilterCallback cb) throws DataFilterException, IOException {
-		throw new UnsupportedOperationException();
-	}
-
 	public String getCharset(byte [] input, int length, String charset) throws DataFilterException, IOException {
 		if(Logger.shouldLog(LogLevel.DEBUG, this))
 			Logger.debug(this, "Fetching charset for CSS with initial charset "+charset);

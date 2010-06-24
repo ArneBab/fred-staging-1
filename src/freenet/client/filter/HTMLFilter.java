@@ -78,12 +78,7 @@ public class HTMLFilter implements ContentDataFilter, CharsetExtractor {
 		pc.run();
 		w.flush();
 	}
-	
-	public void writeFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
-			FilterCallback cb) throws DataFilterException, IOException {
-		throw new UnsupportedOperationException();
-	}
-	
+
 	public String getCharset(byte[] input, int length, String parseCharset) throws DataFilterException, IOException {
 		logMINOR = Logger.shouldLog(LogLevel.MINOR, this);		
 		if(logMINOR) Logger.minor(this, "getCharset(): default="+parseCharset);

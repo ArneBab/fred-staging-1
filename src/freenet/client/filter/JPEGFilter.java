@@ -406,10 +406,4 @@ public class JPEGFilter implements ContentDataFilter {
 			Logger.normal(this, "Throwing "+e, e);
 		throw e;
 	}
-
-	public void writeFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
-			FilterCallback cb) throws DataFilterException, IOException {
-		return;
-	}
-
 }
