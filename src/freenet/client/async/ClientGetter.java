@@ -43,6 +43,7 @@ import freenet.support.Logger;
 import freenet.support.api.Bucket;
 import freenet.support.io.BucketTools;
 import freenet.support.io.Closer;
+import freenet.support.io.NullBucket;
 
 /**
  * A high level data request. Follows redirects, downloads splitfiles, etc. Similar to what you get from FCP,
@@ -159,7 +160,7 @@ public class ClientGetter extends BaseClientGetter {
 				}
 				currentState = SingleFileFetcher.create(this, this,
 						uri, ctx, actx, ctx.maxNonSplitfileRetries, 0, false, -1, true,
-						filtering ? null : returnBucket, true, container, context);
+						(filtering || returnBucket == null || returnBucket instanceof NullBucket) ? null : returnBucket, true, container, context);
 			}
 			if(cancelled) cancel();
 			// schedule() may deactivate stuff, so store it now.
@@ -449,7 +450,7 @@ public class ClientGetter extends BaseClientGetter {
 			minSuccess = finalBlocksRequired;
 			finalized = true;
 		}
-		ctx.eventProducer.produceEvent(new SplitfileProgressEvent(total, this.successfulBlocks, this.failedBlocks, this.fatallyFailedBlocks, minSuccess, finalized), container, context);
+		ctx.eventProducer.produceEvent(new SplitfileProgressEvent(total, this.successfulBlocks, this.failedBlocks, this.fatallyFailedBlocks, minSuccess, 0, finalized), container, context);
 	}
 
 	/**
@@ -740,7 +741,9 @@ public class ClientGetter extends BaseClientGetter {
 	public void onHashes(HashResult[] hashes, ObjectContainer container, ClientContext context) {
 		synchronized(this) {
 			if(this.hashes != null) {
-				Logger.error(this, "Two sets of hashes?!");
+				if(persistent()) container.activate(this.hashes, Integer.MAX_VALUE);
+				if(!HashResult.strictEquals(hashes, this.hashes))
+					Logger.error(this, "Two sets of hashes?!");
 				return;
 			}
 			this.hashes = hashes;

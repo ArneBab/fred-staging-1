@@ -140,9 +140,11 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 				// Preserve the key
 				
 				FreenetURI insertURI;
-				String keyType = request.getPartAsString("keytype", 3);
-				if ("chk".equals(keyType)) {
+				String keyType = request.getPartAsString("keytype", 10);
+				if ("CHK@".equals(keyType)) {
 					insertURI = new FreenetURI("CHK@");
+				} else if("SSK@".equals(keyType)) {
+					insertURI = new FreenetURI("SSK@");
 				} else {
 					try {
 						String u = request.getPartAsString("key", 128);
@@ -369,8 +371,10 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 			} else if (request.getPartAsString("insert", 128).length() > 0) {
 				final FreenetURI insertURI;
 				String keyType = request.getPartAsString("keytype", 3);
-				if ("chk".equals(keyType)) {
+				if ("CHK@".equals(keyType)) {
 					insertURI = new FreenetURI("CHK@");
+				} else if("SSK@".equals(keyType)) {
+					insertURI = new FreenetURI("SSK@");
 				} else {
 					try {
 						String u = request.getPartAsString("key", 128);
@@ -390,7 +394,11 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 				final boolean compress = request.getPartAsString("compress", 128).length() > 0;
 				final String identifier = file.getFilename() + "-fred-" + System.currentTimeMillis();
 				final String compatibilityMode = request.getPartAsString("compatibilityMode", 100);
-				final CompatibilityMode cmode = CompatibilityMode.valueOf(compatibilityMode);
+				final CompatibilityMode cmode;
+				if(compatibilityMode == "")
+					cmode = CompatibilityMode.COMPAT_CURRENT;
+				else
+					cmode = CompatibilityMode.valueOf(compatibilityMode);
 				final String fnam;
 				if(insertURI.getKeyType().equals("CHK"))
 					fnam = file.getFilename();
@@ -478,7 +486,11 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 				final String key = request.getPartAsString("key", 128);
 				final boolean compress = request.isPartSet("compress");
 				final String compatibilityMode = request.getPartAsString("compatibilityMode", 100);
-				final CompatibilityMode cmode = CompatibilityMode.valueOf(compatibilityMode);
+				final CompatibilityMode cmode;
+				if(compatibilityMode.equals(""))
+					cmode = CompatibilityMode.COMPAT_CURRENT;
+				else
+					cmode = CompatibilityMode.valueOf(compatibilityMode);
 				if(key != null) {
 					try {
 						furi = new FreenetURI(key);
@@ -490,7 +502,7 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 					furi = new FreenetURI("CHK@");
 				}
 				final String target;
-				if(!furi.getKeyType().equals("CHK"))
+				if(furi.getDocName() != null)
 					target = null;
 				else
 					target = file.getName();
@@ -933,8 +945,6 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 				contentNode.addChild(core.alerts.createSummary());
 			HTMLNode infoboxContent = pageMaker.getInfobox("infobox-information", NodeL10n.getBase().getString("QueueToadlet.globalQueueIsEmpty"), contentNode, "queue-empty", true);
 			infoboxContent.addChild("#", NodeL10n.getBase().getString("QueueToadlet.noTaskOnGlobalQueue"));
-			if(uploads)
-				contentNode.addChild(createInsertBox(pageMaker, ctx, core.isAdvancedModeEnabled()));
 			if(!uploads)
 				contentNode.addChild(createBulkDownloadForm(ctx, pageMaker));
 			return pageNode;
@@ -1078,9 +1088,6 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 		/* add alert summary box */
 		if(ctx.isAllowedFullAccess())
 			contentNode.addChild(core.alerts.createSummary());
-		/* add file insert box */
-		if(uploads)
-		contentNode.addChild(createInsertBox(pageMaker, ctx, mode >= PageMaker.MODE_ADVANCED));
 
 		/* navigation bar */
 		InfoboxNode infobox = pageMaker.getInfobox("navbar", NodeL10n.getBase().getString("QueueToadlet.requestNavigation"), null, false);
@@ -1478,51 +1485,6 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 			keyCell.addChild("span", "class", "key_unknown", NodeL10n.getBase().getString("QueueToadlet.unknown"));
 		}
 		return keyCell;
-	}
-	
-	private HTMLNode createInsertBox(PageMaker pageMaker, ToadletContext ctx, boolean isAdvancedModeEnabled) {
-		/* the insert file box */
-		InfoboxNode infobox = pageMaker.getInfobox(NodeL10n.getBase().getString("QueueToadlet.insertFile"), "insert-queue", true);
-		HTMLNode insertBox = infobox.outer;
-		HTMLNode insertContent = infobox.content;
-		HTMLNode insertForm = ctx.addFormChild(insertContent, path(), "queueInsertForm");
-		insertForm.addChild("#", (NodeL10n.getBase().getString("QueueToadlet.insertAs") + ' '));
-		insertForm.addChild("input", new String[] { "type", "name", "value", "checked" }, new String[] { "radio", "keytype", "chk", "checked" });
-		insertForm.addChild("#", " CHK \u00a0 ");
-		insertForm.addChild("input", new String[] { "type", "name", "value" }, new String[] { "radio", "keytype", "ksk" });
-		insertForm.addChild("#", " KSK/SSK/USK \u00a0");
-		insertForm.addChild("input", new String[] { "type", "name", "value" }, new String[] { "text", "key", "KSK@" });
-		if(isAdvancedModeEnabled) {
-			insertForm.addChild("#", " \u00a0 ");
-			insertForm.addChild("input", new String[] { "type", "name", "checked" }, new String[] { "checkbox", "compress", "checked" });
-			insertForm.addChild("#", ' ' + NodeL10n.getBase().getString("QueueToadlet.insertFileCompressLabel") + " \u00a0 ");
-		} else {
-			insertForm.addChild("input", new String[] { "type", "value" }, new String[] { "hidden", "true" });
-		}
-		insertForm.addChild("input", new String[] { "type", "name" }, new String[] { "reset", NodeL10n.getBase().getString("QueueToadlet.insertFileResetForm") });
-		if(ctx.isAllowedFullAccess()) {
-			insertForm.addChild("br");
-			insertForm.addChild("#", NodeL10n.getBase().getString("QueueToadlet.insertFileBrowseLabel")+": ");
-			insertForm.addChild("input", new String[] { "type", "name", "value" }, new String[] { "submit", "insert-local", NodeL10n.getBase().getString("QueueToadlet.insertFileBrowseButton") + "..." });
-			insertForm.addChild("br");
-		}
-		if(isAdvancedModeEnabled) {
-			insertForm.addChild("#", NodeL10n.getBase().getString("QueueToadlet.compatModeLabel")+": ");
-			HTMLNode select = insertForm.addChild("select", "name", "compatibilityMode");
-			for(CompatibilityMode mode : InsertContext.CompatibilityMode.values()) {
-				if(mode == CompatibilityMode.COMPAT_UNKNOWN) continue;
-				// FIXME l10n???
-				HTMLNode option = select.addChild("option", "value", mode.name(), mode.detail);
-				if(mode == CompatibilityMode.COMPAT_CURRENT)
-					option.addAttribute("selected", "");
-			}
-		}
-		insertForm.addChild("#", NodeL10n.getBase().getString("QueueToadlet.insertFileLabel") + ": ");
-		insertForm.addChild("input", new String[] { "type", "name", "value" }, new String[] { "file", "filename", "" });
-		insertForm.addChild("#", " \u00a0 ");
-		insertForm.addChild("input", new String[] { "type", "name", "value" }, new String[] { "submit", "insert", NodeL10n.getBase().getString("QueueToadlet.insertFileInsertFileLabel") });
-		insertForm.addChild("#", " \u00a0 ");
-		return insertBox;
 	}
 	
 	private HTMLNode createBulkDownloadForm(ToadletContext ctx, PageMaker pageMaker) {
@@ -1947,12 +1909,15 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 		return (!container.publicGatewayMode()) || ((ctx != null) && ctx.isAllowedFullAccess());
 	}
 
+	static final String PATH_UPLOADS = "/uploads/";
+	static final String PATH_DOWNLOADS = "/downloads/";
+	
 	@Override
 	public String path() {
 		if(uploads)
-			return "/uploads/";
+			return PATH_UPLOADS;
 		else
-			return "/downloads/";
+			return PATH_DOWNLOADS;
 	}
 
 	private class GetCompletedEvent extends StoringUserEvent<GetCompletedEvent> {

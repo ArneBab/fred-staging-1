@@ -1,5 +1,6 @@
 package freenet.support.compress;
 
+import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -36,8 +37,9 @@ public class GzipCompressor implements Compressor {
 	public long compress(InputStream is, OutputStream os, long maxReadLength, long maxWriteLength) throws IOException, CompressionOutputSizeException {
 		if(maxReadLength < 0)
 			throw new IllegalArgumentException();
+		is = new BufferedInputStream(is, 32768);
 		GZIPOutputStream gos = null;
-		os = new BufferedOutputStream(os);
+		os = new BufferedOutputStream(os, 32768);
 		CountedOutputStream cos = new CountedOutputStream(os);
 		try {
 			gos = new GZIPOutputStream(cos);
@@ -90,7 +92,8 @@ public class GzipCompressor implements Compressor {
 	}
 
 	public long decompress(InputStream is, OutputStream os, long maxLength, long maxCheckSizeBytes) throws IOException, CompressionOutputSizeException {
-		GZIPInputStream gis = new GZIPInputStream(is);
+		GZIPInputStream gis = new GZIPInputStream(new BufferedInputStream(is, 32768));
+		os = new BufferedOutputStream(os, 32768);
 		long written = 0;
 		byte[] buffer = new byte[4096];
 		while(true) {
