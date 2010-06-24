@@ -89,7 +89,7 @@ public class ClientPut extends ClientPutBase {
 	 * @param redirectTarget
 	 *            The URI to redirect to (if <code>uploadFromType</code> is
 	 *            UPLOAD_FROM_REDIRECT)
-	 * @param filterData TODO
+	 * @param filterData If true, the data to be inserted will be run through the ContentFilter
 	 * @param handler
 	 *            The FCP connection handler
 	 * @param global

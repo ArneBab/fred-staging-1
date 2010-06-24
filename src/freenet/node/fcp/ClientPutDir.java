@@ -87,7 +87,6 @@ public class ClientPutDir extends ClientPutBase {
 	/**
 	 * Fproxy
 	*	Puts a disk dir
-	 * @param filterData TODO
 	 * @throws InsertException 
 	*/
 	public ClientPutDir(FCPClient client, FreenetURI uri, String identifier, int verbosity, short priorityClass, short persistenceType, String clientToken, boolean getCHKOnly, boolean dontCompress, int maxRetries, File dir, String defaultName, boolean allowUnreadableFiles, boolean global, boolean earlyEncode, boolean canWriteClientCache, boolean forkOnCacheable, int extraInsertsSingleBlock, int extraInsertsSplitfileHeaderBlock, boolean filterData, FCPServer server, ObjectContainer container) throws FileNotFoundException, IdentifierCollisionException, MalformedURLException {
