@@ -156,13 +156,20 @@ public class ClientPutter extends BaseClientPutter implements PutCompletionCallb
 						ClientMetadata meta = cm;
 						if(meta != null) meta = persistent() ? meta.clone() : meta;
 						Bucket filteredData = context.getBucketFactory(persistent()).makeBucket(-1);
+						String mimeType;
+						if(meta==null || meta.getMIMEType() == DefaultMIMETypes.DEFAULT_MIME_TYPE) {
+							mimeType = DefaultMIMETypes.guessMIMEType(targetFilename, false);
+						}
+						else {
+							mimeType = cm.getMIMEType();
+						}
 						InputStream input = null;
 						OutputStream output = null;
 						if(ctx.filterData) {
 							try {
 								input = data.getInputStream();
 								output = filteredData.getOutputStream();
-								ContentFilter.filter(input, output, DefaultMIMETypes.guessMIMEType(targetFilename, false), null, new InsertFilterCallback());
+								ContentFilter.filter(input, output, mimeType, null, new InsertFilterCallback());
 								data.free();
 								data = filteredData;
 								input.close();
