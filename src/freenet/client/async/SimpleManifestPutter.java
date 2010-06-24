@@ -670,7 +670,7 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 					} catch (UnsafeContentTypeException e) {
 						//If filtration failed, and it was expressly asked for, we should probably fail hard if something goes wrong
 						if(logMINOR) Logger.minor(this, "The ContentFilter was unable to parse the data while inserting", e);
-						error = new InsertException(InsertException.BUCKET_ERROR);
+						error = new InsertException(InsertException.CONTENT_VALIDATION_FAILED);
 						return;
 					} catch(IOException e) {
 						Logger.error(this, "Failed to filter data on insert", e);

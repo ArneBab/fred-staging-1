@@ -142,6 +142,8 @@ public class InsertException extends Exception {
 	public static final int META_STRINGS_NOT_SUPPORTED = 11;
 	/** Invalid binary blob data supplied so cannot insert it */
 	public static final int BINARY_BLOB_FORMAT_ERROR = 12;
+	/** Unable to sanitize the data */
+	public static final int CONTENT_VALIDATION_FAILED = 13;
 	
 	/** Get the (localised) short name of this failure mode. */
 	public static String getMessage(int mode) {
