@@ -55,6 +55,7 @@ public abstract class ClientPutDirMessage extends BaseDataCarryingMessage {
 	final int extraInsertsSplitfileHeaderBlock;
 	final InsertContext.CompatibilityMode compatibilityMode;
 	final boolean localRequestOnly;
+	final boolean filterData;
 	
 	public ClientPutDirMessage(SimpleFieldSet fs) throws MessageInvalidException {
 		identifier = fs.get("Identifier");
@@ -165,6 +166,7 @@ public abstract class ClientPutDirMessage extends BaseDataCarryingMessage {
 			forkOnCacheable = Node.FORK_ON_CACHEABLE_DEFAULT;
 		extraInsertsSingleBlock = fs.getInt("ExtraInsertsSingleBlock", HighLevelSimpleClientImpl.EXTRA_INSERTS_SINGLE_BLOCK);
 		extraInsertsSplitfileHeaderBlock = fs.getInt("ExtraInsertsSplitfileHeaderBlock", HighLevelSimpleClientImpl.EXTRA_INSERTS_SPLITFILE_HEADER);
+		filterData = fs.getBoolean("FilterData", false);
 	}
 
 	@Override
@@ -174,6 +176,7 @@ public abstract class ClientPutDirMessage extends BaseDataCarryingMessage {
 		sfs.putSingle("Identifier", identifier);
 		sfs.putSingle("Verbosity", Integer.toString(verbosity));
 		sfs.putSingle("MaxRetries", Integer.toString(maxRetries));
+		sfs.putSingle("FilterData", Boolean.toString(filterData));
 		sfs.putSingle("ClientToken", clientToken);
 		sfs.putSingle("GetCHKOnly", Boolean.toString(getCHKOnly));
 		sfs.putSingle("PriorityClass", Short.toString(priorityClass));

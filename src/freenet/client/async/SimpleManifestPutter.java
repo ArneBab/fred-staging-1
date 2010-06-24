@@ -2,6 +2,7 @@ package freenet.client.async;
 
 import java.io.BufferedOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -27,6 +28,9 @@ import freenet.client.Metadata;
 import freenet.client.MetadataUnresolvedException;
 import freenet.client.ArchiveManager.ARCHIVE_TYPE;
 import freenet.client.events.SplitfileProgressEvent;
+import freenet.client.filter.ContentFilter;
+import freenet.client.filter.InsertFilterCallback;
+import freenet.client.filter.UnknownContentTypeException;
 import freenet.keys.BaseClientKey;
 import freenet.keys.FreenetURI;
 import freenet.node.RequestClient;
@@ -34,7 +38,9 @@ import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
 import freenet.support.api.Bucket;
+import freenet.support.api.BucketFactory;
 import freenet.support.io.BucketTools;
+import freenet.support.io.Closer;
 import freenet.support.io.NativeThread;
 
 public class SimpleManifestPutter extends BaseClientPutter implements PutCompletionCallback {
@@ -542,10 +548,11 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 	private ArrayList<PutHandler> elementsToPutInArchive;
 	private boolean fetchable;
 	private final boolean earlyEncode;
+	private InsertException error;
 
 	public SimpleManifestPutter(ClientPutCallback cb,
 			HashMap<String, Object> manifestElements, short prioClass, FreenetURI target,
-			String defaultName, InsertContext ctx, boolean getCHKOnly, RequestClient clientContext, boolean earlyEncode) {
+			String defaultName, BucketFactory bf, InsertContext ctx, boolean getCHKOnly, RequestClient clientContext, boolean earlyEncode) {
 		super(prioClass, clientContext);
 		this.defaultName = defaultName;
 		if(client.persistent())
@@ -564,7 +571,7 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 		metadataPuttersByMetadata = new HashMap<Metadata,ClientPutState>();
 		metadataPuttersUnfetchable = new HashMap<Metadata,ClientPutState>();
 		elementsToPutInArchive = new ArrayList<PutHandler>();
-		makePutHandlers(manifestElements, putHandlersByName, client.persistent());
+		makePutHandlers(manifestElements, putHandlersByName, bf, client.persistent());
 		checkZips();
 	}
 
@@ -574,6 +581,7 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 	}
 
 	public void start(ObjectContainer container, ClientContext context) throws InsertException {
+		if(error != null) throw error;
 		if (logMINOR)
 			Logger.minor(this, "Starting " + this+" persistence="+persistent());
 		PutHandler[] running;
@@ -616,11 +624,11 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 		}
 	}
 
-	protected void makePutHandlers(HashMap<String, Object> manifestElements, HashMap<String,Object> putHandlersByName, boolean persistent) {
-		makePutHandlers(manifestElements, putHandlersByName, "/", persistent);
+	protected void makePutHandlers(HashMap<String, Object> manifestElements, HashMap<String,Object> putHandlersByName, BucketFactory bf, boolean persistent) {
+		makePutHandlers(manifestElements, putHandlersByName, "/", bf, persistent);
 	}
 
-	private void makePutHandlers(HashMap<String, Object> manifestElements, HashMap<String,Object> putHandlersByName, String ZipPrefix, boolean persistent) {
+	private void makePutHandlers(HashMap<String, Object> manifestElements, HashMap<String,Object> putHandlersByName, String ZipPrefix, BucketFactory bf, boolean persistent) {
 		Iterator<String> it = manifestElements.keySet().iterator();
 		while(it.hasNext()) {
 			String name = it.next();
@@ -628,7 +636,7 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 			if (o instanceof HashMap) {
 				HashMap<String,Object> subMap = new HashMap<String,Object>();
 				putHandlersByName.put(name, subMap);
-				makePutHandlers(Metadata.forceMap(o), subMap, ZipPrefix+name+ '/', persistent);
+				makePutHandlers(Metadata.forceMap(o), subMap, ZipPrefix+name+ '/', bf, persistent);
 				if(Logger.shouldLog(LogLevel.DEBUG, this))
 					Logger.debug(this, "Sub map for "+name+" : "+subMap.size()+" elements from "+((HashMap)o).size());
 			} else {
@@ -643,6 +651,33 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 					cm = new ClientMetadata(mimeType);
 				PutHandler ph;
 				Bucket data = element.data;
+				//Filter data
+				if(ctx.filterData) {
+					InputStream input = null;
+					OutputStream output = null;
+					Bucket filteredData = null;
+					try {
+						if (cm == null) throw new UnknownContentTypeException(DefaultMIMETypes.DEFAULT_MIME_TYPE);
+						filteredData = bf.makeBucket(-1);
+						input = data.getInputStream();
+						output = filteredData.getOutputStream();
+						ContentFilter.filter(input, output, mimeType, null, new InsertFilterCallback());
+						input.close();
+						output.close();
+						data.free();
+						data = filteredData;
+					} catch (UnknownContentTypeException e) {
+						//If the user is inserting something weird enough, we should probably allow it
+						if(logMINOR) Logger.minor(this, "The ContentFilter didn't recognize the content type of "+name+ "which was detected to be "+mimeType, e);
+					} catch(IOException e) {
+						Logger.error(this, "Failed to filter data on insert", e);
+						error = new InsertException(InsertException.BUCKET_ERROR);
+						return;
+					} finally {
+						Closer.close(input);
+						Closer.close(output);
+					}
+				}
 				if(element.targetURI != null) {
 					ph = new PutHandler(this, name, element.targetURI, cm, persistent);
 					// Just a placeholder, don't actually run it

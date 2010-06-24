@@ -30,6 +30,7 @@ import freenet.support.Logger;
 import freenet.support.SimpleFieldSet;
 import freenet.support.Logger.LogLevel;
 import freenet.support.api.Bucket;
+import freenet.support.api.BucketFactory;
 import freenet.support.io.CannotCreateFromFieldSetException;
 import freenet.support.io.FileBucket;
 import freenet.support.io.SerializableToFieldSetBucketUtil;
@@ -59,7 +60,7 @@ public class ClientPutDir extends ClientPutBase {
 			HashMap<String, Object> manifestElements, boolean wasDiskPut, FCPServer server, ObjectContainer container) throws IdentifierCollisionException, MalformedURLException {
 		super(message.uri, message.identifier, message.verbosity, null,
 				handler, message.priorityClass, message.persistenceType, message.clientToken,
-				message.global, message.getCHKOnly, message.dontCompress, message.localRequestOnly, message.maxRetries, message.earlyEncode, message.canWriteClientCache, message.forkOnCacheable, message.compressorDescriptor, message.extraInsertsSingleBlock, message.extraInsertsSplitfileHeaderBlock, false, message.compatibilityMode, server, container);
+				message.global, message.getCHKOnly, message.dontCompress, message.localRequestOnly, message.maxRetries, message.earlyEncode, message.canWriteClientCache, message.forkOnCacheable, message.compressorDescriptor, message.extraInsertsSingleBlock, message.extraInsertsSplitfileHeaderBlock, message.filterData, message.compatibilityMode, server, container);
 		logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
 		this.wasDiskPut = wasDiskPut;
 		
@@ -73,7 +74,7 @@ public class ClientPutDir extends ClientPutBase {
 //		this.manifestElements = new HashMap<String, Object>();
 //		this.manifestElements.putAll(manifestElements);
 		this.defaultName = message.defaultName;
-		makePutter();
+		makePutter(persistenceType == PERSIST_CONNECTION ? server.core.tempBucketFactory : server.core.persistentTempBucketFactory);
 		if(putter != null) {
 			numberOfFiles = putter.countFiles();
 			totalSize = putter.totalSize();
@@ -95,7 +96,7 @@ public class ClientPutDir extends ClientPutBase {
 		logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
 		this.manifestElements = makeDiskDirManifest(dir, "", allowUnreadableFiles);
 		this.defaultName = defaultName;
-		makePutter();
+		makePutter(persistenceType == PERSIST_CONNECTION ? server.core.tempBucketFactory : server.core.persistentTempBucketFactory);
 		if(putter != null) {
 			numberOfFiles = putter.countFiles();
 			totalSize = putter.totalSize();
@@ -112,7 +113,7 @@ public class ClientPutDir extends ClientPutBase {
 		logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
 		this.manifestElements = elements;
 		this.defaultName = defaultName;
-		makePutter();
+		makePutter(persistenceType == PERSIST_CONNECTION ? server.core.tempBucketFactory : server.core.persistentTempBucketFactory);
 		if(putter != null) {
 			numberOfFiles = putter.countFiles();
 			totalSize = putter.totalSize();
@@ -167,12 +168,12 @@ public class ClientPutDir extends ClientPutBase {
 		return map;
 	}
 	
-	private void makePutter() {
+	private void makePutter(BucketFactory bf) {
 		SimpleManifestPutter p;
 			p = new SimpleManifestPutter(this, 
-					manifestElements, priorityClass, uri, defaultName, ctx, getCHKOnly,
-					lowLevelClient,
-					earlyEncode);
+					manifestElements, priorityClass, uri, defaultName, bf, ctx,
+					getCHKOnly,
+					lowLevelClient, earlyEncode);
 		putter = p;
 	}
 
@@ -246,9 +247,9 @@ public class ClientPutDir extends ClientPutBase {
 		SimpleManifestPutter p = null;
 			if(!finished)
 				p = new SimpleManifestPutter(this, 
-						manifestElements, priorityClass, uri, defaultName, ctx, getCHKOnly, 
-						lowLevelClient,
-						earlyEncode);
+						manifestElements, priorityClass, uri, defaultName, persistenceType != PERSIST_CONNECTION ? server.core.tempBucketFactory : server.core.persistentTempBucketFactory, ctx, 
+						getCHKOnly,
+						lowLevelClient, earlyEncode);
 		putter = p;
 		numberOfFiles = fileCount;
 		totalSize = size;
@@ -383,7 +384,7 @@ public class ClientPutDir extends ClientPutBase {
 	public boolean restart(ObjectContainer container, ClientContext context) {
 		if(!canRestart()) return false;
 		setVarsRestart(container);
-		makePutter();
+		makePutter(context.getBucketFactory(isPersistent()));
 		start(container, context);
 		return true;
 	}

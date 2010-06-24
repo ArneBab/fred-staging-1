@@ -248,7 +248,7 @@ public class HighLevelSimpleClientImpl implements HighLevelSimpleClient, Request
 	public FreenetURI insertManifest(FreenetURI insertURI, HashMap<String, Object> bucketsByName, String defaultName) throws InsertException {
 		PutWaiter pw = new PutWaiter();
 		SimpleManifestPutter putter =
-			new SimpleManifestPutter(pw, SimpleManifestPutter.bucketsByNameToManifestEntries(bucketsByName), priorityClass, insertURI, defaultName, getInsertContext(true), false, this, false);
+			new SimpleManifestPutter(pw, SimpleManifestPutter.bucketsByNameToManifestEntries(bucketsByName), priorityClass, insertURI, defaultName, null, getInsertContext(true), false, this, false);
 		try {
 			core.clientContext.start(putter);
 		} catch (DatabaseDisabledException e) {
