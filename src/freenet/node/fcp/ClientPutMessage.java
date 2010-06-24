@@ -31,6 +31,7 @@ import freenet.support.io.FileBucket;
  * Verbosity=0 // just report when complete
  * MaxRetries=999999 // lots of retries
  * PriorityClass=1 // FProxy priority level
+ * FilterData=true //Run data through the ContentFilter
  * 
  * UploadFrom=direct // attached directly to this message
  * DataLength=100 // 100kB

@@ -5,6 +5,11 @@ package freenet.client.filter;
 
 import freenet.client.filter.HTMLFilter.ParsedTag;
 
+/** <code>FilterCallback</code> which does nothing to the data it parses.
+ * This class is ran when inserts are being filtered, as inserts
+ * do not need to worry about charsets or web-pushing. This callback
+ * therefore should not be ran against data which is going to be
+ * passed directly to a browser, without further decompression.*/
 public class InsertFilterCallback implements FilterCallback{
 
 	public String onBaseHref(String baseHref) {

@@ -27,6 +27,7 @@ import freenet.support.compress.Compressor.COMPRESSOR_TYPE;
  * MaxRetries=<max retries as ClientPut>
  * PriorityClass=<priority class>
  * URI=<target URI>
+ * FilterData=<whether or not insert should be ran through ContentFilter>
  * GetCHKOnly=<GetCHKOnly as ClientPut>
  * DontCompress=<DontCompress as ClientPut>
  * ClientToken=<ClientToken as ClientPut>
