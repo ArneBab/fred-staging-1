@@ -31,6 +31,7 @@ import freenet.client.events.SplitfileProgressEvent;
 import freenet.client.filter.ContentFilter;
 import freenet.client.filter.InsertFilterCallback;
 import freenet.client.filter.UnknownContentTypeException;
+import freenet.client.filter.UnsafeContentTypeException;
 import freenet.keys.BaseClientKey;
 import freenet.keys.FreenetURI;
 import freenet.node.RequestClient;
@@ -666,9 +667,11 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 						output.close();
 						data.free();
 						data = filteredData;
-					} catch (UnknownContentTypeException e) {
-						//If the user is inserting something weird enough, we should probably allow it
-						if(logMINOR) Logger.minor(this, "The ContentFilter didn't recognize the content type of "+name+ "which was detected to be "+mimeType, e);
+					} catch (UnsafeContentTypeException e) {
+						//If filtration failed, and it was expressly asked for, we should probably fail hard if something goes wrong
+						if(logMINOR) Logger.minor(this, "The ContentFilter was unable to parse the data while inserting", e);
+						error = new InsertException(InsertException.BUCKET_ERROR);
+						return;
 					} catch(IOException e) {
 						Logger.error(this, "Failed to filter data on insert", e);
 						error = new InsertException(InsertException.BUCKET_ERROR);
