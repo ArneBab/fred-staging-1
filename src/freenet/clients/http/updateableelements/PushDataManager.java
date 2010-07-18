@@ -142,7 +142,7 @@ public class PushDataManager {
 		}
 		if (pages.get(requestId) != null) for (BaseUpdateableElement element : pages.get(requestId)) {
 			if (element.getUpdaterId(requestId).compareTo(id) == 0) {
-				element.updateState(false);
+				element.updateState();
 				return element;
 			}
 		}

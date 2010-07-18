@@ -10,6 +10,9 @@ public class UpdaterConstants {
 	/** Replaces the element and refreshes the total image fetching message */
 	public static final String	IMAGE_ELEMENT_UPDATER		= "ImageElementUpdater";
 
+	/** Replaces multimedia elements with an image, which is refreshed until the final element has been loaded */
+	public static final String MULTIMEDIA_ELEMENT_UPDATER	= "MultimediaElementUpdater";
+
 	/** Replaces the element and replaces the title with the value of a hidden input named 'pageTitle' */
 	public static final String	CONNECTIONS_TABLE_UPDATER	= "ConnectionsList";
 

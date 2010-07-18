@@ -32,6 +32,7 @@ public class ProgressInfoElement extends BaseUpdateableElement {
 		this.fctx = fctx;
 		this.maxSize = maxSize;
 		this.isAdvancedMode = isAdvancedMode;
+		updateState();
 		init(pushed);
 		if(!pushed) return;
 		fetchListener = new NotifierFetchListener(((SimpleToadletServer) ctx.getContainer()).pushDataManager, this);
@@ -39,7 +40,7 @@ public class ProgressInfoElement extends BaseUpdateableElement {
 	}
 
 	@Override
-	public void updateState(boolean initial) {
+	public void updateState() {
 		children.clear();
 
 		FProxyFetchWaiter waiter = tracker.makeWaiterForFetchInProgress(key, maxSize, fctx);

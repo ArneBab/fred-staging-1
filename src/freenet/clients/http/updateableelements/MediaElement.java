@@ -2,7 +2,6 @@ package freenet.clients.http.updateableelements;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Random;
 import java.util.Map.Entry;
 
@@ -15,7 +14,6 @@ import freenet.clients.http.FProxyFetchWaiter;
 import freenet.clients.http.SimpleToadletServer;
 import freenet.clients.http.ToadletContext;
 import freenet.keys.FreenetURI;
-import freenet.support.Base64;
 import freenet.support.HTMLNode;
 import freenet.support.Logger;
 
@@ -39,24 +37,20 @@ public abstract class MediaElement extends BaseUpdateableElement {
 	/** The FetchListener that gets notified when the download progresses */
 	private NotifierFetchListener	fetchListener;
 
-	protected ParsedTag				originalElement;
-
 	// FIXME get this from global weakFastRandom ???
-	private final int				randomNumber	= new Random().nextInt();
+	protected final int				randomNumber	= new Random().nextInt();
 
-	private boolean					wasError		= false;
+	protected boolean					wasError		= false;
 
-	public MediaElement(FProxyFetchTracker tracker, FreenetURI key, long maxSize, ToadletContext ctx, ParsedTag originalElement, boolean pushed) {
+	public MediaElement(FProxyFetchTracker tracker, FreenetURI key, long maxSize, ToadletContext ctx, boolean pushed) {
 		super("span", ctx);
 		long now = System.currentTimeMillis();
 		if (logMINOR) {
 			Logger.minor(this, "MediaElement creating for uri:" + key);
 		}
-		this.originalElement = originalElement;
 		this.tracker = tracker;
 		this.key = this.origKey = key;
 		this.maxSize = maxSize;
-		init(pushed);
 		if(!pushed) return;
 		// Creates and registers the FetchListener
 		fetchListener = new NotifierFetchListener(((SimpleToadletServer) ctx.getContainer()).pushDataManager, this);
@@ -106,31 +100,14 @@ public abstract class MediaElement extends BaseUpdateableElement {
 	}
 
 	@Override
-	public String getUpdaterId(String requestId) {
-		return getId(origKey, randomNumber);
-	}
-
-	public static String getId(FreenetURI uri, int randomNumber) {
-		return Base64.encodeStandard(("image[URI:" + uri.toString() + ",random:" + randomNumber + "]").getBytes());
-	}
-
-	@Override
-	public void updateState(boolean initial) {
+	public void updateState() {
 		if (logMINOR) {
 			Logger.minor(this, "Updating MediaElement for url:" + key + (origKey == key ? (" originally " + origKey) : ""));
 		}
 		children.clear();
-		HTMLNode whenJsEnabled = new HTMLNode("span", "class", "jsonly "+this.getClass());
-		addChild(whenJsEnabled);
-		// When js disabled
-		addChild("noscript").addChild(makeHtmlNodeForParsedTag(originalElement));
-		if (initial) {
-			if (wasError) {
-				whenJsEnabled.addChild(makeHtmlNodeForParsedTag(originalElement));
-			} else {
-				initialStateDisplay(whenJsEnabled);
-			}
-		} else {
+		HTMLNode node = new HTMLNode("span", "class", "jsonly "+this.getClass().getSimpleName());
+		addChild(node);
+		if(key != null){
 			FProxyFetchResult fr = null;
 			FProxyFetchWaiter waiter = null;
 			try {
@@ -138,20 +115,20 @@ public abstract class MediaElement extends BaseUpdateableElement {
 					waiter = tracker.makeFetcher(key, maxSize, null);
 					fr = waiter.getResultFast();
 				} catch (FetchException fe) {
-					whenJsEnabled.addChild("div", "error");
+					node.addChild("div", "error");
 				}
 				if (fr == null) {
-					whenJsEnabled.addChild("div", "No fetcher found");
+					node.addChild("div", "No fetcher found");
 				} else {
 					if (fr.isFinished() && fr.hasData()) {
 						if (logMINOR) Logger.minor(this, "MediaElement is completed");
-						whenJsEnabled.addChild(makeHtmlNodeForParsedTag(originalElement));
+						addCompleteElement(node);
 					} else if (fr.failed != null) {
-						if (logMINOR) Logger.minor(this, "MediaElement is errorous");
-						whenJsEnabled.addChild(makeHtmlNodeForParsedTag(originalElement));
+						if (logMINOR) Logger.minor(this, "MediaElement is errorous"+fr.failed, fr.failed);
+						addCompleteElement(node);
 					} else {
 						if (logMINOR) Logger.minor(this, "MediaElement is still in progress");
-						subsequentStateDisplay(fr, whenJsEnabled);
+						subsequentStateDisplay(fr, node);
 					}
 				}
 			} finally {
@@ -165,9 +142,9 @@ public abstract class MediaElement extends BaseUpdateableElement {
 		}
 	}
 
-	protected abstract void initialStateDisplay(HTMLNode node);
-
 	protected abstract void subsequentStateDisplay(FProxyFetchResult result, HTMLNode node);
+
+	protected abstract void addCompleteElement(HTMLNode node);
 
 	// FIXME move this to some global utilities class.
 	protected HTMLNode makeHtmlNodeForParsedTag(ParsedTag pt) {
@@ -181,8 +158,6 @@ public abstract class MediaElement extends BaseUpdateableElement {
 	}
 
 	@Override
-	public String toString() {
-		return "MediaElement[key:" + key + ",maxSize:" + maxSize + ",originalElement:" + originalElement + ",updaterId:" + getUpdaterId(null) + "]";
-	}
+	public abstract String toString();
 
 }

@@ -2,16 +2,18 @@ package freenet.client.filter;
 
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
+import java.util.LinkedList;
 
 import freenet.client.filter.HTMLFilter.ParsedTag;
 import freenet.clients.http.FProxyFetchTracker;
 import freenet.clients.http.ToadletContext;
 import freenet.clients.http.updateableelements.ImageElement;
+import freenet.clients.http.updateableelements.MultimediaElement;
 import freenet.keys.FreenetURI;
 import freenet.l10n.NodeL10n;
 import freenet.support.HTMLEncoder;
 
-/** This TagReplcaerCallback adds pushing support for freesites, and replaces their img's to pushed ones */
+/** This TagReplacerCallback adds pushing support for freesites, and replaces their img's to pushed ones */
 public class PushingTagReplacerCallback implements TagReplacerCallback {
 
 	/** The FProxyFetchTracker */
@@ -20,6 +22,8 @@ public class PushingTagReplacerCallback implements TagReplacerCallback {
 	private long				maxSize;
 	/** The current ToadletContext */
 	private ToadletContext		ctx;
+	/** */
+	private LinkedList<ParsedTag> blockElement = new LinkedList<ParsedTag>();
 
 	/**
 	 * Constructor
@@ -82,6 +86,54 @@ public class PushingTagReplacerCallback implements TagReplacerCallback {
 						} catch (MalformedURLException mue) {
 							return null;
 						}
+					}
+				}
+			} else if(pt.element.toLowerCase().compareTo("video") == 0 || pt.element.toLowerCase().compareTo("audio") == 0) {
+				if(!pt.startSlash) for (int i = 0; i < pt.unparsedAttrs.length; i++) {
+					String attr = pt.unparsedAttrs[i];
+					String name = attr.substring(0, attr.indexOf("="));
+					String value = attr.substring(attr.indexOf("=") + 2, attr.length() - 1);
+					if (name.compareTo("src") == 0) {
+						String src;
+						try {
+							// We need absolute URI
+							src = uriProcessor.makeURIAbsolute(uriProcessor.processURI(value, null, false, false));
+						} catch (CommentException ce) {
+							return null;
+						} catch (URISyntaxException use) {
+							return null;
+						}
+						if (src.startsWith("/")) {
+							src = src.substring(1);
+						}
+						if(blockElement.isEmpty()) blockElement.add(pt);
+						return "";
+					}
+				} else {
+					String result = new MultimediaElement(tracker, ctx, blockElement).generate();
+					blockElement.clear();
+					return result;
+				}
+			} else if(pt.element.toLowerCase().compareTo("source") == 0 && !blockElement.isEmpty()) {
+				for (int i = 0; i < pt.unparsedAttrs.length; i++) {
+					String attr = pt.unparsedAttrs[i];
+					String name = attr.substring(0, attr.indexOf("="));
+					String value = attr.substring(attr.indexOf("=") + 2, attr.length() - 1);
+					if (name.compareTo("src") == 0) {
+						String src;
+						try {
+							// We need absolute URI
+							src = uriProcessor.makeURIAbsolute(uriProcessor.processURI(value, null, false, false));
+						} catch (CommentException ce) {
+							return null;
+						} catch (URISyntaxException use) {
+							return null;
+						}
+						if (src.startsWith("/")) {
+							src = src.substring(1);
+						}
+						blockElement.add(pt);
+						return "";
 					}
 				}
 			} else if (pt.element.toLowerCase().compareTo("body") == 0 && pt.startSlash==true) {

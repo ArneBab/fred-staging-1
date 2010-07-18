@@ -26,6 +26,7 @@ public class TesterElement extends BaseUpdateableElement {
 		this.id = id;
 		this.ctx = ctx;
 		this.maxStatus = max;
+		updateState();
 		init(true);
 		t = new Timer(true);
 		t.scheduleAtFixedRate(new TimerTask() {
@@ -65,7 +66,7 @@ public class TesterElement extends BaseUpdateableElement {
 	}
 
 	@Override
-	public void updateState(boolean initial) {
+	public void updateState() {
 		children.clear();
 		addChild(new HTMLNode("img", "src","/imagecreator/?text="+status+"&width="+Math.min(status+30,300)+"&height="+Math.min(status+30,300)));
 	}

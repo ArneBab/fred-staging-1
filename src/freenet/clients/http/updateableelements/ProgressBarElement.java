@@ -34,15 +34,17 @@ public class ProgressBarElement extends BaseUpdateableElement {
 		this.key = key;
 		this.fctx = fctx;
 		this.maxSize = maxSize;
+		updateState();
 		init(pushed);
 		if(!pushed) return;
 		// Creates and registers the FetchListener
 		fetchListener = new NotifierFetchListener(((SimpleToadletServer) ctx.getContainer()).pushDataManager, this);
 		tracker.getFetchInProgress(key, maxSize, fctx).addListener(fetchListener);
+		
 	}
 
 	@Override
-	public void updateState(boolean initial) {
+	public void updateState() {
 		children.clear();
 
 		FProxyFetchWaiter waiter = tracker.makeWaiterForFetchInProgress(key, maxSize, fctx);
