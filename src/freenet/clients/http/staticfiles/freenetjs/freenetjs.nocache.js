@@ -2,8 +2,8 @@ function freenetjs(){
   var $wnd_0 = window, $doc_0 = document, $stats = $wnd_0.__gwtStatsEvent?function(a){
     return $wnd_0.__gwtStatsEvent(a);
   }
-  :null, scriptsDone, loadDone, bodyDone, base = '', metaProps = {}, values = [], providers = [], answers = [], onLoadErrorFunc, propertyErrorFunc;
-  $stats && $stats({moduleName:'freenetjs', subSystem:'startup', evtGroup:'bootstrap', millis:(new Date()).getTime(), type:'begin'});
+  :null, $sessionId_0 = $wnd_0.__gwtStatsSessionId?$wnd_0.__gwtStatsSessionId:null, scriptsDone, loadDone, bodyDone, base = '', metaProps = {}, values = [], providers = [], answers = [], softPermutationId = 0, onLoadErrorFunc, propertyErrorFunc;
+  $stats && $stats({moduleName:'freenetjs', sessionId:$sessionId_0, subSystem:'startup', evtGroup:'bootstrap', millis:(new Date).getTime(), type:'begin'});
   if (!$wnd_0.__gwt_stylesLoaded) {
     $wnd_0.__gwt_stylesLoaded = {};
   }
@@ -13,7 +13,8 @@ function freenetjs(){
   function isHostedMode(){
     var result = false;
     try {
-      result = $wnd_0.external && ($wnd_0.external.gwtOnLoad && $wnd_0.location.search.indexOf('gwt.hybrid') == -1);
+      var query = $wnd_0.location.search;
+      return (query.indexOf('gwt.codesvr=') != -1 || (query.indexOf('gwt.hosted=') != -1 || $wnd_0.external && $wnd_0.external.gwtOnLoad)) && query.indexOf('gwt.hybrid') == -1;
     }
      catch (e) {
     }
@@ -35,13 +36,17 @@ function freenetjs(){
         ;
       }
       freenetjs = null;
-      frameWnd.gwtOnLoad(onLoadErrorFunc, 'freenetjs', base);
-      $stats && $stats({moduleName:'freenetjs', subSystem:'startup', evtGroup:'moduleStartup', millis:(new Date()).getTime(), type:'end'});
+      frameWnd.gwtOnLoad(onLoadErrorFunc, 'freenetjs', base, softPermutationId);
+      $stats && $stats({moduleName:'freenetjs', sessionId:$sessionId_0, subSystem:'startup', evtGroup:'moduleStartup', millis:(new Date).getTime(), type:'end'});
     }
   }
 
   function computeScriptBase(){
     var thisScript, markerId = '__gwt_marker_freenetjs', markerScript;
+    if (metaProps['baseUrl']) {
+      base = metaProps['baseUrl'];
+      return;
+    }
     $doc_0.write('<script id="' + markerId + '"><\/script>');
     markerScript = $doc_0.getElementById(markerId);
     thisScript = markerScript && markerScript.previousSibling;
@@ -89,42 +94,46 @@ function freenetjs(){
   function processMetas(){
     var metas = document.getElementsByTagName('meta');
     for (var i = 0, n = metas.length; i < n; ++i) {
-      var meta = metas[i], name_0 = meta.getAttribute('name'), content;
+      var meta = metas[i], name_0 = meta.getAttribute('name'), content_0;
       if (name_0) {
+        name_0 = name_0.replace('freenetjs::', '');
+        if (name_0.indexOf('::') >= 0) {
+          continue;
+        }
         if (name_0 == 'gwt:property') {
-          content = meta.getAttribute('content');
-          if (content) {
-            var value, eq = content.indexOf('=');
+          content_0 = meta.getAttribute('content');
+          if (content_0) {
+            var value, eq = content_0.indexOf('=');
             if (eq >= 0) {
-              name_0 = content.substring(0, eq);
-              value = content.substring(eq + 1);
+              name_0 = content_0.substring(0, eq);
+              value = content_0.substring(eq + 1);
             }
              else {
-              name_0 = content;
+              name_0 = content_0;
               value = '';
             }
             metaProps[name_0] = value;
           }
         }
          else if (name_0 == 'gwt:onPropertyErrorFn') {
-          content = meta.getAttribute('content');
-          if (content) {
+          content_0 = meta.getAttribute('content');
+          if (content_0) {
             try {
-              propertyErrorFunc = eval(content);
+              propertyErrorFunc = eval(content_0);
             }
              catch (e) {
-              alert('Bad handler "' + content + '" for "gwt:onPropertyErrorFn"');
+              alert('Bad handler "' + content_0 + '" for "gwt:onPropertyErrorFn"');
             }
           }
         }
          else if (name_0 == 'gwt:onLoadErrorFn') {
-          content = meta.getAttribute('content');
-          if (content) {
+          content_0 = meta.getAttribute('content');
+          if (content_0) {
             try {
-              onLoadErrorFunc = eval(content);
+              onLoadErrorFunc = eval(content_0);
             }
              catch (e) {
-              alert('Bad handler "' + content + '" for "gwt:onLoadErrorFn"');
+              alert('Bad handler "' + content_0 + '" for "gwt:onLoadErrorFn"');
             }
           }
         }
@@ -165,8 +174,8 @@ function freenetjs(){
       iframe.style.cssText = 'position:absolute;width:0;height:0;border:none';
       iframe.tabIndex = -1;
       $doc_0.body.appendChild(iframe);
-      $stats && $stats({moduleName:'freenetjs', subSystem:'startup', evtGroup:'moduleStartup', millis:(new Date()).getTime(), type:'moduleRequested'});
-      iframe.contentWindow.location.replace(base + strongName);
+      $stats && $stats({moduleName:'freenetjs', sessionId:$sessionId_0, subSystem:'startup', evtGroup:'moduleStartup', millis:(new Date).getTime(), type:'moduleRequested'});
+      iframe.contentWindow.location.replace(base + initialHtml);
     }
   }
 
@@ -217,30 +226,38 @@ function freenetjs(){
   ;
   freenetjs.onInjectionDone = function(){
     scriptsDone = true;
-    $stats && $stats({moduleName:'freenetjs', subSystem:'startup', evtGroup:'loadExternalRefs', millis:(new Date()).getTime(), type:'end'});
+    $stats && $stats({moduleName:'freenetjs', sessionId:$sessionId_0, subSystem:'startup', evtGroup:'loadExternalRefs', millis:(new Date).getTime(), type:'end'});
     maybeStartModule();
   }
   ;
+  processMetas();
   computeScriptBase();
   var strongName;
+  var initialHtml;
   if (isHostedMode()) {
-    if ($wnd_0.external.initModule && $wnd_0.external.initModule('freenetjs')) {
+    if ($wnd_0.external && ($wnd_0.external.initModule && $wnd_0.external.initModule('freenetjs'))) {
       $wnd_0.location.reload();
       return;
     }
-    strongName = 'hosted.html?freenetjs';
+    initialHtml = 'hosted.html?freenetjs';
+    strongName = '';
   }
-  processMetas();
-  $stats && $stats({moduleName:'freenetjs', subSystem:'startup', evtGroup:'bootstrap', millis:(new Date()).getTime(), type:'selectingPermutation'});
-  if (!strongName) {
+  $stats && $stats({moduleName:'freenetjs', sessionId:$sessionId_0, subSystem:'startup', evtGroup:'bootstrap', millis:(new Date).getTime(), type:'selectingPermutation'});
+  if (!isHostedMode()) {
     try {
-      unflattenKeylistIntoAnswers(['ie6'], '8F6365D0A0F69FD69DA8B476E6E7BE4E.cache.html');
-      unflattenKeylistIntoAnswers(['ie8'], '10BEEB54E22194344293528215DF25E8.cache.html');
-      unflattenKeylistIntoAnswers(['gecko1_8'], '967F9AF5F9B327511CB57548CE45E624.cache.html');
-      unflattenKeylistIntoAnswers(['opera'], '66409E7C7FBDF425876AB1F6DD52A37C.cache.html');
-      unflattenKeylistIntoAnswers(['safari'], 'FFC2605EA6D83D26CE76BC5390E84C1A.cache.html');
-      unflattenKeylistIntoAnswers(['gecko'], '03CB426990AC5D1EC2F580C202C91B17.cache.html');
+      unflattenKeylistIntoAnswers(['gecko'], '02FD258634BAEBA93BCE635BC64A33C2');
+      unflattenKeylistIntoAnswers(['opera'], '16002FEE0BED77264466C9C5521B88EC');
+      unflattenKeylistIntoAnswers(['gecko1_8'], '3921750E657C5330014CB0E151C40A93');
+      unflattenKeylistIntoAnswers(['safari'], '3EC83D340DD8DDD8412F4C4518B1E5D9');
+      unflattenKeylistIntoAnswers(['ie6'], '42D4D383FDE863C15D143D79F6452C41');
+      unflattenKeylistIntoAnswers(['ie8'], '42D4D383FDE863C15D143D79F6452C41');
       strongName = answers[computePropValue('user.agent')];
+      var idx = strongName.indexOf(':');
+      if (idx != -1) {
+        softPermutationId = Number(strongName.substring(idx + 1));
+        strongName = strongName.substring(0, idx);
+      }
+      initialHtml = strongName + '.cache.html';
     }
      catch (e) {
       return;
@@ -274,8 +291,8 @@ function freenetjs(){
     }
   }
   , 50);
-  $stats && $stats({moduleName:'freenetjs', subSystem:'startup', evtGroup:'bootstrap', millis:(new Date()).getTime(), type:'end'});
-  $stats && $stats({moduleName:'freenetjs', subSystem:'startup', evtGroup:'loadExternalRefs', millis:(new Date()).getTime(), type:'begin'});
+  $stats && $stats({moduleName:'freenetjs', sessionId:$sessionId_0, subSystem:'startup', evtGroup:'bootstrap', millis:(new Date).getTime(), type:'end'});
+  $stats && $stats({moduleName:'freenetjs', sessionId:$sessionId_0, subSystem:'startup', evtGroup:'loadExternalRefs', millis:(new Date).getTime(), type:'begin'});
   $doc_0.write('<script defer="defer">freenetjs.onInjectionDone(\'freenetjs\')<\/script>');
 }
 
