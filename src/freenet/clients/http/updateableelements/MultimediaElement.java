@@ -6,6 +6,7 @@ import java.util.LinkedList;
 import freenet.client.filter.HTMLFilter.ParsedTag;
 import freenet.clients.http.FProxyFetchResult;
 import freenet.clients.http.FProxyFetchTracker;
+import freenet.clients.http.FProxyToadlet;
 import freenet.clients.http.ToadletContext;
 import freenet.keys.FreenetURI;
 import freenet.support.Base64;
@@ -37,21 +38,23 @@ public class MultimediaElement extends MediaElement {
 		}
 		HTMLNode node = new HTMLNode("span", "class", "jsonly MultimediaElement");
 		addChild(node);
-		node.addChild(originalNode);
-		node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "fetchedBlocks", String.valueOf(0) });
-		node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "requiredBlocks", String.valueOf(1) });
+		node.addChild(new HTMLNode("img", "src", "/imagecreator/?text=+"+FProxyToadlet.l10n("startmultimedia")));
 		addChild("noscript").addChild(originalNode);
 		init(false);
+		fetchListener.onEvent();
 	}
 
 	@Override
 	protected void subsequentStateDisplay(FProxyFetchResult result,
 			HTMLNode node) {
-		int total = result.requiredBlocks;
-		int fetchedPercent = (int) (result.fetchedBlocks / (double) total * 100);
-		node.addChild(originalNode);
-		node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "fetchedBlocks", String.valueOf(result.fetchedBlocks) });
-		node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "requiredBlocks", String.valueOf(result.requiredBlocks) });
+		if(key == null) node.addChild(originalNode);
+		else {
+			int total = result.requiredBlocks;
+			int fetchedPercent = (int) (result.fetchedBlocks / (double) total * 100);
+			node.addChild(originalNode);
+			node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "fetchedBlocks", String.valueOf(result.fetchedBlocks) });
+			node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "requiredBlocks", String.valueOf(result.requiredBlocks) });
+		}
 	}
 
 	@Override

@@ -4,7 +4,7 @@ var $gwt_version = "2.1.0M2";
 var $wnd = parent;
 var $doc = $wnd.document;
 var $moduleName, $moduleBase;
-var $strongName = '16002FEE0BED77264466C9C5521B88EC';
+var $strongName = '130707CFAD7997CCEE32F34AD9D8E538';
 var $stats = $wnd.__gwtStatsEvent ? function(a) {return $wnd.__gwtStatsEvent(a);} : null,
 $sessionId = $wnd.__gwtStatsSessionId ? $wnd.__gwtStatsSessionId : null;
 $stats && $stats({moduleName:'freenetjs',sessionId:$sessionId,subSystem:'startup',evtGroup:'moduleStartup',millis:(new Date()).getTime(),type:'moduleEvalStart'});
@@ -54,7 +54,7 @@ function $initCause(this$static, cause){
 
 function $setStackTrace(stackTrace){
   var c, copy, i;
-  copy = initDim(_3Ljava_lang_StackTraceElement_2_classLit, 111, 20, stackTrace.length, 0);
+  copy = initDim(_3Ljava_lang_StackTraceElement_2_classLit, 118, 21, stackTrace.length, 0);
   for (i = 0 , c = stackTrace.length; i < c; ++i) {
     if (!stackTrace[i]) {
       throw new NullPointerException_0;
@@ -202,7 +202,7 @@ _.getClass$ = function getClass_6(){
 _.typeId$ = 0;
 function enter(){
   if (entryDepth++ == 0) {
-    $flushEntryCommands(($clinit_10() , INSTANCE));
+    $flushEntryCommands(($clinit_11() , INSTANCE));
     return true;
   }
   return false;
@@ -227,14 +227,14 @@ function entry0(jsFunction, thisObj, arguments_0){
     return jsFunction.apply(thisObj, arguments_0);
   }
    finally {
-    initialEntry && $flushFinallyCommands(($clinit_10() , INSTANCE));
+    initialEntry && $flushFinallyCommands(($clinit_11() , INSTANCE));
     --entryDepth;
   }
 }
 
 var entryDepth = 0, sNextHashId = 0;
-function $clinit_10(){
-  $clinit_10 = nullMethod;
+function $clinit_11(){
+  $clinit_11 = nullMethod;
   INSTANCE = new SchedulerImpl_0;
 }
 
@@ -311,7 +311,7 @@ function splice(arr, length_0){
 function $createStackTrace(e){
   var i, j, stack, stackTrace;
   stack = $inferFrom(instanceOfJso(e.e)?dynamicCastJso(e.e):null);
-  stackTrace = initDim(_3Ljava_lang_StackTraceElement_2_classLit, 111, 20, stack.length, 0);
+  stackTrace = initDim(_3Ljava_lang_StackTraceElement_2_classLit, 118, 21, stack.length, 0);
   for (i = 0 , j = stackTrace.length; i < j; ++i) {
     stackTrace[i] = new StackTraceElement_0(stack[i]);
   }
@@ -321,7 +321,7 @@ function $createStackTrace(e){
 function $fillInStackTrace(){
   var i, j, stack, stackTrace;
   stack = splice($inferFrom($makeException()), 3);
-  stackTrace = initDim(_3Ljava_lang_StackTraceElement_2_classLit, 111, 20, stack.length, 0);
+  stackTrace = initDim(_3Ljava_lang_StackTraceElement_2_classLit, 118, 21, stack.length, 0);
   for (i = 0 , j = stackTrace.length; i < j; ++i) {
     stackTrace[i] = new StackTraceElement_0(stack[i]);
   }
@@ -379,6 +379,17 @@ _.getClass$ = function getClass_9(){
 ;
 _.typeId$ = 0;
 _.string = '';
+function $getPropertyString(this$static, name_0){
+  return this$static[name_0] == null?null:String(this$static[name_0]);
+}
+
+function $getFirstChildElement(elem){
+  var child = elem.firstChild;
+  while (child && child.nodeType != 1)
+    child = child.nextSibling;
+  return child;
+}
+
 function $getParentElement(node){
   var parent_0 = node.parentNode;
   (!parent_0 || parent_0.nodeType != 1) && (parent_0 = null);
@@ -408,8 +419,8 @@ _.toString$ = function toString_3(){
 _.typeId$ = 7;
 _.name_0 = null;
 _.ordinal = 0;
-function $clinit_27(){
-  $clinit_27 = nullMethod;
+function $clinit_28(){
+  $clinit_28 = nullMethod;
   PX = new Style$Unit$1_0;
   PCT = new Style$Unit$2_0;
   EM = new Style$Unit$3_0;
@@ -419,11 +430,11 @@ function $clinit_27(){
   IN = new Style$Unit$7_0;
   CM = new Style$Unit$8_0;
   MM = new Style$Unit$9_0;
-  $VALUES = initValues(_3Lcom_google_gwt_dom_client_Style$Unit_2_classLit, 97, 8, [PX, PCT, EM, EX, PT, PC, IN, CM, MM]);
+  $VALUES = initValues(_3Lcom_google_gwt_dom_client_Style$Unit_2_classLit, 104, 9, [PX, PCT, EM, EX, PT, PC, IN, CM, MM]);
 }
 
 function values_0(){
-  $clinit_27();
+  $clinit_28();
   return $VALUES;
 }
 
@@ -581,7 +592,7 @@ _.source = null;
 function fireNativeEvent(nativeEvent, handlerSource, relativeElem){
   var currentNative, currentRelativeElem, typeKey;
   if (registered) {
-    typeKey = dynamicCast(registered.map[nativeEvent.type], 3);
+    typeKey = dynamicCast(registered.map[nativeEvent.type], 4);
     if (typeKey) {
       currentNative = typeKey.flyweight.nativeEvent;
       currentRelativeElem = typeKey.flyweight.relativeElem;
@@ -599,7 +610,7 @@ function DomEvent(){
 
 _ = DomEvent.prototype = new GwtEvent;
 _.getAssociatedType = function getAssociatedType(){
-  return $clinit_58() , TYPE;
+  return this.getAssociatedType_0();
 }
 ;
 _.getClass$ = function getClass_22(){
@@ -610,6 +621,33 @@ _.typeId$ = 0;
 _.nativeEvent = null;
 _.relativeElem = null;
 var registered = null;
+function $clinit_40(){
+  $clinit_40 = nullMethod;
+  TYPE = new DomEvent$Type_0('click', new ClickEvent_0);
+}
+
+function ClickEvent_0(){
+}
+
+function ClickEvent(){
+}
+
+_ = ClickEvent_0.prototype = ClickEvent.prototype = new DomEvent;
+_.dispatch = function dispatch(handler){
+  dynamicCast(handler, 3);
+  $wnd.alert('Multimedia element clicked');
+}
+;
+_.getAssociatedType_0 = function getAssociatedType_0(){
+  return TYPE;
+}
+;
+_.getClass$ = function getClass_23(){
+  return Lcom_google_gwt_event_dom_client_ClickEvent_2_classLit;
+}
+;
+_.typeId$ = 0;
+var TYPE;
 function GwtEvent$Type_0(){
   this.index_0 = ++nextHashCode;
 }
@@ -618,7 +656,7 @@ function GwtEvent$Type(){
 }
 
 _ = GwtEvent$Type_0.prototype = GwtEvent$Type.prototype = new Object_0;
-_.getClass$ = function getClass_23(){
+_.getClass$ = function getClass_24(){
   return Lcom_google_gwt_event_shared_GwtEvent$Type_2_classLit;
 }
 ;
@@ -633,19 +671,19 @@ _.toString$ = function toString_5(){
 _.typeId$ = 0;
 _.index_0 = 0;
 var nextHashCode = 0;
-function DomEvent$Type_0(flyweight){
+function DomEvent$Type_0(eventName, flyweight){
   this.index_0 = ++nextHashCode;
   this.flyweight = flyweight;
   !registered && (registered = new PrivateMap_0);
-  registered.map['mousedown'] = this;
-  this.name_0 = 'mousedown';
+  registered.map[eventName] = this;
+  this.name_0 = eventName;
 }
 
 function DomEvent$Type(){
 }
 
 _ = DomEvent$Type_0.prototype = DomEvent$Type.prototype = new GwtEvent$Type;
-_.getClass$ = function getClass_24(){
+_.getClass$ = function getClass_25(){
   return Lcom_google_gwt_event_dom_client_DomEvent$Type_2_classLit;
 }
 ;
@@ -656,14 +694,14 @@ function MouseEvent_0(){
 }
 
 _ = MouseEvent_0.prototype = new DomEvent;
-_.getClass$ = function getClass_25(){
+_.getClass$ = function getClass_26(){
   return Lcom_google_gwt_event_dom_client_MouseEvent_2_classLit;
 }
 ;
 _.typeId$ = 0;
-function $clinit_58(){
-  $clinit_58 = nullMethod;
-  TYPE = new DomEvent$Type_0(new MouseDownEvent_0);
+function $clinit_63(){
+  $clinit_63 = nullMethod;
+  TYPE_0 = new DomEvent$Type_0('mousedown', new MouseDownEvent_0);
 }
 
 function MouseDownEvent_0(){
@@ -673,16 +711,20 @@ function MouseDownEvent(){
 }
 
 _ = MouseDownEvent_0.prototype = MouseDownEvent.prototype = new MouseEvent_0;
-_.dispatch = function dispatch(handler){
-  $onMouseDown(dynamicCast(handler, 4));
+_.dispatch = function dispatch_0(handler){
+  $onMouseDown(dynamicCast(handler, 5));
 }
 ;
-_.getClass$ = function getClass_26(){
+_.getAssociatedType_0 = function getAssociatedType_1(){
+  return TYPE_0;
+}
+;
+_.getClass$ = function getClass_27(){
   return Lcom_google_gwt_event_dom_client_MouseDownEvent_2_classLit;
 }
 ;
 _.typeId$ = 0;
-var TYPE;
+var TYPE_0;
 function PrivateMap_0(){
   this.map = {};
 }
@@ -691,7 +733,7 @@ function PrivateMap(){
 }
 
 _ = PrivateMap_0.prototype = PrivateMap.prototype = new Object_0;
-_.getClass$ = function getClass_27(){
+_.getClass$ = function getClass_28(){
   return Lcom_google_gwt_event_dom_client_PrivateMap_2_classLit;
 }
 ;
@@ -702,7 +744,7 @@ function CloseEvent_0(){
 
 function fire(source){
   var event_0;
-  if (TYPE_0) {
+  if (TYPE_1) {
     event_0 = new CloseEvent_0;
     $fireEvent(source, event_0);
   }
@@ -712,20 +754,20 @@ function CloseEvent(){
 }
 
 _ = CloseEvent_0.prototype = CloseEvent.prototype = new GwtEvent;
-_.dispatch = function dispatch_0(handler){
-  dynamicCast(handler, 5).onClose(this);
+_.dispatch = function dispatch_1(handler){
+  dynamicCast(handler, 6).onClose(this);
 }
 ;
-_.getAssociatedType = function getAssociatedType_0(){
-  return TYPE_0;
+_.getAssociatedType = function getAssociatedType_2(){
+  return TYPE_1;
 }
 ;
-_.getClass$ = function getClass_28(){
+_.getClass$ = function getClass_29(){
   return Lcom_google_gwt_event_logical_shared_CloseEvent_2_classLit;
 }
 ;
 _.typeId$ = 0;
-var TYPE_0 = null;
+var TYPE_1 = null;
 function DefaultHandlerRegistration_0(){
 }
 
@@ -733,7 +775,7 @@ function DefaultHandlerRegistration(){
 }
 
 _ = DefaultHandlerRegistration_0.prototype = DefaultHandlerRegistration.prototype = new Object_0;
-_.getClass$ = function getClass_29(){
+_.getClass$ = function getClass_30(){
   return Lcom_google_gwt_event_shared_DefaultHandlerRegistration_2_classLit;
 }
 ;
@@ -769,7 +811,7 @@ function $handleQueuedAddsAndRemoves(this$static){
   if (this$static.deferredDeltas) {
     try {
       for (c$iterator = new AbstractList$IteratorImpl_0(this$static.deferredDeltas); c$iterator.i < c$iterator.this$0.size_0();) {
-        c = dynamicCast($next_2(c$iterator), 6);
+        c = dynamicCast($next_3(c$iterator), 7);
         $addHandler_0(c.this$0.registry, c.val$type, c.val$handler);
       }
     }
@@ -789,7 +831,7 @@ function HandlerManager(){
 }
 
 _ = HandlerManager_0.prototype = HandlerManager.prototype = new Object_0;
-_.getClass$ = function getClass_30(){
+_.getClass$ = function getClass_31(){
   return Lcom_google_gwt_event_shared_HandlerManager_2_classLit;
 }
 ;
@@ -809,7 +851,7 @@ function HandlerManager$1(){
 }
 
 _ = HandlerManager$1_0.prototype = HandlerManager$1.prototype = new Object_0;
-_.getClass$ = function getClass_31(){
+_.getClass$ = function getClass_32(){
   return Lcom_google_gwt_event_shared_HandlerManager$1_2_classLit;
 }
 ;
@@ -819,7 +861,7 @@ _.val$handler = null;
 _.val$type = null;
 function $addHandler_0(this$static, type, handler){
   var l_0;
-  l_0 = dynamicCast($get_2(this$static.map, type), 7);
+  l_0 = dynamicCast($get_2(this$static.map, type), 8);
   if (!l_0) {
     l_0 = new ArrayList_0;
     $put(this$static.map, type, l_0);
@@ -830,17 +872,17 @@ function $addHandler_0(this$static, type, handler){
 function $fireEvent_0(this$static, event_0, isReverseOrder){
   var $e0, causes, count, e, handler, i, type, l_0, l_1, old, l_2, old_0;
   type = event_0.getAssociatedType();
-  count = (l_0 = dynamicCast($get_2(this$static.map, type), 7) , !l_0?0:l_0.size);
+  count = (l_0 = dynamicCast($get_2(this$static.map, type), 8) , !l_0?0:l_0.size);
   causes = null;
   if (isReverseOrder) {
     for (i = count - 1; i >= 0; --i) {
-      handler = (l_1 = dynamicCast($get_2(this$static.map, type), 7) , dynamicCast((checkIndex(i, l_1.size) , l_1.array[i]), 22));
+      handler = (l_1 = dynamicCast($get_2(this$static.map, type), 8) , dynamicCast((checkIndex(i, l_1.size) , l_1.array[i]), 23));
       try {
         event_0.dispatch(handler);
       }
        catch ($e0) {
         $e0 = caught_0($e0);
-        if (instanceOf($e0, 21)) {
+        if (instanceOf($e0, 22)) {
           e = $e0;
           !causes && (causes = new HashSet_0);
           old = $put(causes.map, e, causes);
@@ -852,13 +894,13 @@ function $fireEvent_0(this$static, event_0, isReverseOrder){
   }
    else {
     for (i = 0; i < count; ++i) {
-      handler = (l_2 = dynamicCast($get_2(this$static.map, type), 7) , dynamicCast((checkIndex(i, l_2.size) , l_2.array[i]), 22));
+      handler = (l_2 = dynamicCast($get_2(this$static.map, type), 8) , dynamicCast((checkIndex(i, l_2.size) , l_2.array[i]), 23));
       try {
         event_0.dispatch(handler);
       }
        catch ($e0) {
         $e0 = caught_0($e0);
-        if (instanceOf($e0, 21)) {
+        if (instanceOf($e0, 22)) {
           e = $e0;
           !causes && (causes = new HashSet_0);
           old_0 = $put(causes.map, e, causes);
@@ -881,20 +923,20 @@ function HandlerManager$HandlerRegistry(){
 }
 
 _ = HandlerManager$HandlerRegistry_0.prototype = HandlerManager$HandlerRegistry.prototype = new Object_0;
-_.getClass$ = function getClass_32(){
+_.getClass$ = function getClass_33(){
   return Lcom_google_gwt_event_shared_HandlerManager$HandlerRegistry_2_classLit;
 }
 ;
 _.typeId$ = 0;
 function UmbrellaException_0(causes){
-  RuntimeException_2.call(this, causes.map.size == 0?null:dynamicCast($toArray(causes, initDim(_3Ljava_lang_Throwable_2_classLit, 113, 21, 0, 0)), 23)[0]);
+  RuntimeException_2.call(this, causes.map.size == 0?null:dynamicCast($toArray(causes, initDim(_3Ljava_lang_Throwable_2_classLit, 120, 22, 0, 0)), 24)[0]);
 }
 
 function UmbrellaException(){
 }
 
 _ = UmbrellaException_0.prototype = UmbrellaException.prototype = new RuntimeException;
-_.getClass$ = function getClass_33(){
+_.getClass$ = function getClass_34(){
   return Lcom_google_gwt_event_shared_UmbrellaException_2_classLit;
 }
 ;
@@ -989,7 +1031,7 @@ function Request(){
 }
 
 _ = Request_0.prototype = Request.prototype = new Object_0;
-_.getClass$ = function getClass_34(){
+_.getClass$ = function getClass_35(){
   return Lcom_google_gwt_http_client_Request_2_classLit;
 }
 ;
@@ -1001,7 +1043,7 @@ function Response(){
 }
 
 _ = Response.prototype = new Object_0;
-_.getClass$ = function getClass_35(){
+_.getClass$ = function getClass_36(){
   return Lcom_google_gwt_http_client_Response_2_classLit;
 }
 ;
@@ -1014,21 +1056,21 @@ function Request$1(){
 }
 
 _ = Request$1_0.prototype = Request$1.prototype = new Response;
-_.getClass$ = function getClass_36(){
+_.getClass$ = function getClass_37(){
   return Lcom_google_gwt_http_client_Request$1_2_classLit;
 }
 ;
 _.typeId$ = 0;
 _.val$xmlHttpRequest = null;
-function $clinit_78(){
-  $clinit_78 = nullMethod;
+function $clinit_83(){
+  $clinit_83 = nullMethod;
   timers = new ArrayList_0;
   addCloseHandler(new Timer$1_0);
 }
 
 function $cancel_0(this$static){
   this$static.isRepeating?($wnd.clearInterval(this$static.timerId) , undefined):($wnd.clearTimeout(this$static.timerId) , undefined);
-  $remove_5(timers, this$static);
+  $remove_6(timers, this$static);
 }
 
 function $schedule(this$static, delayMillis){
@@ -1036,7 +1078,7 @@ function $schedule(this$static, delayMillis){
     throw new IllegalArgumentException_1('must be positive');
   }
   this$static.isRepeating?($wnd.clearInterval(this$static.timerId) , undefined):($wnd.clearTimeout(this$static.timerId) , undefined);
-  $remove_5(timers, this$static);
+  $remove_6(timers, this$static);
   this$static.isRepeating = false;
   this$static.timerId = createTimeout(this$static, delayMillis);
   $add_4(timers, this$static);
@@ -1047,7 +1089,7 @@ function $scheduleRepeating(this$static, periodMillis){
     throw new IllegalArgumentException_1('must be positive');
   }
   this$static.isRepeating?($wnd.clearInterval(this$static.timerId) , undefined):($wnd.clearTimeout(this$static.timerId) , undefined);
-  $remove_5(timers, this$static);
+  $remove_6(timers, this$static);
   this$static.isRepeating = true;
   this$static.timerId = createInterval(this$static, periodMillis);
   $add_4(timers, this$static);
@@ -1072,11 +1114,11 @@ function Timer(){
 
 _ = Timer.prototype = new Object_0;
 _.fire = function fire_0(){
-  this.isRepeating || $remove_5(timers, this);
+  this.isRepeating || $remove_6(timers, this);
   this.run();
 }
 ;
-_.getClass$ = function getClass_37(){
+_.getClass$ = function getClass_38(){
   return Lcom_google_gwt_user_client_Timer_2_classLit;
 }
 ;
@@ -1085,7 +1127,7 @@ _.isRepeating = false;
 _.timerId = 0;
 var timers;
 function Request$3_0(this$0, val$callback){
-  $clinit_78();
+  $clinit_83();
   this.this$0 = this$0;
   this.val$callback = val$callback;
 }
@@ -1094,7 +1136,7 @@ function Request$3(){
 }
 
 _ = Request$3_0.prototype = Request$3.prototype = new Timer;
-_.getClass$ = function getClass_38(){
+_.getClass$ = function getClass_39(){
   return Lcom_google_gwt_http_client_Request$3_2_classLit;
 }
 ;
@@ -1105,8 +1147,8 @@ _.run = function run(){
 _.typeId$ = 22;
 _.this$0 = null;
 _.val$callback = null;
-function $clinit_80(){
-  $clinit_80 = nullMethod;
+function $clinit_85(){
+  $clinit_85 = nullMethod;
   new RequestBuilder$Method_0('DELETE');
   GET = new RequestBuilder$Method_0('GET');
   new RequestBuilder$Method_0('HEAD');
@@ -1122,7 +1164,7 @@ function $doSend(this$static, callback){
   }
    catch ($e0) {
     $e0 = caught_0($e0);
-    if (instanceOf($e0, 24)) {
+    if (instanceOf($e0, 25)) {
       e = $e0;
       requestPermissionException = new RequestPermissionException_0(this$static.url);
       $initCause(requestPermissionException, new RequestException_0(e.getMessage()));
@@ -1139,7 +1181,7 @@ function $doSend(this$static, callback){
   }
    catch ($e0) {
     $e0 = caught_0($e0);
-    if (instanceOf($e0, 24)) {
+    if (instanceOf($e0, 25)) {
       e = $e0;
       throw new RequestException_0(e.getMessage());
     }
@@ -1154,8 +1196,10 @@ function $sendRequest(this$static, callback){
   return $doSend(this$static, callback);
 }
 
+--></script>
+<script><!--
 function RequestBuilder_0(httpMethod, url){
-  $clinit_80();
+  $clinit_85();
   RequestBuilder_1.call(this, !httpMethod?null:httpMethod.name_0, url);
 }
 
@@ -1170,7 +1214,7 @@ function RequestBuilder(){
 }
 
 _ = RequestBuilder_0.prototype = RequestBuilder.prototype = new Object_0;
-_.getClass$ = function getClass_39(){
+_.getClass$ = function getClass_40(){
   return Lcom_google_gwt_http_client_RequestBuilder_2_classLit;
 }
 ;
@@ -1188,9 +1232,7 @@ function RequestBuilder$1(){
 }
 
 _ = RequestBuilder$1_0.prototype = RequestBuilder$1.prototype = new Object_0;
---></script>
-<script><!--
-_.getClass$ = function getClass_40(){
+_.getClass$ = function getClass_41(){
   return Lcom_google_gwt_http_client_RequestBuilder$1_2_classLit;
 }
 ;
@@ -1212,7 +1254,7 @@ function RequestBuilder$Method(){
 }
 
 _ = RequestBuilder$Method_0.prototype = RequestBuilder$Method.prototype = new Object_0;
-_.getClass$ = function getClass_41(){
+_.getClass$ = function getClass_42(){
   return Lcom_google_gwt_http_client_RequestBuilder$Method_2_classLit;
 }
 ;
@@ -1231,7 +1273,7 @@ function RequestException(){
 }
 
 _ = RequestException_0.prototype = RequestException.prototype = new Exception;
-_.getClass$ = function getClass_42(){
+_.getClass$ = function getClass_43(){
   return Lcom_google_gwt_http_client_RequestException_2_classLit;
 }
 ;
@@ -1245,7 +1287,7 @@ function RequestPermissionException(){
 }
 
 _ = RequestPermissionException_0.prototype = RequestPermissionException.prototype = new RequestException;
-_.getClass$ = function getClass_43(){
+_.getClass$ = function getClass_44(){
   return Lcom_google_gwt_http_client_RequestPermissionException_2_classLit;
 }
 ;
@@ -1259,7 +1301,7 @@ function RequestTimeoutException(){
 }
 
 _ = RequestTimeoutException_0.prototype = RequestTimeoutException.prototype = new RequestException;
-_.getClass$ = function getClass_44(){
+_.getClass$ = function getClass_45(){
   return Lcom_google_gwt_http_client_RequestTimeoutException_2_classLit;
 }
 ;
@@ -1277,8 +1319,8 @@ function throwIfNull(name_0, value){
   }
 }
 
-function $clinit_89(){
-  $clinit_89 = nullMethod;
+function $clinit_94(){
+  $clinit_94 = nullMethod;
   cache = new HashMap_0;
 }
 
@@ -1316,9 +1358,9 @@ function Dictionary_0(){
 }
 
 function getDictionary(){
-  $clinit_89();
+  $clinit_94();
   var target;
-  target = dynamicCast($get_2(cache, 'l10n'), 25);
+  target = dynamicCast($get_2(cache, 'l10n'), 26);
   if (!target) {
     target = new Dictionary_0;
     $put(cache, 'l10n', target);
@@ -1334,7 +1376,7 @@ function Dictionary(){
 }
 
 _ = Dictionary_0.prototype = Dictionary.prototype = new Object_0;
-_.getClass$ = function getClass_45(){
+_.getClass$ = function getClass_46(){
   return Lcom_google_gwt_i18n_client_Dictionary_2_classLit;
 }
 ;
@@ -1391,7 +1433,7 @@ function createFromSeed(seedType, length_0){
 function initDim(arrayClass, typeId, queryId, length_0, seedType){
   var result;
   result = createFromSeed(seedType, length_0);
-  $clinit_92();
+  $clinit_97();
   wrapArray(result, expandoNames_0, expandoValues_0);
   result.arrayClass$ = arrayClass;
   result.typeId$ = typeId;
@@ -1400,7 +1442,7 @@ function initDim(arrayClass, typeId, queryId, length_0, seedType){
 }
 
 function initValues(arrayClass, typeId, queryId, array){
-  $clinit_92();
+  $clinit_97();
   wrapArray(array, expandoNames_0, expandoValues_0);
   array.arrayClass$ = arrayClass;
   array.typeId$ = typeId;
@@ -1424,7 +1466,7 @@ function Array_0(){
 }
 
 _ = Array_1.prototype = Array_0.prototype = new Object_0;
-_.getClass$ = function getClass_46(){
+_.getClass$ = function getClass_47(){
   return this.arrayClass$;
 }
 ;
@@ -1432,8 +1474,8 @@ _.typeId$ = 0;
 _.arrayClass$ = null;
 _.length = 0;
 _.queryId$ = 0;
-function $clinit_92(){
-  $clinit_92 = nullMethod;
+function $clinit_97(){
+  $clinit_97 = nullMethod;
   expandoNames_0 = [];
   expandoValues_0 = [];
   initExpandos(new Array_1, expandoNames_0, expandoValues_0);
@@ -1451,7 +1493,7 @@ function initExpandos(protoType, expandoNames, expandoValues){
 }
 
 function wrapArray(array, expandoNames, expandoValues){
-  $clinit_92();
+  $clinit_97();
   for (var i = 0, c = expandoNames.length; i < c; ++i) {
     array[expandoNames[i]] = expandoValues[i];
   }
@@ -1499,7 +1541,7 @@ function throwClassCastExceptionUnlessNull(o){
   return null;
 }
 
-var typeIdArray = [{}, {}, {1:1, 16:1, 17:1, 18:1}, {16:1, 21:1}, {16:1, 21:1, 29:1}, {2:1, 16:1, 21:1, 29:1}, {2:1, 16:1, 21:1, 24:1, 29:1}, {16:1, 18:1, 19:1}, {8:1, 16:1, 18:1, 19:1}, {8:1, 16:1, 18:1, 19:1}, {8:1, 16:1, 18:1, 19:1}, {8:1, 16:1, 18:1, 19:1}, {8:1, 16:1, 18:1, 19:1}, {8:1, 16:1, 18:1, 19:1}, {8:1, 16:1, 18:1, 19:1}, {8:1, 16:1, 18:1, 19:1}, {8:1, 16:1, 18:1, 19:1}, {8:1, 16:1, 18:1, 19:1}, {3:1}, {6:1}, {2:1, 16:1, 21:1, 29:1}, {26:1}, {26:1}, {16:1, 21:1, 29:1, 31:1}, {16:1, 21:1, 29:1, 31:1}, {16:1, 21:1, 29:1, 31:1}, {25:1}, {10:1}, {5:1, 22:1}, {9:1}, {12:1}, {9:1, 11:1, 12:1, 13:1}, {9:1, 11:1, 12:1, 13:1}, {9:1, 11:1, 12:1, 13:1}, {9:1, 11:1, 12:1, 13:1}, {9:1, 11:1, 12:1, 13:1}, {9:1, 11:1, 12:1, 13:1}, {2:1, 16:1, 21:1, 29:1}, {9:1, 11:1, 12:1, 13:1}, {9:1, 11:1, 12:1, 13:1}, {9:1, 11:1, 12:1, 13:1}, {9:1, 11:1, 12:1, 13:1, 28:1}, {5:1, 22:1}, {9:1, 11:1, 12:1, 13:1, 28:1}, {9:1, 11:1, 12:1, 13:1}, {22:1, 27:1}, {26:1}, {26:1}, {26:1}, {26:1}, {26:1}, {26:1}, {30:1}, {4:1, 22:1}, {14:1, 16:1, 18:1, 19:1}, {15:1}, {32:1}, {32:1}, {32:1}, {32:1}, {32:1}, {2:1, 16:1, 21:1, 29:1}, {2:1, 16:1, 21:1, 29:1}, {16:1, 21:1}, {16:1, 21:1}, {16:1, 18:1, 34:1}, {2:1, 16:1, 21:1, 29:1}, {2:1, 16:1, 21:1, 29:1}, {2:1, 16:1, 21:1, 29:1}, {2:1, 16:1, 21:1, 29:1}, {2:1, 16:1, 21:1, 29:1}, {2:1, 16:1, 21:1, 29:1, 33:1}, {16:1, 20:1}, {17:1}, {17:1}, {2:1, 16:1, 21:1, 29:1}, {37:1}, {37:1}, {38:1}, {38:1}, {35:1}, {35:1}, {35:1}, {36:1}, {38:1}, {7:1, 16:1, 36:1}, {16:1, 36:1}, {37:1}, {38:1}, {38:1}, {35:1}, {16:1, 37:1}, {16:1, 38:1}, {35:1}, {2:1, 16:1, 21:1, 29:1}, {2:1, 16:1, 21:1, 29:1}, {16:1}, {16:1}, {16:1}, {16:1}, {16:1}, {16:1}, {16:1}, {16:1}, {16:1}, {16:1}, {16:1}, {16:1}, {16:1}, {16:1}, {16:1}, {16:1}, {16:1}, {16:1, 23:1}, {16:1}];
+var typeIdArray = [{}, {}, {1:1, 17:1, 18:1, 19:1}, {17:1, 22:1}, {17:1, 22:1, 31:1}, {2:1, 17:1, 22:1, 31:1}, {2:1, 17:1, 22:1, 25:1, 31:1}, {17:1, 19:1, 20:1}, {9:1, 17:1, 19:1, 20:1}, {9:1, 17:1, 19:1, 20:1}, {9:1, 17:1, 19:1, 20:1}, {9:1, 17:1, 19:1, 20:1}, {9:1, 17:1, 19:1, 20:1}, {9:1, 17:1, 19:1, 20:1}, {9:1, 17:1, 19:1, 20:1}, {9:1, 17:1, 19:1, 20:1}, {9:1, 17:1, 19:1, 20:1}, {9:1, 17:1, 19:1, 20:1}, {4:1}, {7:1}, {2:1, 17:1, 22:1, 31:1}, {28:1}, {28:1}, {17:1, 22:1, 31:1, 33:1}, {17:1, 22:1, 31:1, 33:1}, {17:1, 22:1, 31:1, 33:1}, {26:1}, {11:1}, {2:1, 17:1, 22:1, 31:1}, {28:1}, {28:1}, {6:1, 23:1}, {10:1}, {13:1}, {10:1, 12:1, 13:1, 14:1}, {10:1, 12:1, 13:1, 14:1}, {10:1, 12:1, 13:1, 14:1}, {10:1, 12:1, 13:1, 14:1}, {10:1, 12:1, 13:1, 14:1}, {10:1, 12:1, 13:1, 14:1}, {2:1, 17:1, 22:1, 31:1}, {10:1, 12:1, 13:1, 14:1}, {10:1, 12:1, 13:1, 14:1}, {10:1, 12:1, 13:1, 14:1}, {27:1}, {10:1, 12:1, 13:1, 14:1}, {10:1, 12:1, 13:1, 14:1, 30:1}, {6:1, 23:1}, {10:1, 12:1, 13:1, 14:1, 30:1}, {10:1, 12:1, 13:1, 14:1}, {23:1, 29:1}, {28:1}, {28:1}, {28:1}, {28:1}, {28:1}, {28:1}, {32:1}, {5:1, 23:1}, {15:1, 17:1, 19:1, 20:1}, {16:1}, {34:1}, {34:1}, {34:1}, {34:1}, {3:1, 23:1}, {34:1}, {34:1}, {2:1, 17:1, 22:1, 31:1}, {2:1, 17:1, 22:1, 31:1}, {17:1, 22:1}, {17:1, 22:1}, {17:1, 19:1, 36:1}, {2:1, 17:1, 22:1, 31:1}, {2:1, 17:1, 22:1, 31:1}, {2:1, 17:1, 22:1, 31:1}, {2:1, 17:1, 22:1, 31:1}, {2:1, 17:1, 22:1, 31:1}, {2:1, 17:1, 22:1, 31:1, 35:1}, {17:1, 21:1}, {18:1}, {18:1}, {2:1, 17:1, 22:1, 31:1}, {39:1}, {39:1}, {40:1}, {40:1}, {37:1}, {37:1}, {37:1}, {38:1}, {40:1}, {8:1, 17:1, 38:1}, {17:1, 38:1}, {39:1}, {40:1}, {40:1}, {37:1}, {17:1, 39:1}, {17:1, 40:1}, {37:1}, {2:1, 17:1, 22:1, 31:1}, {2:1, 17:1, 22:1, 31:1}, {17:1}, {17:1}, {17:1}, {17:1}, {17:1}, {17:1}, {17:1}, {17:1}, {17:1}, {17:1}, {17:1}, {17:1}, {17:1}, {17:1}, {17:1}, {17:1}, {17:1}, {17:1, 24:1}, {17:1}];
 function init(){
   !!$stats && $stats({moduleName:$moduleName, sessionId:$sessionId, subSystem:'startup', evtGroup:'moduleStartup', millis:(new Date).getTime(), type:'onModuleLoadStart', className:'freenet.client.FreenetJs'});
   addWindowClosingHandler(new FreenetJs$1_0);
@@ -1515,7 +1557,7 @@ function init(){
 }
 
 function caught_0(e){
-  if (e != null && canCast(e.typeId$, 21)) {
+  if (e != null && canCast(e.typeId$, 22)) {
     return e;
   }
   return new JavaScriptException_0(e);
@@ -1528,7 +1570,7 @@ function LongEmul(){
 }
 
 _ = LongEmul_0.prototype = LongEmul.prototype = new Object_0;
-_.getClass$ = function getClass_47(){
+_.getClass$ = function getClass_48(){
   return Lcom_google_gwt_lang_LongEmul_2_classLit;
 }
 ;
@@ -1574,7 +1616,7 @@ function divMod(a_0, b, computeRemainder){
     aIsMinValue = true;
     aIsNegative = true;
     if (bpower == -1) {
-      a_0 = create_0(($clinit_100() , MAX_VALUE));
+      a_0 = create_0(($clinit_105() , MAX_VALUE));
       aIsCopy = true;
       negative = !negative;
     }
@@ -1604,7 +1646,7 @@ function divMod(a_0, b, computeRemainder){
 function divModByMinValue(a_0, computeRemainder){
   if (a_0.h == 524288 && a_0.m == 0 && a_0.l == 0) {
     computeRemainder && (remainder = create0(0, 0, 0));
-    return create_0(($clinit_100() , ONE));
+    return create_0(($clinit_105() , ONE));
   }
   computeRemainder && (remainder = create0(a_0.l, a_0.m, a_0.h));
   return create0(0, 0, 0);
@@ -1646,7 +1688,7 @@ function divModHelper(a_0, b, negative, aIsNegative, aIsMinValue, computeRemaind
   if (computeRemainder) {
     if (aIsNegative) {
       remainder = neg(a_0);
-      aIsMinValue && (remainder = sub(remainder, ($clinit_100() , ONE)));
+      aIsMinValue && (remainder = sub(remainder, ($clinit_105() , ONE)));
     }
      else {
       remainder = create0(a_0.l, a_0.m, a_0.h);
@@ -1755,13 +1797,13 @@ function add(a_0, b){
 function fromDouble(value){
   var a0, a1, a2, negative, result;
   if (isNaN(value)) {
-    return $clinit_100() , ZERO;
+    return $clinit_105() , ZERO;
   }
   if (value < -9223372036854775808) {
-    return $clinit_100() , MIN_VALUE;
+    return $clinit_105() , MIN_VALUE;
   }
   if (value >= 9223372036854775807) {
-    return $clinit_100() , MAX_VALUE;
+    return $clinit_105() , MAX_VALUE;
   }
   negative = false;
   if (value < 0) {
@@ -1788,7 +1830,7 @@ function fromInt(value){
   var rebase, result;
   if (value > -129 && value < 128) {
     rebase = value + 128;
-    boxedValues == null && (boxedValues = initDim(_3Lcom_google_gwt_lang_LongEmul_2_classLit, 99, 10, 256, 0));
+    boxedValues == null && (boxedValues = initDim(_3Lcom_google_gwt_lang_LongEmul_2_classLit, 106, 11, 256, 0));
     result = boxedValues[rebase];
     !result && (result = boxedValues[rebase] = create(value));
     return result;
@@ -1957,8 +1999,8 @@ function toString_8(a_0){
 }
 
 var boxedValues = null;
-function $clinit_100(){
-  $clinit_100 = nullMethod;
+function $clinit_105(){
+  $clinit_105 = nullMethod;
   MAX_VALUE = (a = new LongEmul_0 , a.l = 4194303 , a.m = 4194303 , a.h = 524287 , a);
   MIN_VALUE = (a = new LongEmul_0 , a.l = 0 , a.m = 0 , a.h = 524288 , a);
   ONE = fromInt(1);
@@ -1967,6 +2009,188 @@ function $clinit_100(){
 }
 
 var MAX_VALUE, MIN_VALUE, ONE, ZERO;
+function CommandCanceledException_0(){
+  $fillInStackTrace();
+}
+
+function CommandCanceledException(){
+}
+
+_ = CommandCanceledException_0.prototype = CommandCanceledException.prototype = new RuntimeException;
+_.getClass$ = function getClass_49(){
+  return Lcom_google_gwt_user_client_CommandCanceledException_2_classLit;
+}
+;
+_.typeId$ = 28;
+function $doCommandCanceled(this$static){
+  var cmd;
+  cmd = $getLast(this$static.iterator);
+  $remove(this$static.iterator);
+  cmd != null && canCast(cmd.typeId$, 27) && new CommandCanceledException_0(dynamicCast(cmd, 27));
+  this$static.executing = false;
+  $maybeStartExecutionTimer(this$static);
+}
+
+function $doExecuteCommands(this$static, startTimeMillis){
+  var command, element, wasCanceled, evt, evt_0;
+  wasCanceled = false;
+  try {
+    this$static.executing = true;
+    this$static.iterator.end = this$static.commands.size;
+    $schedule(this$static.cancellationTimer, 10000);
+    while ($hasNext(this$static.iterator)) {
+      element = $next(this$static.iterator);
+      try {
+        if (element == null) {
+          return;
+        }
+        if (element != null && canCast(element.typeId$, 27)) {
+          command = dynamicCast(element, 27);
+          evt = (evt_0 = $doc.createEvent('HTMLEvents') , evt_0.initEvent('load', false, false) , evt_0);
+          command.val$image.element.dispatchEvent(evt);
+        }
+      }
+       finally {
+        wasCanceled = this$static.iterator.last == -1;
+        if (wasCanceled) {
+          return;
+        }
+        $remove(this$static.iterator);
+      }
+      if ((new Date).getTime() - startTimeMillis >= 100) {
+        return;
+      }
+    }
+  }
+   finally {
+    if (!wasCanceled) {
+      $cancel_0(this$static.cancellationTimer);
+      this$static.executing = false;
+      $maybeStartExecutionTimer(this$static);
+    }
+  }
+}
+
+function $maybeStartExecutionTimer(this$static){
+  if (this$static.commands.size != 0 && !this$static.executionTimerPending && !this$static.executing) {
+    this$static.executionTimerPending = true;
+    $schedule(this$static.executionTimer, 1);
+  }
+}
+
+function $submit(this$static, command){
+  $add_4(this$static.commands, command);
+  $maybeStartExecutionTimer(this$static);
+}
+
+function CommandExecutor_0(){
+  this.cancellationTimer = new CommandExecutor$1_0(this);
+  this.commands = new ArrayList_0;
+  this.executionTimer = new CommandExecutor$2_0(this);
+  this.iterator = new CommandExecutor$CircularIterator_0(this);
+}
+
+function CommandExecutor(){
+}
+
+_ = CommandExecutor_0.prototype = CommandExecutor.prototype = new Object_0;
+_.getClass$ = function getClass_50(){
+  return Lcom_google_gwt_user_client_CommandExecutor_2_classLit;
+}
+;
+_.typeId$ = 0;
+_.executing = false;
+_.executionTimerPending = false;
+function CommandExecutor$1_0(this$0){
+  $clinit_83();
+  this.this$0 = this$0;
+}
+
+function CommandExecutor$1(){
+}
+
+_ = CommandExecutor$1_0.prototype = CommandExecutor$1.prototype = new Timer;
+_.getClass$ = function getClass_51(){
+  return Lcom_google_gwt_user_client_CommandExecutor$1_2_classLit;
+}
+;
+_.run = function run_0(){
+  if (!this.this$0.executing) {
+    return;
+  }
+  $doCommandCanceled(this.this$0);
+}
+;
+_.typeId$ = 29;
+_.this$0 = null;
+function CommandExecutor$2_0(this$0){
+  $clinit_83();
+  this.this$0 = this$0;
+}
+
+function CommandExecutor$2(){
+}
+
+_ = CommandExecutor$2_0.prototype = CommandExecutor$2.prototype = new Timer;
+_.getClass$ = function getClass_52(){
+  return Lcom_google_gwt_user_client_CommandExecutor$2_2_classLit;
+}
+;
+_.run = function run_1(){
+  this.this$0.executionTimerPending = false;
+  $doExecuteCommands(this.this$0, (new Date).getTime());
+}
+;
+_.typeId$ = 30;
+_.this$0 = null;
+function $getLast(this$static){
+  return $get_3(this$static.this$0.commands, this$static.last);
+}
+
+function $hasNext(this$static){
+  return this$static.next < this$static.end;
+}
+
+function $next(this$static){
+  var command;
+  this$static.last = this$static.next;
+  command = $get_3(this$static.this$0.commands, this$static.next++);
+  this$static.next >= this$static.end && (this$static.next = 0);
+  return command;
+}
+
+function $remove(this$static){
+  $remove_5(this$static.this$0.commands, this$static.last);
+  --this$static.end;
+  this$static.last <= this$static.next && --this$static.next < 0 && (this$static.next = 0);
+  this$static.last = -1;
+}
+
+function CommandExecutor$CircularIterator_0(this$0){
+  this.this$0 = this$0;
+}
+
+function CommandExecutor$CircularIterator(){
+}
+
+_ = CommandExecutor$CircularIterator_0.prototype = CommandExecutor$CircularIterator.prototype = new Object_0;
+_.getClass$ = function getClass_53(){
+  return Lcom_google_gwt_user_client_CommandExecutor$CircularIterator_2_classLit;
+}
+;
+_.hasNext = function hasNext(){
+  return this.next < this.end;
+}
+;
+_.next_0 = function next_0(){
+  return $next(this);
+}
+;
+_.typeId$ = 0;
+_.end = 0;
+_.last = -1;
+_.next = 0;
+_.this$0 = null;
 function ensureCookies(){
   var newCachedCookies;
   if (!cachedCookies || needsRefresh()) {
@@ -2047,30 +2271,24 @@ function dispatchEvent_1(evt, elem, listener){
 
 function sinkEvents(elem, eventBits){
   $maybeInitializeEventSystem();
-  elem.__eventBits = eventBits;
-  elem.onclick = eventBits & 1?dispatchEvent_2:null;
-  elem.ondblclick = eventBits & 2?dispatchEvent_2:null;
-  elem.onmousedown = eventBits & 4?dispatchEvent_2:null;
-  elem.onmouseup = eventBits & 8?dispatchEvent_2:null;
-  elem.onmouseover = eventBits & 16?dispatchEvent_2:null;
-  elem.onmouseout = eventBits & 32?dispatchEvent_2:null;
-  elem.onmousemove = eventBits & 64?dispatchEvent_2:null;
-  elem.onkeydown = eventBits & 128?dispatchEvent_2:null;
-  elem.onkeypress = eventBits & 256?dispatchEvent_2:null;
-  elem.onkeyup = eventBits & 512?dispatchEvent_2:null;
-  elem.onchange = eventBits & 1024?dispatchEvent_2:null;
-  elem.onfocus = eventBits & 2048?dispatchEvent_2:null;
-  elem.onblur = eventBits & 4096?dispatchEvent_2:null;
-  elem.onlosecapture = eventBits & 8192?dispatchEvent_2:null;
-  elem.onscroll = eventBits & 16384?dispatchEvent_2:null;
-  elem.onload = eventBits & 32768?dispatchUnhandledEvent_0:null;
-  elem.onerror = eventBits & 65536?dispatchEvent_2:null;
-  elem.onmousewheel = eventBits & 131072?dispatchEvent_2:null;
-  elem.oncontextmenu = eventBits & 262144?dispatchEvent_2:null;
-  elem.onpaste = eventBits & 524288?dispatchEvent_2:null;
+  $sinkEventsImpl(elem, eventBits);
 }
 
 var currentEvent = null, sCaptureElem = null;
+function $clinit_116(){
+  $clinit_116 = nullMethod;
+  commandExecutor = new CommandExecutor_0;
+}
+
+function addCommand(cmd){
+  $clinit_116();
+  if (!cmd) {
+    throw new NullPointerException_1('cmd cannot be null');
+  }
+  $submit(commandExecutor, cmd);
+}
+
+var commandExecutor;
 function Timer$1_0(){
 }
 
@@ -2078,20 +2296,22 @@ function Timer$1(){
 }
 
 _ = Timer$1_0.prototype = Timer$1.prototype = new Object_0;
-_.getClass$ = function getClass_48(){
+_.getClass$ = function getClass_54(){
   return Lcom_google_gwt_user_client_Timer$1_2_classLit;
 }
 ;
 _.onClose = function onClose(event_0){
-  while (($clinit_78() , timers).size > 0) {
-    $cancel_0(dynamicCast($get_3(timers, 0), 26));
+  while (($clinit_83() , timers).size > 0) {
+    $cancel_0(dynamicCast($get_3(timers, 0), 28));
   }
 }
 ;
-_.typeId$ = 28;
+_.typeId$ = 31;
+--></script>
+<script><!--
 function addCloseHandler(handler){
   maybeInitializeCloseHandlers();
-  return addHandler(TYPE_0?TYPE_0:(TYPE_0 = new GwtEvent$Type_0), handler);
+  return addHandler(TYPE_1?TYPE_1:(TYPE_1 = new GwtEvent$Type_0), handler);
 }
 
 function addHandler(type, handler){
@@ -2100,7 +2320,7 @@ function addHandler(type, handler){
 
 function addWindowClosingHandler(handler){
   maybeInitializeCloseHandlers();
-  return addHandler(($clinit_108() , $clinit_108() , TYPE_1), handler);
+  return addHandler(($clinit_120() , $clinit_120() , TYPE_2), handler);
 }
 
 function maybeInitializeCloseHandlers(){
@@ -2121,39 +2341,39 @@ function onClosing(){
 }
 
 var closeHandlersInitialized = false, handlers = null;
-function $clinit_108(){
-  $clinit_108 = nullMethod;
-  TYPE_1 = new GwtEvent$Type_0;
+function $clinit_120(){
+  $clinit_120 = nullMethod;
+  TYPE_2 = new GwtEvent$Type_0;
 }
 
 function $dispatch_0(){
   isPushingCancelledExpected = true;
-  sendRequest('/leaving/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 104, 15, [new QueryParameter_0('requestId', requestId_0)]), null);
+  sendRequest('/leaving/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 111, 16, [new QueryParameter_0('requestId', requestId_0)]), null);
   $closeConnection_1(cm);
 }
 
 function Window$ClosingEvent_0(){
-  $clinit_108();
+  $clinit_120();
 }
 
 function Window$ClosingEvent(){
 }
 
 _ = Window$ClosingEvent_0.prototype = Window$ClosingEvent.prototype = new GwtEvent;
-_.dispatch = function dispatch_1(handler){
-  $dispatch_0(dynamicCast(handler, 27));
+_.dispatch = function dispatch_2(handler){
+  $dispatch_0(dynamicCast(handler, 29));
 }
 ;
-_.getAssociatedType = function getAssociatedType_1(){
-  return TYPE_1;
+_.getAssociatedType = function getAssociatedType_3(){
+  return TYPE_2;
 }
 ;
-_.getClass$ = function getClass_49(){
+_.getClass$ = function getClass_55(){
   return Lcom_google_gwt_user_client_Window$ClosingEvent_2_classLit;
 }
 ;
 _.typeId$ = 0;
-var TYPE_1;
+var TYPE_2;
 function Window$WindowHandlers_0(){
   this.registry = new HandlerManager$HandlerRegistry_0;
   this.source = null;
@@ -2164,11 +2384,11 @@ function Window$WindowHandlers(){
 }
 
 _ = Window$WindowHandlers_0.prototype = Window$WindowHandlers.prototype = new HandlerManager;
-_.getClass$ = function getClass_50(){
+_.getClass$ = function getClass_56(){
   return Lcom_google_gwt_user_client_Window$WindowHandlers_2_classLit;
 }
 ;
-_.typeId$ = 29;
+_.typeId$ = 32;
 function $eventGetTypeInt(eventType){
   switch (eventType) {
     case 'blur':
@@ -2225,12 +2445,10 @@ function $maybeInitializeEventSystem(){
 }
 
 function isMyListener(object){
-  return !(object != null && object.typeMarker$ != nullMethod && object.typeId$ != 2) && object != null && canCast(object.typeId$, 11);
+  return !(object != null && object.typeMarker$ != nullMethod && object.typeId$ != 2) && object != null && canCast(object.typeId$, 12);
 }
 
 var eventSystemIsInitialized = false;
---></script>
-<script><!--
 function $initEventSystem(){
   dispatchCapturedMouseEvent = $entry(function(evt){
     if (dispatchCapturedEvent(evt)) {
@@ -2276,6 +2494,30 @@ function $initEventSystem(){
 }
 
 var captureElem = null, dispatchCapturedEvent = null, dispatchCapturedMouseEvent = null, dispatchEvent_2 = null, dispatchUnhandledEvent_0 = null;
+function $sinkEventsImpl(elem, bits){
+  elem.__eventBits = bits;
+  elem.onclick = bits & 1?dispatchEvent_2:null;
+  elem.ondblclick = bits & 2?dispatchEvent_2:null;
+  elem.onmousedown = bits & 4?dispatchEvent_2:null;
+  elem.onmouseup = bits & 8?dispatchEvent_2:null;
+  elem.onmouseover = bits & 16?dispatchEvent_2:null;
+  elem.onmouseout = bits & 32?dispatchEvent_2:null;
+  elem.onmousemove = bits & 64?dispatchEvent_2:null;
+  elem.onkeydown = bits & 128?dispatchEvent_2:null;
+  elem.onkeypress = bits & 256?dispatchEvent_2:null;
+  elem.onkeyup = bits & 512?dispatchEvent_2:null;
+  elem.onchange = bits & 1024?dispatchEvent_2:null;
+  elem.onfocus = bits & 2048?dispatchEvent_2:null;
+  elem.onblur = bits & 4096?dispatchEvent_2:null;
+  elem.onlosecapture = bits & 8192?dispatchEvent_2:null;
+  elem.onscroll = bits & 16384?dispatchEvent_2:null;
+  elem.onload = bits & 32768?dispatchUnhandledEvent_0:null;
+  elem.onerror = bits & 65536?dispatchEvent_2:null;
+  elem.onmousewheel = bits & 131072?dispatchEvent_2:null;
+  elem.oncontextmenu = bits & 262144?dispatchEvent_2:null;
+  elem.onpaste = bits & 524288?dispatchEvent_2:null;
+}
+
 function $initWindowCloseHandler(){
   var oldOnBeforeUnload = $wnd.onbeforeunload;
   var oldOnUnload = $wnd.onunload;
@@ -2314,7 +2556,7 @@ function UIObject(){
 }
 
 _ = UIObject.prototype = new Object_0;
-_.getClass$ = function getClass_51(){
+_.getClass$ = function getClass_57(){
   return Lcom_google_gwt_user_client_ui_UIObject_2_classLit;
 }
 ;
@@ -2325,10 +2567,14 @@ _.toString$ = function toString_9(){
   return this.element.outerHTML;
 }
 ;
-_.typeId$ = 30;
+_.typeId$ = 33;
 _.element = null;
 function $addDomHandler(this$static, handler, type){
   $sinkEvents(this$static, $eventGetTypeInt(type.name_0));
+  return $addHandler(!this$static.handlerManager?(this$static.handlerManager = new HandlerManager_0(this$static)):this$static.handlerManager, type, handler);
+}
+
+function $addHandler_1(this$static, handler, type){
   return $addHandler(!this$static.handlerManager?(this$static.handlerManager = new HandlerManager_0(this$static)):this$static.handlerManager, type, handler);
 }
 
@@ -2348,6 +2594,20 @@ function $onAttach(this$static){
   bitsToAdd > 0 && (this$static.eventsToSink == -1?sinkEvents(this$static.element, bitsToAdd | (this$static.element.__eventBits || 0)):(this$static.eventsToSink |= bitsToAdd));
   this$static.doAttachChildren();
   this$static.onLoad();
+}
+
+function $onBrowserEvent(this$static, event_0){
+  var related;
+  switch ($eventGetTypeInt(event_0.type)) {
+    case 16:
+    case 32:
+      related = event_0.relatedTarget;
+      if (!!related && this$static.element.contains(related)) {
+        return;
+      }
+
+  }
+  fireNativeEvent(event_0, this$static, this$static.element);
 }
 
 function $onDetach(this$static){
@@ -2370,7 +2630,7 @@ function $onDetach(this$static){
 
 function $removeFromParent(this$static){
   if (!this$static.parent_0) {
-    ($clinit_143() , $containsKey(widgetsToDetach.map, this$static)) && detachNow(this$static);
+    ($clinit_159() , $containsKey(widgetsToDetach.map, this$static)) && detachNow(this$static);
   }
    else if (this$static.parent_0) {
     this$static.parent_0.remove(this$static);
@@ -2414,7 +2674,7 @@ _.doAttachChildren = function doAttachChildren(){
 _.doDetachChildren = function doDetachChildren(){
 }
 ;
-_.getClass$ = function getClass_52(){
+_.getClass$ = function getClass_58(){
   return Lcom_google_gwt_user_client_ui_Widget_2_classLit;
 }
 ;
@@ -2423,17 +2683,7 @@ _.onAttach = function onAttach(){
 }
 ;
 _.onBrowserEvent = function onBrowserEvent(event_0){
-  var related;
-  switch ($eventGetTypeInt(event_0.type)) {
-    case 16:
-    case 32:
-      related = event_0.relatedTarget;
-      if (!!related && this.element.contains(related)) {
-        return;
-      }
-
-  }
-  fireNativeEvent(event_0, this, this.element);
+  $onBrowserEvent(this, event_0);
 }
 ;
 _.onLoad = function onLoad(){
@@ -2442,7 +2692,7 @@ _.onLoad = function onLoad(){
 _.onUnload = function onUnload(){
 }
 ;
-_.typeId$ = 31;
+_.typeId$ = 34;
 _.attached = false;
 _.eventsToSink = 0;
 _.handlerManager = null;
@@ -2451,8 +2701,8 @@ function $clear(this$static){
   var it;
   it = new WidgetCollection$WidgetIterator_0(this$static.children);
   while (it.index_0 < it.this$0.size - 1) {
-    $next(it);
-    $remove_2(it);
+    $next_0(it);
+    $remove_3(it);
   }
 }
 
@@ -2461,14 +2711,14 @@ function Panel(){
 
 _ = Panel.prototype = new Widget;
 _.doAttachChildren = function doAttachChildren_0(){
-  tryCommand(this, ($clinit_122() , attachCommand));
+  tryCommand(this, ($clinit_134() , attachCommand));
 }
 ;
 _.doDetachChildren = function doDetachChildren_0(){
-  tryCommand(this, ($clinit_122() , detachCommand));
+  tryCommand(this, ($clinit_134() , detachCommand));
 }
 ;
-_.getClass$ = function getClass_53(){
+_.getClass$ = function getClass_59(){
   return Lcom_google_gwt_user_client_ui_Panel_2_classLit;
 }
 ;
@@ -2478,7 +2728,7 @@ _.onLoad = function onLoad_0(){
 _.onUnload = function onUnload_0(){
 }
 ;
-_.typeId$ = 32;
+_.typeId$ = 35;
 function $add(this$static, child, container){
   $removeFromParent(child);
   $add_3(this$static.children, child);
@@ -2486,7 +2736,7 @@ function $add(this$static, child, container){
   $setParent(child, this$static);
 }
 
-function $remove(this$static, w){
+function $remove_0(this$static, w){
   var elem;
   if (w.parent_0 != this$static) {
     return false;
@@ -2497,7 +2747,7 @@ function $remove(this$static, w){
    finally {
     elem = w.element;
     $getParentElement(elem).removeChild(elem);
-    $remove_1(this$static.children, w);
+    $remove_2(this$static.children, w);
   }
   return true;
 }
@@ -2506,19 +2756,19 @@ function ComplexPanel(){
 }
 
 _ = ComplexPanel.prototype = new Panel;
-_.getClass$ = function getClass_54(){
+_.getClass$ = function getClass_60(){
   return Lcom_google_gwt_user_client_ui_ComplexPanel_2_classLit;
 }
 ;
-_.iterator = function iterator(){
+_.iterator_0 = function iterator(){
   return new WidgetCollection$WidgetIterator_0(this.children);
 }
 ;
 _.remove = function remove(w){
-  return $remove(this, w);
+  return $remove_0(this, w);
 }
 ;
-_.typeId$ = 33;
+_.typeId$ = 36;
 function $add_0(this$static, w){
   $add(this$static, w, this$static.element);
 }
@@ -2533,23 +2783,23 @@ function AbsolutePanel(){
 }
 
 _ = AbsolutePanel.prototype = new ComplexPanel;
-_.getClass$ = function getClass_55(){
+_.getClass$ = function getClass_61(){
   return Lcom_google_gwt_user_client_ui_AbsolutePanel_2_classLit;
 }
 ;
 _.remove = function remove_0(w){
   var removed;
-  removed = $remove(this, w);
+  removed = $remove_0(this, w);
   removed && changeToStaticPositioning(w.element);
   return removed;
 }
 ;
-_.typeId$ = 34;
+_.typeId$ = 37;
 function FocusWidget(){
 }
 
 _ = FocusWidget.prototype = new Widget;
-_.getClass$ = function getClass_56(){
+_.getClass$ = function getClass_62(){
   return Lcom_google_gwt_user_client_ui_FocusWidget_2_classLit;
 }
 ;
@@ -2560,7 +2810,7 @@ _.onAttach = function onAttach_0(){
   -1 == tabIndex && (this.element.tabIndex = 0 , undefined);
 }
 ;
-_.typeId$ = 35;
+_.typeId$ = 38;
 function Anchor_1(){
   this.element = $doc.createElement('a');
   this.element['className'] = 'gwt-Anchor';
@@ -2582,13 +2832,13 @@ function Anchor_0(){
 }
 
 _ = Anchor_3.prototype = Anchor_2.prototype = Anchor_0.prototype = new FocusWidget;
-_.getClass$ = function getClass_57(){
+_.getClass$ = function getClass_63(){
   return Lcom_google_gwt_user_client_ui_Anchor_2_classLit;
 }
 ;
-_.typeId$ = 36;
-function $clinit_122(){
-  $clinit_122 = nullMethod;
+_.typeId$ = 39;
+function $clinit_134(){
+  $clinit_134 = nullMethod;
   attachCommand = new AttachDetachException$1_0;
   detachCommand = new AttachDetachException$2_0;
 }
@@ -2599,17 +2849,17 @@ function AttachDetachException_0(causes){
 
 function tryCommand(hasWidgets, c){
   var old;
-  $clinit_122();
+  $clinit_134();
   var $e0, caught, e, w, w$iterator;
   caught = null;
-  for (w$iterator = hasWidgets.iterator(); w$iterator.hasNext();) {
-    w = dynamicCast(w$iterator.next(), 13);
+  for (w$iterator = hasWidgets.iterator_0(); w$iterator.hasNext();) {
+    w = dynamicCast(w$iterator.next_0(), 14);
     try {
       c.execute(w);
     }
      catch ($e0) {
       $e0 = caught_0($e0);
-      if (instanceOf($e0, 21)) {
+      if (instanceOf($e0, 22)) {
         e = $e0;
         !caught && (caught = new HashSet_0);
         old = $put(caught.map, e, caught);
@@ -2627,11 +2877,11 @@ function AttachDetachException(){
 }
 
 _ = AttachDetachException_0.prototype = AttachDetachException.prototype = new UmbrellaException;
-_.getClass$ = function getClass_58(){
+_.getClass$ = function getClass_64(){
   return Lcom_google_gwt_user_client_ui_AttachDetachException_2_classLit;
 }
 ;
-_.typeId$ = 37;
+_.typeId$ = 40;
 var attachCommand, detachCommand;
 function AttachDetachException$1_0(){
 }
@@ -2644,7 +2894,7 @@ _.execute = function execute(w){
   w.onAttach();
 }
 ;
-_.getClass$ = function getClass_59(){
+_.getClass$ = function getClass_65(){
   return Lcom_google_gwt_user_client_ui_AttachDetachException$1_2_classLit;
 }
 ;
@@ -2660,7 +2910,7 @@ _.execute = function execute_0(w){
   $onDetach(w);
 }
 ;
-_.getClass$ = function getClass_60(){
+_.getClass$ = function getClass_66(){
   return Lcom_google_gwt_user_client_ui_AttachDetachException$2_2_classLit;
 }
 ;
@@ -2677,15 +2927,15 @@ function CellPanel(){
 }
 
 _ = CellPanel.prototype = new ComplexPanel;
-_.getClass$ = function getClass_61(){
+_.getClass$ = function getClass_67(){
   return Lcom_google_gwt_user_client_ui_CellPanel_2_classLit;
 }
 ;
-_.typeId$ = 38;
+_.typeId$ = 41;
 _.body_0 = null;
 _.table = null;
-function $clinit_131(){
-  $clinit_131 = nullMethod;
+function $clinit_143(){
+  $clinit_143 = nullMethod;
   ALIGN_CENTER = new HasHorizontalAlignment$HorizontalAlignmentConstant_0('center');
   ALIGN_LEFT = new HasHorizontalAlignment$HorizontalAlignmentConstant_0('left');
   new HasHorizontalAlignment$HorizontalAlignmentConstant_0('right');
@@ -2701,14 +2951,14 @@ function HasHorizontalAlignment$HorizontalAlignmentConstant(){
 }
 
 _ = HasHorizontalAlignment$HorizontalAlignmentConstant_0.prototype = HasHorizontalAlignment$HorizontalAlignmentConstant.prototype = new Object_0;
-_.getClass$ = function getClass_62(){
+_.getClass$ = function getClass_68(){
   return Lcom_google_gwt_user_client_ui_HasHorizontalAlignment$HorizontalAlignmentConstant_2_classLit;
 }
 ;
 _.typeId$ = 0;
 _.textAlignString = null;
-function $clinit_135(){
-  $clinit_135 = nullMethod;
+function $clinit_147(){
+  $clinit_147 = nullMethod;
   new HasVerticalAlignment$VerticalAlignmentConstant_0('bottom');
   new HasVerticalAlignment$VerticalAlignmentConstant_0('middle');
   ALIGN_TOP = new HasVerticalAlignment$VerticalAlignmentConstant_0('top');
@@ -2723,7 +2973,7 @@ function HasVerticalAlignment$VerticalAlignmentConstant(){
 }
 
 _ = HasVerticalAlignment$VerticalAlignmentConstant_0.prototype = HasVerticalAlignment$VerticalAlignmentConstant.prototype = new Object_0;
-_.getClass$ = function getClass_63(){
+_.getClass$ = function getClass_69(){
   return Lcom_google_gwt_user_client_ui_HasVerticalAlignment$VerticalAlignmentConstant_2_classLit;
 }
 ;
@@ -2741,8 +2991,8 @@ function $add_1(this$static, w){
 
 function HorizontalPanel_0(){
   CellPanel_0.call(this);
-  this.horzAlign = ($clinit_131() , ALIGN_DEFAULT);
-  this.vertAlign = ($clinit_135() , ALIGN_TOP);
+  this.horzAlign = ($clinit_143() , ALIGN_DEFAULT);
+  this.vertAlign = ($clinit_147() , ALIGN_TOP);
   this.tableRow = $doc.createElement('tr');
   this.body_0.appendChild(this.tableRow);
   this.table['cellSpacing'] = '0';
@@ -2753,20 +3003,87 @@ function HorizontalPanel(){
 }
 
 _ = HorizontalPanel_0.prototype = HorizontalPanel.prototype = new CellPanel;
-_.getClass$ = function getClass_64(){
+_.getClass$ = function getClass_70(){
   return Lcom_google_gwt_user_client_ui_HorizontalPanel_2_classLit;
 }
 ;
 _.remove = function remove_1(w){
   var removed, td, parent_0;
   td = (parent_0 = w.element.parentNode , (!parent_0 || parent_0.nodeType != 1) && (parent_0 = null) , parent_0);
-  removed = $remove(this, w);
+  removed = $remove_0(this, w);
   removed && this.tableRow.removeChild(td);
   return removed;
 }
 ;
-_.typeId$ = 39;
+_.typeId$ = 42;
 _.tableRow = null;
+function $clinit_152(){
+  $clinit_152 = nullMethod;
+  new HashMap_0;
+}
+
+function Image_1(element){
+  this.element = element;
+}
+
+function Image_0(){
+}
+
+_ = Image_1.prototype = Image_0.prototype = new Widget;
+_.getClass$ = function getClass_71(){
+  return Lcom_google_gwt_user_client_ui_Image_2_classLit;
+}
+;
+_.onBrowserEvent = function onBrowserEvent_0(event_0){
+  $eventGetTypeInt(event_0.type) == 32768 && !!this.state && (this.element['__gwtLastUnhandledEvent'] = '' , undefined);
+  $onBrowserEvent(this, event_0);
+}
+;
+_.onLoad = function onLoad_1(){
+  var unhandledEvent;
+  unhandledEvent = $getPropertyString(this.element, '__gwtLastUnhandledEvent');
+  $equals_1('load', unhandledEvent) && addCommand(new Image$State$1_0(this));
+}
+;
+_.typeId$ = 43;
+_.state = null;
+function Image$State(){
+}
+
+_ = Image$State.prototype = new Object_0;
+_.getClass$ = function getClass_72(){
+  return Lcom_google_gwt_user_client_ui_Image$State_2_classLit;
+}
+;
+_.typeId$ = 0;
+function Image$State$1_0(val$image){
+  this.val$image = val$image;
+}
+
+function Image$State$1(){
+}
+
+_ = Image$State$1_0.prototype = Image$State$1.prototype = new Object_0;
+_.getClass$ = function getClass_73(){
+  return Lcom_google_gwt_user_client_ui_Image$State$1_2_classLit;
+}
+;
+_.typeId$ = 44;
+_.val$image = null;
+function Image$UnclippedState_0(element){
+  $maybeInitializeEventSystem();
+  $sinkEventsImpl(element, 229501);
+}
+
+function Image$UnclippedState(){
+}
+
+_ = Image$UnclippedState_0.prototype = Image$UnclippedState.prototype = new Image$State;
+_.getClass$ = function getClass_74(){
+  return Lcom_google_gwt_user_client_ui_Image$UnclippedState_2_classLit;
+}
+;
+_.typeId$ = 0;
 function Label_1(text){
   this.element = $doc.createElement('div');
   this.element['className'] = 'gwt-Label';
@@ -2777,13 +3094,13 @@ function Label(){
 }
 
 _ = Label_1.prototype = Label.prototype = new Widget;
-_.getClass$ = function getClass_65(){
+_.getClass$ = function getClass_75(){
   return Lcom_google_gwt_user_client_ui_Label_2_classLit;
 }
 ;
-_.typeId$ = 40;
-function $clinit_143(){
-  $clinit_143 = nullMethod;
+_.typeId$ = 45;
+function $clinit_159(){
+  $clinit_159 = nullMethod;
   maybeDetachCommand = new RootPanel$1_0;
   rootPanels = new HashMap_0;
   widgetsToDetach = new HashSet_0;
@@ -2796,17 +3113,17 @@ function RootPanel_0(elem){
 }
 
 function detachNow(widget){
-  $clinit_143();
+  $clinit_159();
   try {
     $onDetach(widget);
   }
    finally {
-    $remove_3(widgetsToDetach.map, widget) != null;
+    $remove_4(widgetsToDetach.map, widget) != null;
   }
 }
 
 function detachWidgets(){
-  $clinit_143();
+  $clinit_159();
   try {
     tryCommand(widgetsToDetach, maybeDetachCommand);
   }
@@ -2817,9 +3134,9 @@ function detachWidgets(){
 }
 
 function get_0(id){
-  $clinit_143();
+  $clinit_159();
   var elem, rp;
-  rp = dynamicCast($get_2(rootPanels, id), 28);
+  rp = dynamicCast($get_2(rootPanels, id), 30);
   elem = null;
   if (id != null) {
     if (!(elem = $doc.getElementById(id))) {
@@ -2842,11 +3159,11 @@ function RootPanel(){
 }
 
 _ = RootPanel_0.prototype = RootPanel.prototype = new AbsolutePanel;
-_.getClass$ = function getClass_66(){
+_.getClass$ = function getClass_76(){
   return Lcom_google_gwt_user_client_ui_RootPanel_2_classLit;
 }
 ;
-_.typeId$ = 41;
+_.typeId$ = 46;
 var maybeDetachCommand, rootPanels, widgetsToDetach;
 function RootPanel$1_0(){
 }
@@ -2859,7 +3176,7 @@ _.execute = function execute_1(w){
   w.attached && $onDetach(w);
 }
 ;
-_.getClass$ = function getClass_67(){
+_.getClass$ = function getClass_77(){
   return Lcom_google_gwt_user_client_ui_RootPanel$1_2_classLit;
 }
 ;
@@ -2871,7 +3188,7 @@ function RootPanel$2(){
 }
 
 _ = RootPanel$2_0.prototype = RootPanel$2.prototype = new Object_0;
-_.getClass$ = function getClass_68(){
+_.getClass$ = function getClass_78(){
   return Lcom_google_gwt_user_client_ui_RootPanel$2_2_classLit;
 }
 ;
@@ -2879,20 +3196,20 @@ _.onClose = function onClose_0(closeEvent){
   detachWidgets();
 }
 ;
-_.typeId$ = 42;
+_.typeId$ = 47;
 function RootPanel$DefaultRootPanel_0(){
-  RootPanel_0.call(this, ($clinit_143() , $doc.body));
+  RootPanel_0.call(this, ($clinit_159() , $doc.body));
 }
 
 function RootPanel$DefaultRootPanel(){
 }
 
 _ = RootPanel$DefaultRootPanel_0.prototype = RootPanel$DefaultRootPanel.prototype = new RootPanel;
-_.getClass$ = function getClass_69(){
+_.getClass$ = function getClass_79(){
   return Lcom_google_gwt_user_client_ui_RootPanel$DefaultRootPanel_2_classLit;
 }
 ;
-_.typeId$ = 43;
+_.typeId$ = 48;
 function $add_2(this$static, w){
   var td, tr, td_0;
   tr = $doc.createElement('tr');
@@ -2907,8 +3224,8 @@ function $add_2(this$static, w){
 
 function VerticalPanel_0(){
   CellPanel_0.call(this);
-  this.horzAlign = ($clinit_131() , ALIGN_DEFAULT);
-  this.vertAlign = ($clinit_135() , ALIGN_TOP);
+  this.horzAlign = ($clinit_143() , ALIGN_DEFAULT);
+  this.vertAlign = ($clinit_147() , ALIGN_TOP);
   this.table['cellSpacing'] = '0';
   this.table['cellPadding'] = '0';
 }
@@ -2917,19 +3234,19 @@ function VerticalPanel(){
 }
 
 _ = VerticalPanel_0.prototype = VerticalPanel.prototype = new CellPanel;
-_.getClass$ = function getClass_70(){
+_.getClass$ = function getClass_80(){
   return Lcom_google_gwt_user_client_ui_VerticalPanel_2_classLit;
 }
 ;
 _.remove = function remove_2(w){
   var removed, td, parent_0;
   td = (parent_0 = w.element.parentNode , (!parent_0 || parent_0.nodeType != 1) && (parent_0 = null) , parent_0);
-  removed = $remove(this, w);
+  removed = $remove_0(this, w);
   removed && this.body_0.removeChild($getParentElement(td));
   return removed;
 }
 ;
-_.typeId$ = 44;
+_.typeId$ = 49;
 function $add_3(this$static, w){
   $insert(this$static, w, this$static.size);
 }
@@ -2950,7 +3267,7 @@ function $insert(this$static, w, beforeIndex){
     throw new IndexOutOfBoundsException_0;
   }
   if (this$static.size == this$static.array.length) {
-    newArray = initDim(_3Lcom_google_gwt_user_client_ui_Widget_2_classLit, 102, 13, this$static.array.length * 2, 0);
+    newArray = initDim(_3Lcom_google_gwt_user_client_ui_Widget_2_classLit, 109, 14, this$static.array.length * 2, 0);
     for (i = 0; i < this$static.array.length; ++i) {
       setCheck(newArray, i, this$static.array[i]);
     }
@@ -2963,7 +3280,7 @@ function $insert(this$static, w, beforeIndex){
   setCheck(this$static.array, beforeIndex, w);
 }
 
-function $remove_0(this$static, index){
+function $remove_1(this$static, index){
   var i;
   if (index < 0 || index >= this$static.size) {
     throw new IndexOutOfBoundsException_0;
@@ -2975,29 +3292,29 @@ function $remove_0(this$static, index){
   setCheck(this$static.array, this$static.size, null);
 }
 
-function $remove_1(this$static, w){
+function $remove_2(this$static, w){
   var index;
   index = $indexOf(this$static, w);
   if (index == -1) {
     throw new NoSuchElementException_0;
   }
-  $remove_0(this$static, index);
+  $remove_1(this$static, index);
 }
 
 function WidgetCollection_0(parent_0){
   this.parent_0 = parent_0;
-  this.array = initDim(_3Lcom_google_gwt_user_client_ui_Widget_2_classLit, 102, 13, 4, 0);
+  this.array = initDim(_3Lcom_google_gwt_user_client_ui_Widget_2_classLit, 109, 14, 4, 0);
 }
 
 function WidgetCollection(){
 }
 
 _ = WidgetCollection_0.prototype = WidgetCollection.prototype = new Object_0;
-_.getClass$ = function getClass_71(){
+_.getClass$ = function getClass_81(){
   return Lcom_google_gwt_user_client_ui_WidgetCollection_2_classLit;
 }
 ;
-_.iterator = function iterator_0(){
+_.iterator_0 = function iterator_0(){
   return new WidgetCollection$WidgetIterator_0(this);
 }
 ;
@@ -3005,14 +3322,14 @@ _.typeId$ = 0;
 _.array = null;
 _.parent_0 = null;
 _.size = 0;
-function $next(this$static){
+function $next_0(this$static){
   if (this$static.index_0 >= this$static.this$0.size) {
     throw new NoSuchElementException_0;
   }
   return this$static.this$0.array[++this$static.index_0];
 }
 
-function $remove_2(this$static){
+function $remove_3(this$static){
   if (this$static.index_0 < 0 || this$static.index_0 >= this$static.this$0.size) {
     throw new IllegalStateException_0;
   }
@@ -3027,16 +3344,16 @@ function WidgetCollection$WidgetIterator(){
 }
 
 _ = WidgetCollection$WidgetIterator_0.prototype = WidgetCollection$WidgetIterator.prototype = new Object_0;
-_.getClass$ = function getClass_72(){
+_.getClass$ = function getClass_82(){
   return Lcom_google_gwt_user_client_ui_WidgetCollection$WidgetIterator_2_classLit;
 }
 ;
-_.hasNext = function hasNext(){
+_.hasNext = function hasNext_0(){
   return this.index_0 < this.this$0.size - 1;
 }
 ;
-_.next = function next_0(){
-  return $next(this);
+_.next_0 = function next_1(){
+  return $next_0(this);
 }
 ;
 _.typeId$ = 0;
@@ -3081,11 +3398,11 @@ function log(msg){
   try {
     if (isDebug) {
       try {
-        sendRequest('/logwriteback/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 104, 15, [new QueryParameter_0('msg', requestId_0 + ':' + toString_8(($t0 = logCounter , logCounter = add(logCounter, P1_longLit) , $t0)) + ':' + urlEncode(msg))]), null);
+        sendRequest('/logwriteback/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 111, 16, [new QueryParameter_0('msg', requestId_0 + ':' + toString_8(($t0 = logCounter , logCounter = add(logCounter, P1_longLit) , $t0)) + ':' + urlEncode(msg))]), null);
       }
        catch ($e1) {
         $e1 = caught_0($e1);
-        if (!instanceOf($e1, 29))
+        if (!instanceOf($e1, 31))
           throw $e1;
       }
       console.log(msg);
@@ -3093,7 +3410,7 @@ function log(msg){
   }
    catch ($e0) {
     $e0 = caught_0($e0);
-    if (!instanceOf($e0, 29))
+    if (!instanceOf($e0, 31))
       throw $e0;
   }
 }
@@ -3116,15 +3433,17 @@ function FreenetJs$1(){
 }
 
 _ = FreenetJs$1_0.prototype = FreenetJs$1.prototype = new Object_0;
-_.getClass$ = function getClass_73(){
+_.getClass$ = function getClass_83(){
   return Lfreenet_client_FreenetJs$1_2_classLit;
 }
 ;
-_.typeId$ = 45;
+_.typeId$ = 50;
+--></script>
+<script><!--
 function $closeConnection(this$static){
   $cancel_0(this$static.timer);
   if (!this$static.cancelled) {
-    isPushingCancelledExpected || $addMessage((!instance && (instance = new MessageManager_0) , instance), new Message_0(get_1('pushingCancelled'), ($clinit_175() , ERROR), null, true));
+    isPushingCancelledExpected || $addMessage((!instance && (instance = new MessageManager_0) , instance), new Message_0(get_1('pushingCancelled'), ($clinit_192() , ERROR), null, true));
     this$static.cancelled = true;
   }
 }
@@ -3142,7 +3461,7 @@ function KeepaliveManager(){
 }
 
 _ = KeepaliveManager_0.prototype = KeepaliveManager.prototype = new Object_0;
-_.getClass$ = function getClass_74(){
+_.getClass$ = function getClass_84(){
   return Lfreenet_client_connection_KeepaliveManager_2_classLit;
 }
 ;
@@ -3150,11 +3469,11 @@ _.typeId$ = 0;
 _.cancelled = false;
 _.firstSuccess = false;
 function $run(this$static){
-  sendRequest('/keepalive/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 104, 15, [new QueryParameter_0('requestId', requestId_0)]), new KeepaliveManager$KeepaliveTimer$1_0(this$static));
+  sendRequest('/keepalive/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 111, 16, [new QueryParameter_0('requestId', requestId_0)]), new KeepaliveManager$KeepaliveTimer$1_0(this$static));
 }
 
 function KeepaliveManager$KeepaliveTimer_0(this$0){
-  $clinit_78();
+  $clinit_83();
   this.this$0 = this$0;
 }
 
@@ -3162,15 +3481,15 @@ function KeepaliveManager$KeepaliveTimer(){
 }
 
 _ = KeepaliveManager$KeepaliveTimer_0.prototype = KeepaliveManager$KeepaliveTimer.prototype = new Timer;
-_.getClass$ = function getClass_75(){
+_.getClass$ = function getClass_85(){
   return Lfreenet_client_connection_KeepaliveManager$KeepaliveTimer_2_classLit;
 }
 ;
-_.run = function run_0(){
-  sendRequest('/keepalive/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 104, 15, [new QueryParameter_0('requestId', requestId_0)]), new KeepaliveManager$KeepaliveTimer$1_0(this));
+_.run = function run_2(){
+  sendRequest('/keepalive/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 111, 16, [new QueryParameter_0('requestId', requestId_0)]), new KeepaliveManager$KeepaliveTimer$1_0(this));
 }
 ;
-_.typeId$ = 46;
+_.typeId$ = 51;
 _.this$0 = null;
 function KeepaliveManager$KeepaliveTimer$1_0(this$1){
   this.this$1 = this$1;
@@ -3180,7 +3499,7 @@ function KeepaliveManager$KeepaliveTimer$1(){
 }
 
 _ = KeepaliveManager$KeepaliveTimer$1_0.prototype = KeepaliveManager$KeepaliveTimer$1.prototype = new Object_0;
-_.getClass$ = function getClass_76(){
+_.getClass$ = function getClass_86(){
   return Lfreenet_client_connection_KeepaliveManager$KeepaliveTimer$1_2_classLit;
 }
 ;
@@ -3210,7 +3529,7 @@ function $openConnection_0(this$static){
     throw new RuntimeException_1('You must set the UpdateManager before opening the connection!');
   }
   this$static.running = true;
-  this$static.running && (this$static.sentRequest = sendRequest('/pushnotifications/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 104, 15, [new QueryParameter_0('requestId', requestId_0)]), new LongPollingConnectionManager$2_0(this$static)));
+  this$static.running && (this$static.sentRequest = sendRequest('/pushnotifications/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 111, 16, [new QueryParameter_0('requestId', requestId_0)]), new LongPollingConnectionManager$2_0(this$static)));
 }
 
 function $scheduleNextRequest(this$static){
@@ -3219,7 +3538,7 @@ function $scheduleNextRequest(this$static){
 }
 
 function $sendRequest_0(this$static){
-  this$static.running && (this$static.sentRequest = sendRequest('/pushnotifications/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 104, 15, [new QueryParameter_0('requestId', requestId_0)]), new LongPollingConnectionManager$2_0(this$static)));
+  this$static.running && (this$static.sentRequest = sendRequest('/pushnotifications/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 111, 16, [new QueryParameter_0('requestId', requestId_0)]), new LongPollingConnectionManager$2_0(this$static)));
 }
 
 function LongPollingConnectionManager_0(updateManager){
@@ -3230,7 +3549,7 @@ function LongPollingConnectionManager(){
 }
 
 _ = LongPollingConnectionManager_0.prototype = LongPollingConnectionManager.prototype = new Object_0;
-_.getClass$ = function getClass_77(){
+_.getClass$ = function getClass_87(){
   return Lfreenet_client_connection_LongPollingConnectionManager_2_classLit;
 }
 ;
@@ -3240,7 +3559,7 @@ _.running = false;
 _.sentRequest = null;
 _.updateManager = null;
 function LongPollingConnectionManager$1_0(this$0){
-  $clinit_78();
+  $clinit_83();
   this.this$0 = this$0;
 }
 
@@ -3248,15 +3567,15 @@ function LongPollingConnectionManager$1(){
 }
 
 _ = LongPollingConnectionManager$1_0.prototype = LongPollingConnectionManager$1.prototype = new Timer;
-_.getClass$ = function getClass_78(){
+_.getClass$ = function getClass_88(){
   return Lfreenet_client_connection_LongPollingConnectionManager$1_2_classLit;
 }
 ;
-_.run = function run_1(){
+_.run = function run_3(){
   $sendRequest_0(this.this$0);
 }
 ;
-_.typeId$ = 47;
+_.typeId$ = 52;
 _.this$0 = null;
 function LongPollingConnectionManager$2_0(this$0){
   this.this$0 = this$0;
@@ -3266,7 +3585,7 @@ function LongPollingConnectionManager$2(){
 }
 
 _ = LongPollingConnectionManager$2_0.prototype = LongPollingConnectionManager$2.prototype = new Object_0;
-_.getClass$ = function getClass_79(){
+_.getClass$ = function getClass_89(){
   return Lfreenet_client_connection_LongPollingConnectionManager$2_2_classLit;
 }
 ;
@@ -3297,8 +3616,6 @@ function $closeConnection_1(this$static){
   $closeConnection_0(this$static.longPollingManager);
 }
 
---></script>
-<script><!--
 function $openConnection_1(this$static){
   if (!this$static.updateManager) {
     throw new RuntimeException_1('You must set the UpdateManager before opening the connection!');
@@ -3375,7 +3692,7 @@ function SharedConnectionManager(){
 }
 
 _ = SharedConnectionManager_0.prototype = SharedConnectionManager.prototype = new Object_0;
-_.getClass$ = function getClass_80(){
+_.getClass$ = function getClass_90(){
   return Lfreenet_client_connection_SharedConnectionManager_2_classLit;
 }
 ;
@@ -3385,7 +3702,7 @@ _.followerTakeOverTimer = null;
 _.messageCounter = P0_longLit;
 _.updateManager = null;
 function SharedConnectionManager$1_0(this$0){
-  $clinit_78();
+  $clinit_83();
   this.this$0 = this$0;
 }
 
@@ -3393,26 +3710,26 @@ function SharedConnectionManager$1(){
 }
 
 _ = SharedConnectionManager$1_0.prototype = SharedConnectionManager$1.prototype = new Timer;
-_.getClass$ = function getClass_81(){
+_.getClass$ = function getClass_91(){
   return Lfreenet_client_connection_SharedConnectionManager$1_2_classLit;
 }
 ;
-_.run = function run_2(){
+_.run = function run_4(){
   var originalLeader;
   if (!gte_0(add(__parseAndValidateLong(getCookie('LeaderKeepalive')), Pbb8_longLit), fromDouble((new Date).getTime()))) {
     log('Getting leadership lastKeepalive:' + getCookie('LeaderKeepalive'));
     $cancel_0(this.this$0.followerTakeOverTimer);
     $cancel_0(this.this$0.followerNotifierTimer);
     originalLeader = getCookie('LeaderName');
-    originalLeader != null && sendRequest('/failover/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 104, 15, [new QueryParameter_0('requestId', requestId_0), new QueryParameter_0('originalRequestId', originalLeader)]), null);
+    originalLeader != null && sendRequest('/failover/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 111, 16, [new QueryParameter_0('requestId', requestId_0), new QueryParameter_0('originalRequestId', originalLeader)]), null);
     $startLeading(this.this$0);
   }
 }
 ;
-_.typeId$ = 48;
+_.typeId$ = 53;
 _.this$0 = null;
 function SharedConnectionManager$2_0(this$0){
-  $clinit_78();
+  $clinit_83();
   this.this$0 = this$0;
 }
 
@@ -3420,49 +3737,49 @@ function SharedConnectionManager$2(){
 }
 
 _ = SharedConnectionManager$2_0.prototype = SharedConnectionManager$2.prototype = new Timer;
-_.getClass$ = function getClass_82(){
+_.getClass$ = function getClass_92(){
   return Lfreenet_client_connection_SharedConnectionManager$2_2_classLit;
 }
 ;
-_.run = function run_3(){
+_.run = function run_5(){
   $processMessages(this.this$0);
 }
 ;
-_.typeId$ = 49;
+_.typeId$ = 54;
 _.this$0 = null;
 function SharedConnectionManager$3_0(){
-  $clinit_78();
+  $clinit_83();
 }
 
 function SharedConnectionManager$3(){
 }
 
 _ = SharedConnectionManager$3_0.prototype = SharedConnectionManager$3.prototype = new Timer;
-_.getClass$ = function getClass_83(){
+_.getClass$ = function getClass_93(){
   return Lfreenet_client_connection_SharedConnectionManager$3_2_classLit;
 }
 ;
-_.run = function run_4(){
+_.run = function run_6(){
   setCookie('LeaderKeepalive', '' + toString_8(fromDouble((new Date).getTime())));
   log('Setting leader keepalive:' + getCookie('LeaderKeepalive'));
 }
 ;
-_.typeId$ = 50;
+_.typeId$ = 55;
 function TimeIncrementer$1_0(){
-  $clinit_78();
+  $clinit_83();
 }
 
 function TimeIncrementer$1(){
 }
 
 _ = TimeIncrementer$1_0.prototype = TimeIncrementer$1.prototype = new Timer;
-_.getClass$ = function getClass_84(){
+_.getClass$ = function getClass_94(){
   return Lfreenet_client_dynamics_TimeIncrementer$1_2_classLit;
 }
 ;
-_.run = function run_5(){
+_.run = function run_7(){
   var classAttr, current, e, i, inputElement, list;
-  list = ($clinit_143() , $doc.body).getElementsByTagName('span');
+  list = ($clinit_159() , $doc.body).getElementsByTagName('span');
   for (i = 0; i < list.length; ++i) {
     e = list[i];
     classAttr = e.getAttribute('class') || '';
@@ -3476,21 +3793,21 @@ _.run = function run_5(){
   }
 }
 ;
-_.typeId$ = 51;
-function $clinit_170(){
-  $clinit_170 = nullMethod;
+_.typeId$ = 56;
+function $clinit_187(){
+  $clinit_187 = nullMethod;
   dict = getDictionary();
 }
 
 function get_1(key){
-  $clinit_170();
+  $clinit_187();
   var $e0;
   try {
     return $get_1(dict, key);
   }
    catch ($e0) {
     $e0 = caught_0($e0);
-    if (instanceOf($e0, 29)) {
+    if (instanceOf($e0, 31)) {
       return '#' + key + '#';
     }
      else 
@@ -3512,8 +3829,8 @@ function Message(){
 _ = Message_0.prototype = Message.prototype = new Object_0;
 _.equals$ = function equals_2(obj){
   var message;
-  if (obj != null && canCast(obj.typeId$, 30)) {
-    message = dynamicCast(obj, 30);
+  if (obj != null && canCast(obj.typeId$, 32)) {
+    message = dynamicCast(obj, 32);
     return compareTo(this.msg, message.msg) == 0 && this.priority == message.priority && (this.anchor == null && message.anchor == null || this.anchor != null && message.anchor != null && compareTo(this.anchor, message.anchor) == 0);
   }
    else {
@@ -3521,11 +3838,11 @@ _.equals$ = function equals_2(obj){
   }
 }
 ;
-_.getClass$ = function getClass_85(){
+_.getClass$ = function getClass_95(){
   return Lfreenet_client_messages_Message_2_classLit;
 }
 ;
-_.typeId$ = 52;
+_.typeId$ = 57;
 _.anchor = null;
 _.canDismiss = false;
 _.msg = null;
@@ -3544,7 +3861,7 @@ function $redrawMessages(this$static){
   log('REDRAWING MESSAGES');
   this$static.messagesPanel.element.style['background'] = 'white';
   for (i = 0; i < this$static.messages.size; ++i) {
-    m_0 = dynamicCast($get_3(this$static.messages, i), 30);
+    m_0 = dynamicCast($get_3(this$static.messages, i), 32);
     log('REDRAWING MESSAGE:' + m_0.msg);
     hpanel = new HorizontalPanel_0;
     switch (m_0.priority.ordinal) {
@@ -3563,7 +3880,7 @@ function $redrawMessages(this$static){
     hpanel.element.style['width'] = '100%';
     hpanel.element.style['height'] = '100%';
     hpanel.element.style['display'] = 'block';
-    hpanel.element.style['padding'] = 3 + ($clinit_27() , 'px');
+    hpanel.element.style['padding'] = 3 + ($clinit_28() , 'px');
     msgLabel = new Label_1(m_0.msg);
     $add_1(hpanel, msgLabel);
     (parent_0 = msgLabel.element.parentNode , (!parent_0 || parent_0.nodeType != 1) && (parent_0 = null) , parent_0).style['border'] = 'none';
@@ -3574,7 +3891,7 @@ function $redrawMessages(this$static){
     }
     if (m_0.canDismiss) {
       hideElement = new Anchor_2(get_1('hide'));
-      $addDomHandler(hideElement, new MessageManager$1_0(this$static, m_0), ($clinit_58() , $clinit_58() , TYPE));
+      $addDomHandler(hideElement, new MessageManager$1_0(this$static, m_0), ($clinit_63() , $clinit_63() , TYPE_0));
       $add_1(hpanel, hideElement);
       (parent_2 = hideElement.element.parentNode , (!parent_2 || parent_2.nodeType != 1) && (parent_2 = null) , parent_2).style['border'] = 'none';
     }
@@ -3583,12 +3900,12 @@ function $redrawMessages(this$static){
 }
 
 function $removeMessage(this$static, message){
-  $remove_5(this$static.messages, message);
+  $remove_6(this$static.messages, message);
   $redrawMessages(this$static);
 }
 
 function $replaceMessageAtPosition(this$static, position, msg){
-  $remove_4(this$static.messages, position);
+  $remove_5(this$static.messages, position);
   $add_5(this$static.messages, position, msg);
   $redrawMessages(this$static);
 }
@@ -3597,8 +3914,8 @@ function $updateMessages(this$static){
   var alert_0, anchor, i, m_0, m$iterator, priority, title;
   if (get_0('alerts')) {
     for (m$iterator = new AbstractList$IteratorImpl_0(new ArrayList_1(this$static.messages)); m$iterator.i < m$iterator.this$0.size_0();) {
-      m_0 = dynamicCast($next_2(m$iterator), 30);
-      m_0.anchor != null && ($remove_5(this$static.messages, m_0) , $redrawMessages(this$static));
+      m_0 = dynamicCast($next_3(m$iterator), 32);
+      m_0.anchor != null && ($remove_6(this$static.messages, m_0) , $redrawMessages(this$static));
     }
     for (i = 0; i < get_0('alerts').element.getElementsByTagName('alert').length; ++i) {
       alert_0 = get_0('alerts').element.getElementsByTagName('alert')[i];
@@ -3606,19 +3923,19 @@ function $updateMessages(this$static){
       priority = null;
       switch (__parseAndValidateInt(alert_0.getElementsByTagName('priority')[0].textContent)) {
         case 0:
-          priority = ($clinit_175() , CRITICAL);
+          priority = ($clinit_192() , CRITICAL);
           break;
         case 1:
-          priority = ($clinit_175() , ERROR);
+          priority = ($clinit_192() , ERROR);
           break;
         case 2:
-          priority = ($clinit_175() , WARNING);
+          priority = ($clinit_192() , WARNING);
           break;
         case 3:
-          priority = ($clinit_175() , MINOR);
+          priority = ($clinit_192() , MINOR);
       }
       title = alert_0.getElementsByTagName('alertTitle')[0].textContent;
-      $addMessage(this$static, new Message_0(title, priority, anchor, ($clinit_194() , $equalsIgnoreCase('true', alert_0.getElementsByTagName('canDismiss')[0].textContent))));
+      $addMessage(this$static, new Message_0(title, priority, anchor, ($clinit_213() , $equalsIgnoreCase('true', alert_0.getElementsByTagName('canDismiss')[0].textContent))));
     }
   }
 }
@@ -3627,12 +3944,12 @@ function MessageManager_0(){
   this.messages = new ArrayList_0;
   this.messagesPanel = new VerticalPanel_0;
   this.messagesPanel.element.id = 'messagesPanel';
-  this.messagesPanel.horzAlign = ($clinit_131() , ALIGN_CENTER);
+  this.messagesPanel.horzAlign = ($clinit_143() , ALIGN_CENTER);
   this.messagesPanel.element.style['position'] = 'fixed';
   this.messagesPanel.element.style['top'] = '0px';
   this.messagesPanel.element.style['width'] = '100%';
   this.messagesPanel.element.id = 'messagesPanel';
-  $add_0(($clinit_143() , get_0(null)), this.messagesPanel);
+  $add_0(($clinit_159() , get_0(null)), this.messagesPanel);
   $updateMessages(this);
 }
 
@@ -3640,7 +3957,7 @@ function MessageManager(){
 }
 
 _ = MessageManager_0.prototype = MessageManager.prototype = new Object_0;
-_.getClass$ = function getClass_86(){
+_.getClass$ = function getClass_96(){
   return Lfreenet_client_messages_MessageManager_2_classLit;
 }
 ;
@@ -3648,10 +3965,10 @@ _.typeId$ = 0;
 var instance = null;
 function $onMouseDown(this$static){
   if (this$static.val$m.anchor != null) {
-    sendRequest('/dismissalert/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 104, 15, [new QueryParameter_0('anchor', this$static.val$m.anchor)]), new MessageManager$1$1_0(this$static, this$static.val$m));
+    sendRequest('/dismissalert/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 111, 16, [new QueryParameter_0('anchor', this$static.val$m.anchor)]), new MessageManager$1$1_0(this$static, this$static.val$m));
   }
    else {
-    $remove_5(this$static.this$0.messages, this$static.val$m);
+    $remove_6(this$static.this$0.messages, this$static.val$m);
     $redrawMessages(this$static.this$0);
   }
 }
@@ -3665,11 +3982,11 @@ function MessageManager$1(){
 }
 
 _ = MessageManager$1_0.prototype = MessageManager$1.prototype = new Object_0;
-_.getClass$ = function getClass_87(){
+_.getClass$ = function getClass_97(){
   return Lfreenet_client_messages_MessageManager$1_2_classLit;
 }
 ;
-_.typeId$ = 53;
+_.typeId$ = 58;
 _.this$0 = null;
 _.val$m = null;
 function MessageManager$1$1_0(this$1, val$m){
@@ -3681,7 +3998,7 @@ function MessageManager$1$1(){
 }
 
 _ = MessageManager$1$1_0.prototype = MessageManager$1$1.prototype = new Object_0;
-_.getClass$ = function getClass_88(){
+_.getClass$ = function getClass_98(){
   return Lfreenet_client_messages_MessageManager$1$1_2_classLit;
 }
 ;
@@ -3695,13 +4012,13 @@ _.onResponseReceived = function onResponseReceived_1(request, response){
 _.typeId$ = 0;
 _.this$1 = null;
 _.val$m = null;
-function $clinit_175(){
-  $clinit_175 = nullMethod;
+function $clinit_192(){
+  $clinit_192 = nullMethod;
   MINOR = new Priority_0('MINOR', 0);
   WARNING = new Priority_0('WARNING', 1);
   ERROR = new Priority_0('ERROR', 2);
   CRITICAL = new Priority_0('CRITICAL', 3);
-  $VALUES_0 = initValues(_3Lfreenet_client_messages_Priority_2_classLit, 103, 14, [MINOR, WARNING, ERROR, CRITICAL]);
+  $VALUES_0 = initValues(_3Lfreenet_client_messages_Priority_2_classLit, 110, 15, [MINOR, WARNING, ERROR, CRITICAL]);
 }
 
 function Priority_0(enum$name, enum$ordinal){
@@ -3710,7 +4027,7 @@ function Priority_0(enum$name, enum$ordinal){
 }
 
 function values_1(){
-  $clinit_175();
+  $clinit_192();
   return $VALUES_0;
 }
 
@@ -3718,11 +4035,11 @@ function Priority(){
 }
 
 _ = Priority_0.prototype = Priority.prototype = new Enum;
-_.getClass$ = function getClass_89(){
+_.getClass$ = function getClass_99(){
   return Lfreenet_client_messages_Priority_2_classLit;
 }
 ;
-_.typeId$ = 54;
+_.typeId$ = 59;
 var $VALUES_0, CRITICAL, ERROR, MINOR, WARNING;
 function _utf8_decode(utftext){
   var string = '';
@@ -3774,21 +4091,21 @@ function decode(input){
 var _keyStr = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
 function sendRequest(path, parameters, callback){
   var $e0, e, i, paramList, queryString;
-  parameters == null && (parameters = initDim(_3Lfreenet_client_tools_QueryParameter_2_classLit, 104, 15, 1, 0));
+  parameters == null && (parameters = initDim(_3Lfreenet_client_tools_QueryParameter_2_classLit, 111, 16, 1, 0));
   paramList = new ArrayList_1(new Arrays$ArrayList_0(parameters));
   $add_4(paramList, new QueryParameter_0('timestamp', '' + toString_8(fromDouble((new Date).getTime()))));
   queryString = '?';
   for (i = 0; i < paramList.size; ++i) {
-    queryString = queryString + (dynamicCast((checkIndex(i, paramList.size) , paramList.array[i]), 15).name_0 + '=') + dynamicCast((checkIndex(i, paramList.size) , paramList.array[i]), 15).value;
+    queryString = queryString + (dynamicCast((checkIndex(i, paramList.size) , paramList.array[i]), 16).name_0 + '=') + dynamicCast((checkIndex(i, paramList.size) , paramList.array[i]), 16).value;
     i != paramList.size - 1 && (queryString = queryString + '&');
   }
   !callback && (callback = new FreenetRequest$1_0);
   try {
-    return $sendRequest(new RequestBuilder_0(($clinit_80() , GET), path + queryString), callback);
+    return $sendRequest(new RequestBuilder_0(($clinit_85() , GET), path + queryString), callback);
   }
    catch ($e0) {
     $e0 = caught_0($e0);
-    if (instanceOf($e0, 31)) {
+    if (instanceOf($e0, 33)) {
       e = $e0;
       callback.onError(null, e);
       return null;
@@ -3805,7 +4122,7 @@ function FreenetRequest$1(){
 }
 
 _ = FreenetRequest$1_0.prototype = FreenetRequest$1.prototype = new Object_0;
-_.getClass$ = function getClass_90(){
+_.getClass$ = function getClass_100(){
   return Lfreenet_client_tools_FreenetRequest$1_2_classLit;
 }
 ;
@@ -3825,7 +4142,7 @@ function QueryParameter(){
 }
 
 _ = QueryParameter_0.prototype = QueryParameter.prototype = new Object_0;
-_.getClass$ = function getClass_91(){
+_.getClass$ = function getClass_101(){
   return Lfreenet_client_tools_QueryParameter_2_classLit;
 }
 ;
@@ -3833,7 +4150,7 @@ _.toString$ = function toString_10(){
   return 'QueryParameter[name=' + this.name_0 + ',value=' + this.value + ']';
 }
 ;
-_.typeId$ = 55;
+_.typeId$ = 60;
 _.name_0 = null;
 _.value = null;
 function formatTime(timeInterval){
@@ -3892,12 +4209,13 @@ function formatTime(timeInterval){
   return sb.impl.string;
 }
 
-function $clinit_181(){
-  $clinit_181 = nullMethod;
+function $clinit_198(){
+  $clinit_198 = nullMethod;
   var list;
   listeners = new ArrayList_0;
   list = new HashMap_0;
   $put(list, 'progressBar', new ProgressBarUpdater_0);
+  $put(list, 'MultimediaElementUpdater', new MultimediaElementUpdater_0);
   $put(list, 'ImageElementUpdater', new ImageElementUpdater_0);
   $put(list, 'ReplacerUpdater', new ReplacerUpdater_0);
   $put(list, 'ConnectionsList', new ConnectionsListUpdater_0);
@@ -3908,22 +4226,22 @@ function $clinit_181(){
 function $updated_0(message){
   var l$iterator;
   log('DefaultUpdateManager updated:elementid:' + message);
-  sendRequest('/pushdata/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 104, 15, [new QueryParameter_0('requestId', requestId_0), new QueryParameter_0('elementId', message)]), new DefaultUpdateManager$UpdaterRequestCallback_0(message));
+  sendRequest('/pushdata/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 111, 16, [new QueryParameter_0('requestId', requestId_0), new QueryParameter_0('elementId', message)]), new DefaultUpdateManager$UpdaterRequestCallback_0(message));
   for (l$iterator = new AbstractList$IteratorImpl_0(listeners); l$iterator.i < l$iterator.this$0.size_0();) {
-    throwClassCastExceptionUnlessNull($next_2(l$iterator));
+    throwClassCastExceptionUnlessNull($next_3(l$iterator));
     null.nullMethod();
   }
 }
 
 function DefaultUpdateManager_0(){
-  $clinit_181();
+  $clinit_198();
 }
 
 function DefaultUpdateManager(){
 }
 
 _ = DefaultUpdateManager_0.prototype = DefaultUpdateManager.prototype = new Object_0;
-_.getClass$ = function getClass_92(){
+_.getClass$ = function getClass_102(){
   return Lfreenet_client_update_DefaultUpdateManager_2_classLit;
 }
 ;
@@ -3937,7 +4255,7 @@ function DefaultUpdateManager$UpdaterRequestCallback(){
 }
 
 _ = DefaultUpdateManager$UpdaterRequestCallback_0.prototype = DefaultUpdateManager$UpdaterRequestCallback.prototype = new Object_0;
-_.getClass$ = function getClass_93(){
+_.getClass$ = function getClass_103(){
   return Lfreenet_client_update_DefaultUpdateManager$UpdaterRequestCallback_2_classLit;
 }
 ;
@@ -3952,7 +4270,7 @@ _.onResponseReceived = function onResponseReceived_3(request, response){
     updaterType = decode($split(response.val$xmlHttpRequest.responseText, '[:]', 0)[1]);
     newContent = decode($split(response.val$xmlHttpRequest.responseText, '[:]', 0)[2]);
     log('Element ' + this.elementId + ' will be updated with type:' + updaterType + ' and content:' + newContent);
-    dynamicCast($get_2(($clinit_181() , updaters).map, updaterType), 32).updated(this.elementId, newContent);
+    dynamicCast($get_2(($clinit_198() , updaters).map, updaterType), 34).updated(this.elementId, newContent);
   }
    else {
     log('ERROR! BAD DATA');
@@ -3972,7 +4290,7 @@ function $updated_1(elementId, content_0){
   }
    catch ($e0) {
     $e0 = caught_0($e0);
-    if (instanceOf($e0, 29)) {
+    if (instanceOf($e0, 31)) {
       e = $e0;
       log('Error when setting html' + $toString(e));
     }
@@ -3984,7 +4302,7 @@ function $updated_1(elementId, content_0){
   }
    catch ($e0) {
     $e0 = caught_0($e0);
-    if (instanceOf($e0, 29)) {
+    if (instanceOf($e0, 31)) {
       e = $e0;
       log('Error logging content after update ' + e);
     }
@@ -4000,7 +4318,7 @@ function ReplacerUpdater(){
 }
 
 _ = ReplacerUpdater_0.prototype = ReplacerUpdater.prototype = new Object_0;
-_.getClass$ = function getClass_94(){
+_.getClass$ = function getClass_104(){
   return Lfreenet_client_updaters_ReplacerUpdater_2_classLit;
 }
 ;
@@ -4008,7 +4326,7 @@ _.updated = function updated(elementId, content_0){
   $updated_1(elementId, content_0);
 }
 ;
-_.typeId$ = 56;
+_.typeId$ = 61;
 function ConnectionsListUpdater_0(){
 }
 
@@ -4016,10 +4334,12 @@ function ConnectionsListUpdater(){
 }
 
 _ = ConnectionsListUpdater_0.prototype = ConnectionsListUpdater.prototype = new ReplacerUpdater;
-_.getClass$ = function getClass_95(){
+_.getClass$ = function getClass_105(){
   return Lfreenet_client_updaters_ConnectionsListUpdater_2_classLit;
 }
 ;
+--></script>
+<script><!--
 _.updated = function updated_0(elementId, content_0){
   var e, htmlTitlePanel, i, inputs;
   $updated_1(elementId, content_0);
@@ -4034,7 +4354,7 @@ _.updated = function updated_0(elementId, content_0){
   }
 }
 ;
-_.typeId$ = 57;
+_.typeId$ = 62;
 function $countImageProgress(){
   var e, elements, fetched, i, status_0, total;
   fetched = 0;
@@ -4048,7 +4368,7 @@ function $countImageProgress(){
       total += status_0[1];
     }
   }
-  return initValues(_3I_classLit, 105, -1, [fetched, total]);
+  return initValues(_3I_classLit, 112, -1, [fetched, total]);
 }
 
 function $getProgressForElement(image){
@@ -4064,7 +4384,7 @@ function $getProgressForElement(image){
       }
        catch ($e0) {
         $e0 = caught_0($e0);
-        if (instanceOf($e0, 33)) {
+        if (instanceOf($e0, 35)) {
           e = $e0;
           log('fetchedBlocks value "' + (input.getAttribute('value') || '') + '" is invalid: ' + e);
         }
@@ -4078,7 +4398,7 @@ function $getProgressForElement(image){
       }
        catch ($e0) {
         $e0 = caught_0($e0);
-        if (instanceOf($e0, 33)) {
+        if (instanceOf($e0, 35)) {
           e = $e0;
           log('requiredBlocks value "' + (input.getAttribute('value') || '') + '" is invalid: ' + e);
         }
@@ -4087,12 +4407,12 @@ function $getProgressForElement(image){
       }
     }
   }
-  return initValues(_3I_classLit, 105, -1, [fetched, total]);
+  return initValues(_3I_classLit, 112, -1, [fetched, total]);
 }
 
 function ImageElementUpdater_0(){
   var counted, newMsg;
-  this.lastMessage = new Message_0(get_1('imageprogress') + 0 + '/0', ($clinit_175() , MINOR), null, true);
+  this.lastMessage = new Message_0(get_1('imageprogress') + 0 + '/0', ($clinit_192() , MINOR), null, true);
   counted = $countImageProgress();
   this.lastCounted = counted;
   if (counted[1] != 0) {
@@ -4106,23 +4426,23 @@ function ImageElementUpdater(){
 }
 
 _ = ImageElementUpdater_0.prototype = ImageElementUpdater.prototype = new ReplacerUpdater;
-_.getClass$ = function getClass_96(){
+_.getClass$ = function getClass_106(){
   return Lfreenet_client_updaters_ImageElementUpdater_2_classLit;
 }
 ;
 _.updated = function updated_1(elementId, content_0){
   var counted, newMsg, nowCounted, previousFetched;
-  previousFetched = initDim(_3I_classLit, 105, -1, 2, 1);
+  previousFetched = initDim(_3I_classLit, 112, -1, 2, 1);
   $indexOf_2((!instance && (instance = new MessageManager_0) , instance).messages, this.lastMessage, 0) != -1 && (previousFetched = $getProgressForElement(get_0(elementId).element));
   $updated_1(elementId, content_0);
   if ($indexOf_2((!instance && (instance = new MessageManager_0) , instance).messages, this.lastMessage, 0) != -1) {
     counted = $getProgressForElement(get_0(elementId).element);
-    nowCounted = initDim(_3I_classLit, 105, -1, 2, 1);
+    nowCounted = initDim(_3I_classLit, 112, -1, 2, 1);
     nowCounted[0] = this.lastCounted[0] - previousFetched[0] + counted[0];
     nowCounted[1] = this.lastCounted[1] - previousFetched[1] + counted[1];
     this.lastCounted = nowCounted;
     if (nowCounted[1] != 0) {
-      newMsg = new Message_0(get_1('imageprogress') + nowCounted[0] + '/' + nowCounted[1], ($clinit_175() , MINOR), null, true);
+      newMsg = new Message_0(get_1('imageprogress') + nowCounted[0] + '/' + nowCounted[1], ($clinit_192() , MINOR), null, true);
       this.lastMessage?$replaceMessageAtPosition((!instance && (instance = new MessageManager_0) , instance), $indexOf_2((!instance && (instance = new MessageManager_0) , instance).messages, this.lastMessage, 0), newMsg):$addMessage((!instance && (instance = new MessageManager_0) , instance), newMsg);
       this.lastMessage = newMsg;
     }
@@ -4131,8 +4451,39 @@ _.updated = function updated_1(elementId, content_0){
   }
 }
 ;
-_.typeId$ = 58;
+_.typeId$ = 63;
 _.lastCounted = null;
+function MultimediaElementUpdater_0(){
+}
+
+function MultimediaElementUpdater(){
+}
+
+_ = MultimediaElementUpdater_0.prototype = MultimediaElementUpdater.prototype = new ReplacerUpdater;
+_.getClass$ = function getClass_107(){
+  return Lfreenet_client_updaters_MultimediaElementUpdater_2_classLit;
+}
+;
+_.updated = function updated_2(elementId, content_0){
+  var element, image;
+  element = $getFirstChildElement($getFirstChildElement(get_0(elementId).element));
+  log('Updating MultimediaUpdater' + element.tagName);
+  element.tagName == 'IMG' && $addHandler_1(($clinit_152() , image = new Image_1(element) , image.state = new Image$UnclippedState_0(element) , $onAttach(image) , $clinit_159() , $add_6(widgetsToDetach, image) , image), new MultimediaElementUpdater$1_0, ($clinit_40() , $clinit_40() , TYPE));
+}
+;
+_.typeId$ = 64;
+function MultimediaElementUpdater$1_0(){
+}
+
+function MultimediaElementUpdater$1(){
+}
+
+_ = MultimediaElementUpdater$1_0.prototype = MultimediaElementUpdater$1.prototype = new Object_0;
+_.getClass$ = function getClass_108(){
+  return Lfreenet_client_updaters_MultimediaElementUpdater$1_2_classLit;
+}
+;
+_.typeId$ = 65;
 function ProgressBarUpdater_0(){
 }
 
@@ -4140,11 +4491,11 @@ function ProgressBarUpdater(){
 }
 
 _ = ProgressBarUpdater_0.prototype = ProgressBarUpdater.prototype = new ReplacerUpdater;
-_.getClass$ = function getClass_97(){
+_.getClass$ = function getClass_109(){
   return Lfreenet_client_updaters_ProgressBarUpdater_2_classLit;
 }
 ;
-_.updated = function updated_2(elementId, content_0){
+_.updated = function updated_3(elementId, content_0){
   var $e0;
   try {
     log('Progressbarupdater updating');
@@ -4159,7 +4510,7 @@ _.updated = function updated_2(elementId, content_0){
   }
    catch ($e0) {
     $e0 = caught_0($e0);
-    if (instanceOf($e0, 29)) {
+    if (instanceOf($e0, 31)) {
       log('Error occured while updating progressbarupdater');
     }
      else 
@@ -4170,7 +4521,7 @@ _.updated = function updated_2(elementId, content_0){
   }
 }
 ;
-_.typeId$ = 59;
+_.typeId$ = 66;
 function XmlAlertUpdater_0(){
 }
 
@@ -4178,16 +4529,16 @@ function XmlAlertUpdater(){
 }
 
 _ = XmlAlertUpdater_0.prototype = XmlAlertUpdater.prototype = new ReplacerUpdater;
-_.getClass$ = function getClass_98(){
+_.getClass$ = function getClass_110(){
   return Lfreenet_client_updaters_XmlAlertUpdater_2_classLit;
 }
 ;
-_.updated = function updated_3(elementId, content_0){
+_.updated = function updated_4(elementId, content_0){
   $updated_1(elementId, content_0);
   $updateMessages((!instance && (instance = new MessageManager_0) , instance));
 }
 ;
-_.typeId$ = 60;
+_.typeId$ = 67;
 function ArithmeticException_0(){
   $fillInStackTrace();
   this.detailMessage = 'divide by zero';
@@ -4197,11 +4548,11 @@ function ArithmeticException(){
 }
 
 _ = ArithmeticException_0.prototype = ArithmeticException.prototype = new RuntimeException;
-_.getClass$ = function getClass_99(){
+_.getClass$ = function getClass_111(){
   return Ljava_lang_ArithmeticException_2_classLit;
 }
 ;
-_.typeId$ = 61;
+_.typeId$ = 68;
 function ArrayStoreException_0(){
   $fillInStackTrace();
 }
@@ -4209,16 +4560,14 @@ function ArrayStoreException_0(){
 function ArrayStoreException(){
 }
 
---></script>
-<script><!--
 _ = ArrayStoreException_0.prototype = ArrayStoreException.prototype = new RuntimeException;
-_.getClass$ = function getClass_100(){
+_.getClass$ = function getClass_112(){
   return Ljava_lang_ArrayStoreException_2_classLit;
 }
 ;
-_.typeId$ = 62;
-function $clinit_194(){
-  $clinit_194 = nullMethod;
+_.typeId$ = 69;
+function $clinit_213(){
+  $clinit_213 = nullMethod;
   new Boolean_1(false);
   new Boolean_1(true);
 }
@@ -4232,10 +4581,10 @@ function Boolean_0(){
 
 _ = Boolean_1.prototype = Boolean_0.prototype = new Object_0;
 _.equals$ = function equals_3(o){
-  return o != null && canCast(o.typeId$, 34) && dynamicCast(o, 34).value == this.value;
+  return o != null && canCast(o.typeId$, 36) && dynamicCast(o, 36).value == this.value;
 }
 ;
-_.getClass$ = function getClass_101(){
+_.getClass$ = function getClass_113(){
   return Ljava_lang_Boolean_2_classLit;
 }
 ;
@@ -4247,7 +4596,7 @@ _.toString$ = function toString_11(){
   return this.value?'true':'false';
 }
 ;
-_.typeId$ = 65;
+_.typeId$ = 72;
 _.value = false;
 function digit(c){
   if (c >= 48 && c < 58) {
@@ -4292,7 +4641,7 @@ function Class(){
 }
 
 _ = Class_0.prototype = Class.prototype = new Object_0;
-_.getClass$ = function getClass_102(){
+_.getClass$ = function getClass_114(){
   return Ljava_lang_Class_2_classLit;
 }
 ;
@@ -4311,11 +4660,11 @@ function ClassCastException(){
 }
 
 _ = ClassCastException_0.prototype = ClassCastException.prototype = new RuntimeException;
-_.getClass$ = function getClass_103(){
+_.getClass$ = function getClass_115(){
   return Ljava_lang_ClassCastException_2_classLit;
 }
 ;
-_.typeId$ = 66;
+_.typeId$ = 73;
 function __parseAndValidateInt(s){
   var i, length_0, startIndex, toReturn;
   if (s == null) {
@@ -4356,7 +4705,7 @@ function __parseAndValidateLong(s){
     s = s.substr(1, s.length - 1);
     --length_0;
   }
-  if (length_0 > ($clinit_211() , maxLengthForRadix)[10]) {
+  if (length_0 > ($clinit_230() , maxLengthForRadix)[10]) {
     throw new NumberFormatException_0('For input string: "' + s + '"');
   }
   for (i = 0; i < length_0; ++i) {
@@ -4419,11 +4768,11 @@ function IllegalArgumentException(){
 }
 
 _ = IllegalArgumentException_1.prototype = IllegalArgumentException_0.prototype = IllegalArgumentException.prototype = new RuntimeException;
-_.getClass$ = function getClass_104(){
+_.getClass$ = function getClass_116(){
   return Ljava_lang_IllegalArgumentException_2_classLit;
 }
 ;
-_.typeId$ = 67;
+_.typeId$ = 74;
 function IllegalStateException_0(){
   $fillInStackTrace();
 }
@@ -4437,11 +4786,11 @@ function IllegalStateException(){
 }
 
 _ = IllegalStateException_1.prototype = IllegalStateException_0.prototype = IllegalStateException.prototype = new RuntimeException;
-_.getClass$ = function getClass_105(){
+_.getClass$ = function getClass_117(){
   return Ljava_lang_IllegalStateException_2_classLit;
 }
 ;
-_.typeId$ = 68;
+_.typeId$ = 75;
 function IndexOutOfBoundsException_0(){
   $fillInStackTrace();
 }
@@ -4455,11 +4804,11 @@ function IndexOutOfBoundsException(){
 }
 
 _ = IndexOutOfBoundsException_1.prototype = IndexOutOfBoundsException_0.prototype = IndexOutOfBoundsException.prototype = new RuntimeException;
-_.getClass$ = function getClass_106(){
+_.getClass$ = function getClass_118(){
   return Ljava_lang_IndexOutOfBoundsException_2_classLit;
 }
 ;
-_.typeId$ = 69;
+_.typeId$ = 76;
 function numberOfLeadingZeros_0(i){
   var m_0, n, y;
   if (i < 0) {
@@ -4507,8 +4856,8 @@ function numberOfTrailingZeros(i){
 
 function toPowerOfTwoString(value){
   var buf, digits, pos;
-  buf = initDim(_3C_classLit, 96, -1, 8, 1);
-  digits = ($clinit_210() , digits_0);
+  buf = initDim(_3C_classLit, 103, -1, 8, 1);
+  digits = ($clinit_229() , digits_0);
   pos = 7;
   if (value >= 0) {
     while (value > 15) {
@@ -4547,24 +4896,24 @@ function NullPointerException(){
 }
 
 _ = NullPointerException_1.prototype = NullPointerException_0.prototype = NullPointerException.prototype = new RuntimeException;
-_.getClass$ = function getClass_107(){
+_.getClass$ = function getClass_119(){
   return Ljava_lang_NullPointerException_2_classLit;
 }
 ;
-_.typeId$ = 70;
-function $clinit_210(){
-  $clinit_210 = nullMethod;
-  digits_0 = initValues(_3C_classLit, 96, -1, [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122]);
+_.typeId$ = 77;
+function $clinit_229(){
+  $clinit_229 = nullMethod;
+  digits_0 = initValues(_3C_classLit, 103, -1, [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122]);
 }
 
 var digits_0;
-function $clinit_211(){
-  $clinit_211 = nullMethod;
+function $clinit_230(){
+  $clinit_230 = nullMethod;
   var i;
-  maxDigitsForRadix = initValues(_3I_classLit, 105, -1, [-1, -1, 30, 19, 15, 13, 11, 11, 10, 9, 9, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5]);
-  maxDigitsRadixPower = initDim(_3I_classLit, 105, -1, 37, 1);
-  maxLengthForRadix = initValues(_3I_classLit, 105, -1, [-1, -1, 63, 40, 32, 28, 25, 23, 21, 20, 19, 19, 18, 18, 17, 17, 16, 16, 16, 15, 15, 15, 15, 14, 14, 14, 14, 14, 14, 13, 13, 13, 13, 13, 13, 13, 13]);
-  maxValueForRadix = initDim(_3J_classLit, 114, -1, 37, 3);
+  maxDigitsForRadix = initValues(_3I_classLit, 112, -1, [-1, -1, 30, 19, 15, 13, 11, 11, 10, 9, 9, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5]);
+  maxDigitsRadixPower = initDim(_3I_classLit, 112, -1, 37, 1);
+  maxLengthForRadix = initValues(_3I_classLit, 112, -1, [-1, -1, 63, 40, 32, 28, 25, 23, 21, 20, 19, 19, 18, 18, 17, 17, 16, 16, 16, 15, 15, 15, 15, 14, 14, 14, 14, 14, 14, 13, 13, 13, 13, 13, 13, 13, 13]);
+  maxValueForRadix = initDim(_3J_classLit, 121, -1, 37, 3);
   for (i = 2; i <= 36; ++i) {
     maxDigitsRadixPower[i] = round_int(Math.pow(i, maxDigitsForRadix[i]));
     maxValueForRadix[i] = divMod(P7fffffffffffffff_longLit, fromInt(maxDigitsRadixPower[i]), false);
@@ -4581,11 +4930,11 @@ function NumberFormatException(){
 }
 
 _ = NumberFormatException_0.prototype = NumberFormatException.prototype = new IllegalArgumentException;
-_.getClass$ = function getClass_108(){
+_.getClass$ = function getClass_120(){
   return Ljava_lang_NumberFormatException_2_classLit;
 }
 ;
-_.typeId$ = 71;
+_.typeId$ = 78;
 function StackTraceElement_0(methodName){
   this.className_0 = 'Unknown';
   this.methodName = methodName;
@@ -4597,7 +4946,7 @@ function StackTraceElement(){
 }
 
 _ = StackTraceElement_0.prototype = StackTraceElement.prototype = new Object_0;
-_.getClass$ = function getClass_109(){
+_.getClass$ = function getClass_121(){
   return Ljava_lang_StackTraceElement_2_classLit;
 }
 ;
@@ -4605,7 +4954,7 @@ _.toString$ = function toString_13(){
   return this.className_0 + '.' + this.methodName + '(' + this.fileName + ':' + this.lineNumber + ')';
 }
 ;
-_.typeId$ = 72;
+_.typeId$ = 79;
 _.className_0 = null;
 _.fileName = null;
 _.lineNumber = 0;
@@ -4654,7 +5003,7 @@ function $split(this$static, regex, maxMatch){
     }
     lastNonEmpty < out.length && out.splice(lastNonEmpty, out.length - lastNonEmpty);
   }
-  var jr = initDim(_3Ljava_lang_String_2_classLit, 112, 1, out.length, 0);
+  var jr = initDim(_3Ljava_lang_String_2_classLit, 119, 1, out.length, 0);
   for (var i = 0; i < out.length; ++i) {
     jr[i] = out[i];
   }
@@ -4692,7 +5041,7 @@ _.equals$ = function equals_4(other){
   return $equals_1(this, other);
 }
 ;
-_.getClass$ = function getClass_110(){
+_.getClass$ = function getClass_122(){
   return Ljava_lang_String_2_classLit;
 }
 ;
@@ -4705,8 +5054,8 @@ _.toString$ = function toString_14(){
 }
 ;
 _.typeId$ = 2;
-function $clinit_215(){
-  $clinit_215 = nullMethod;
+function $clinit_234(){
+  $clinit_234 = nullMethod;
   back_0 = {};
   front = {};
 }
@@ -4728,7 +5077,7 @@ function compute(str){
 }
 
 function getHashCode_0(str){
-  $clinit_215();
+  $clinit_234();
   var key = ':' + str;
   var result = front[key];
   if (result != null) {
@@ -4767,7 +5116,7 @@ function StringBuffer(){
 }
 
 _ = StringBuffer_1.prototype = StringBuffer_0.prototype = StringBuffer.prototype = new Object_0;
-_.getClass$ = function getClass_111(){
+_.getClass$ = function getClass_123(){
   return Ljava_lang_StringBuffer_2_classLit;
 }
 ;
@@ -4775,7 +5124,7 @@ _.toString$ = function toString_15(){
   return this.impl.string;
 }
 ;
-_.typeId$ = 73;
+_.typeId$ = 80;
 function $append_1(this$static, x){
   this$static.impl.string += String.fromCharCode(x);
   return this$static;
@@ -4789,7 +5138,7 @@ function StringBuilder(){
 }
 
 _ = StringBuilder_0.prototype = StringBuilder.prototype = new Object_0;
-_.getClass$ = function getClass_112(){
+_.getClass$ = function getClass_124(){
   return Ljava_lang_StringBuilder_2_classLit;
 }
 ;
@@ -4797,7 +5146,7 @@ _.toString$ = function toString_16(){
   return this.impl.string;
 }
 ;
-_.typeId$ = 74;
+_.typeId$ = 81;
 function UnsupportedOperationException_0(){
   $fillInStackTrace();
 }
@@ -4811,15 +5160,15 @@ function UnsupportedOperationException(){
 }
 
 _ = UnsupportedOperationException_1.prototype = UnsupportedOperationException_0.prototype = UnsupportedOperationException.prototype = new RuntimeException;
-_.getClass$ = function getClass_113(){
+_.getClass$ = function getClass_125(){
   return Ljava_lang_UnsupportedOperationException_2_classLit;
 }
 ;
-_.typeId$ = 75;
+_.typeId$ = 82;
 function $advanceToFind(iter, o){
   var t;
   while (iter.hasNext()) {
-    t = iter.next();
+    t = iter.next_0();
     if (o == null?t == null:o.typeMarker$ == nullMethod || o.typeId$ == 2?o.equals$(t):o === t) {
       return iter;
     }
@@ -4831,9 +5180,9 @@ function $toArray(this$static, a_0){
   var i, it, size;
   size = this$static.size_0();
   a_0.length < size && (a_0 = createFrom(a_0, size));
-  it = this$static.iterator();
+  it = this$static.iterator_0();
   for (i = 0; i < size; ++i) {
-    setCheck(a_0, i, it.next());
+    setCheck(a_0, i, it.next_0());
   }
   a_0.length > size && setCheck(a_0, size, null);
   return a_0;
@@ -4844,10 +5193,10 @@ function $toString_6(this$static){
   sb = new StringBuffer_0;
   comma = null;
   sb.impl.string += '[';
-  iter = this$static.iterator();
+  iter = this$static.iterator_0();
   while (iter.hasNext()) {
     comma != null?(sb.impl.string += comma , sb):(comma = ', ');
-    $append_0(sb, '' + iter.next());
+    $append_0(sb, '' + iter.next_0());
   }
   sb.impl.string += ']';
   return sb.impl.string;
@@ -4863,16 +5212,16 @@ _.add = function add_0(o){
 ;
 _.contains_0 = function contains(o){
   var iter;
-  iter = $advanceToFind(this.iterator(), o);
+  iter = $advanceToFind(this.iterator_0(), o);
   return !!iter;
 }
 ;
-_.getClass$ = function getClass_114(){
+_.getClass$ = function getClass_126(){
   return Ljava_util_AbstractCollection_2_classLit;
 }
 ;
 _.toArray = function toArray(){
-  return this.toArray_0(initDim(_3Ljava_lang_Object_2_classLit, 110, 0, this.size_0(), 0));
+  return this.toArray_0(initDim(_3Ljava_lang_Object_2_classLit, 117, 0, this.size_0(), 0));
 }
 ;
 _.toArray_0 = function toArray_0(a_0){
@@ -4889,15 +5238,15 @@ function $equals_2(this$static, obj){
   if (obj === this$static) {
     return true;
   }
-  if (!(obj != null && canCast(obj.typeId$, 37))) {
+  if (!(obj != null && canCast(obj.typeId$, 39))) {
     return false;
   }
-  otherMap = dynamicCast(obj, 37);
+  otherMap = dynamicCast(obj, 39);
   if (this$static.size != otherMap.size_0()) {
     return false;
   }
-  for (entry$iterator = otherMap.entrySet_0().iterator(); entry$iterator.hasNext();) {
-    entry = dynamicCast(entry$iterator.next(), 35);
+  for (entry$iterator = otherMap.entrySet_0().iterator_0(); entry$iterator.hasNext();) {
+    entry = dynamicCast(entry$iterator.next_0(), 37);
     otherKey = entry.getKey();
     otherValue = entry.getValue();
     if (!(otherKey == null?this$static.nullSlotLive:otherKey != null && canCast(otherKey.typeId$, 1)?$hasStringValue(this$static, dynamicCast(otherKey, 1)):$hasHashValue(this$static, otherKey, ~~hashCode__devirtual$(otherKey)))) {
@@ -4913,8 +5262,8 @@ function $equals_2(this$static, obj){
 function $hashCode_2(this$static){
   var entry, entry$iterator, hashCode;
   hashCode = 0;
-  for (entry$iterator = new AbstractHashMap$EntrySetIterator_0((new AbstractHashMap$EntrySet_0(this$static)).this$0); $hasNext_1(entry$iterator.iter);) {
-    entry = dynamicCast($next_2(entry$iterator.iter), 35);
+  for (entry$iterator = new AbstractHashMap$EntrySetIterator_0((new AbstractHashMap$EntrySet_0(this$static)).this$0); $hasNext_2(entry$iterator.iter);) {
+    entry = dynamicCast($next_3(entry$iterator.iter), 37);
     hashCode += entry.hashCode$();
     hashCode = ~~hashCode;
   }
@@ -4931,8 +5280,8 @@ function $toString_7(this$static){
   var comma, entry, iter, s;
   s = '{';
   comma = false;
-  for (iter = new AbstractHashMap$EntrySetIterator_0((new AbstractHashMap$EntrySet_0(this$static)).this$0); $hasNext_1(iter.iter);) {
-    entry = dynamicCast($next_2(iter.iter), 35);
+  for (iter = new AbstractHashMap$EntrySetIterator_0((new AbstractHashMap$EntrySet_0(this$static)).this$0); $hasNext_2(iter.iter);) {
+    entry = dynamicCast($next_3(iter.iter), 37);
     comma?(s += ', '):(comma = true);
     s += '' + entry.getKey();
     s += '=';
@@ -4949,7 +5298,7 @@ _.equals$ = function equals_5(obj){
   return $equals_2(this, obj);
 }
 ;
-_.getClass$ = function getClass_115(){
+_.getClass$ = function getClass_127(){
   return Ljava_util_AbstractMap_2_classLit;
 }
 ;
@@ -4969,7 +5318,7 @@ _.toString$ = function toString_18(){
   return $toString_7(this);
 }
 ;
-_.typeId$ = 76;
+_.typeId$ = 83;
 function $addAllHashEntries(this$static, dest){
   var hashCodeMap = this$static.hashCodeMap;
   for (var hashCode in hashCodeMap) {
@@ -5085,10 +5434,12 @@ function $putStringValue(this$static, key, value){
   return result;
 }
 
-function $remove_3(this$static, key){
+function $remove_4(this$static, key){
   return !key?$removeNullSlot(this$static):$removeHashValue(this$static, key, ~~(key.$H || (key.$H = ++sNextHashId)));
 }
 
+--></script>
+<script><!--
 function $removeHashValue(this$static, key, hashCode){
   var array = this$static.hashCodeMap[hashCode];
   if (array) {
@@ -5128,7 +5479,7 @@ _.equalsBridge = function equalsBridge(value1, value2){
   return (value1 == null?null:value1) === (value2 == null?null:value2) || value1 != null && (value1.typeMarker$ == nullMethod || value1.typeId$ == 2?value1.equals$(value2):value1 === value2);
 }
 ;
-_.getClass$ = function getClass_116(){
+_.getClass$ = function getClass_128(){
   return Ljava_util_AbstractHashMap_2_classLit;
 }
 ;
@@ -5140,7 +5491,7 @@ _.size_0 = function size_1(){
   return this.size;
 }
 ;
-_.typeId$ = 77;
+_.typeId$ = 84;
 _.hashCodeMap = null;
 _.nullSlot = null;
 _.nullSlotLive = false;
@@ -5151,15 +5502,15 @@ function $equals_3(this$static, o){
   if (o === this$static) {
     return true;
   }
-  if (!(o != null && canCast(o.typeId$, 38))) {
+  if (!(o != null && canCast(o.typeId$, 40))) {
     return false;
   }
-  other = dynamicCast(o, 38);
+  other = dynamicCast(o, 40);
   if (other.size_0() != this$static.size_0()) {
     return false;
   }
-  for (iter = other.iterator(); iter.hasNext();) {
-    otherItem = iter.next();
+  for (iter = other.iterator_0(); iter.hasNext();) {
+    otherItem = iter.next_0();
     if (!this$static.contains_0(otherItem)) {
       return false;
     }
@@ -5170,8 +5521,8 @@ function $equals_3(this$static, o){
 function $hashCode_3(this$static){
   var hashCode, iter, next;
   hashCode = 0;
-  for (iter = this$static.iterator(); iter.hasNext();) {
-    next = iter.next();
+  for (iter = this$static.iterator_0(); iter.hasNext();) {
+    next = iter.next_0();
     if (next != null) {
       hashCode += hashCode__devirtual$(next);
       hashCode = ~~hashCode;
@@ -5188,7 +5539,7 @@ _.equals$ = function equals_6(o){
   return $equals_3(this, o);
 }
 ;
-_.getClass$ = function getClass_117(){
+_.getClass$ = function getClass_129(){
   return Ljava_util_AbstractSet_2_classLit;
 }
 ;
@@ -5196,11 +5547,11 @@ _.hashCode$ = function hashCode_7(){
   return $hashCode_3(this);
 }
 ;
-_.typeId$ = 78;
+_.typeId$ = 85;
 function $contains(this$static, o){
   var entry, key, value;
-  if (o != null && canCast(o.typeId$, 35)) {
-    entry = dynamicCast(o, 35);
+  if (o != null && canCast(o.typeId$, 37)) {
+    entry = dynamicCast(o, 37);
     key = entry.getKey();
     if ($containsKey(this$static.this$0, key)) {
       value = $get_2(this$static.this$0, key);
@@ -5222,11 +5573,11 @@ _.contains_0 = function contains_0(o){
   return $contains(this, o);
 }
 ;
-_.getClass$ = function getClass_118(){
+_.getClass$ = function getClass_130(){
   return Ljava_util_AbstractHashMap$EntrySet_2_classLit;
 }
 ;
-_.iterator = function iterator_1(){
+_.iterator_0 = function iterator_1(){
   return new AbstractHashMap$EntrySetIterator_0(this.this$0);
 }
 ;
@@ -5234,7 +5585,7 @@ _.size_0 = function size_2(){
   return this.this$0.size;
 }
 ;
-_.typeId$ = 79;
+_.typeId$ = 86;
 _.this$0 = null;
 function AbstractHashMap$EntrySetIterator_0(this$0){
   var list;
@@ -5250,16 +5601,16 @@ function AbstractHashMap$EntrySetIterator(){
 }
 
 _ = AbstractHashMap$EntrySetIterator_0.prototype = AbstractHashMap$EntrySetIterator.prototype = new Object_0;
-_.getClass$ = function getClass_119(){
+_.getClass$ = function getClass_131(){
   return Ljava_util_AbstractHashMap$EntrySetIterator_2_classLit;
 }
 ;
-_.hasNext = function hasNext_0(){
-  return $hasNext_1(this.iter);
+_.hasNext = function hasNext_1(){
+  return $hasNext_2(this.iter);
 }
 ;
-_.next = function next_1(){
-  return dynamicCast($next_2(this.iter), 35);
+_.next_0 = function next_2(){
+  return dynamicCast($next_3(this.iter), 37);
 }
 ;
 _.typeId$ = 0;
@@ -5271,8 +5622,8 @@ function AbstractMapEntry(){
 _ = AbstractMapEntry.prototype = new Object_0;
 _.equals$ = function equals_7(other){
   var entry;
-  if (other != null && canCast(other.typeId$, 35)) {
-    entry = dynamicCast(other, 35);
+  if (other != null && canCast(other.typeId$, 37)) {
+    entry = dynamicCast(other, 37);
     if (equalsWithNullCheck(this.getKey(), entry.getKey()) && equalsWithNullCheck(this.getValue(), entry.getValue())) {
       return true;
     }
@@ -5280,7 +5631,7 @@ _.equals$ = function equals_7(other){
   return false;
 }
 ;
-_.getClass$ = function getClass_120(){
+_.getClass$ = function getClass_132(){
   return Ljava_util_AbstractMapEntry_2_classLit;
 }
 ;
@@ -5297,7 +5648,7 @@ _.toString$ = function toString_19(){
   return this.getKey() + '=' + this.getValue();
 }
 ;
-_.typeId$ = 80;
+_.typeId$ = 87;
 function AbstractHashMap$MapEntryNull_0(this$0){
   this.this$0 = this$0;
 }
@@ -5306,7 +5657,7 @@ function AbstractHashMap$MapEntryNull(){
 }
 
 _ = AbstractHashMap$MapEntryNull_0.prototype = AbstractHashMap$MapEntryNull.prototype = new AbstractMapEntry;
-_.getClass$ = function getClass_121(){
+_.getClass$ = function getClass_133(){
   return Ljava_util_AbstractHashMap$MapEntryNull_2_classLit;
 }
 ;
@@ -5322,7 +5673,7 @@ _.setValue = function setValue(object){
   return $putNullSlot(this.this$0, object);
 }
 ;
-_.typeId$ = 81;
+_.typeId$ = 88;
 _.this$0 = null;
 function AbstractHashMap$MapEntryString_0(key, this$0){
   this.this$0 = this$0;
@@ -5337,7 +5688,7 @@ function AbstractHashMap$MapEntryString(){
 }
 
 _ = AbstractHashMap$MapEntryString_0.prototype = AbstractHashMap$MapEntryString.prototype = new AbstractMapEntry;
-_.getClass$ = function getClass_122(){
+_.getClass$ = function getClass_134(){
   return Ljava_util_AbstractHashMap$MapEntryString_2_classLit;
 }
 ;
@@ -5353,7 +5704,7 @@ _.setValue = function setValue_0(object){
   return $putStringValue(this.this$0, this.key, object);
 }
 ;
-_.typeId$ = 82;
+_.typeId$ = 89;
 _.key = null;
 _.this$0 = null;
 function $indexOf_1(this$static, toFind){
@@ -5383,8 +5734,6 @@ _.add = function add_1(obj){
   return true;
 }
 ;
---></script>
-<script><!--
 _.add_0 = function add_2(index, element){
   throw new UnsupportedOperationException_1('Add not supported on this list');
 }
@@ -5394,18 +5743,18 @@ _.equals$ = function equals_8(o){
   if (o === this) {
     return true;
   }
-  if (!(o != null && canCast(o.typeId$, 36))) {
+  if (!(o != null && canCast(o.typeId$, 38))) {
     return false;
   }
-  other = dynamicCast(o, 36);
+  other = dynamicCast(o, 38);
   if (this.size_0() != other.size_0()) {
     return false;
   }
   iter = new AbstractList$IteratorImpl_0(this);
-  iterOther = other.iterator();
+  iterOther = other.iterator_0();
   while (iter.i < iter.this$0.size_0()) {
-    elem = $next_2(iter);
-    elemOther = $next_2(iterOther);
+    elem = $next_3(iter);
+    elemOther = $next_3(iterOther);
     if (!(elem == null?elemOther == null:elem.typeMarker$ == nullMethod || elem.typeId$ == 2?elem.equals$(elemOther):elem === elemOther)) {
       return false;
     }
@@ -5413,7 +5762,7 @@ _.equals$ = function equals_8(o){
   return true;
 }
 ;
-_.getClass$ = function getClass_123(){
+_.getClass$ = function getClass_135(){
   return Ljava_util_AbstractList_2_classLit;
 }
 ;
@@ -5422,23 +5771,23 @@ _.hashCode$ = function hashCode_9(){
   k = 1;
   iter = new AbstractList$IteratorImpl_0(this);
   while (iter.i < iter.this$0.size_0()) {
-    obj = $next_2(iter);
+    obj = $next_3(iter);
     k = 31 * k + (obj == null?0:hashCode__devirtual$(obj));
     k = ~~k;
   }
   return k;
 }
 ;
-_.iterator = function iterator_2(){
+_.iterator_0 = function iterator_2(){
   return new AbstractList$IteratorImpl_0(this);
 }
 ;
-_.typeId$ = 83;
-function $hasNext_1(this$static){
+_.typeId$ = 90;
+function $hasNext_2(this$static){
   return this$static.i < this$static.this$0.size_0();
 }
 
-function $next_2(this$static){
+function $next_3(this$static){
   if (this$static.i >= this$static.this$0.size_0()) {
     throw new NoSuchElementException_0;
   }
@@ -5453,16 +5802,16 @@ function AbstractList$IteratorImpl(){
 }
 
 _ = AbstractList$IteratorImpl_0.prototype = AbstractList$IteratorImpl.prototype = new Object_0;
-_.getClass$ = function getClass_124(){
+_.getClass$ = function getClass_136(){
   return Ljava_util_AbstractList$IteratorImpl_2_classLit;
 }
 ;
-_.hasNext = function hasNext_1(){
+_.hasNext = function hasNext_2(){
   return this.i < this.this$0.size_0();
 }
 ;
-_.next = function next_2(){
-  return $next_2(this);
+_.next_0 = function next_3(){
+  return $next_3(this);
 }
 ;
 _.typeId$ = 0;
@@ -5481,11 +5830,11 @@ _.contains_0 = function contains_1(key){
   return $containsKey(this.this$0, key);
 }
 ;
-_.getClass$ = function getClass_125(){
+_.getClass$ = function getClass_137(){
   return Ljava_util_AbstractMap$1_2_classLit;
 }
 ;
-_.iterator = function iterator_3(){
+_.iterator_0 = function iterator_3(){
   var outerIter;
   return outerIter = new AbstractHashMap$EntrySetIterator_0(this.val$entrySet.this$0) , new AbstractMap$1$1_0(outerIter);
 }
@@ -5494,7 +5843,7 @@ _.size_0 = function size_3(){
   return this.val$entrySet.this$0.size;
 }
 ;
-_.typeId$ = 84;
+_.typeId$ = 91;
 _.this$0 = null;
 _.val$entrySet = null;
 function AbstractMap$1$1_0(val$outerIter){
@@ -5505,17 +5854,17 @@ function AbstractMap$1$1(){
 }
 
 _ = AbstractMap$1$1_0.prototype = AbstractMap$1$1.prototype = new Object_0;
-_.getClass$ = function getClass_126(){
+_.getClass$ = function getClass_138(){
   return Ljava_util_AbstractMap$1$1_2_classLit;
 }
 ;
-_.hasNext = function hasNext_2(){
-  return $hasNext_1(this.val$outerIter.iter);
+_.hasNext = function hasNext_3(){
+  return $hasNext_2(this.val$outerIter.iter);
 }
 ;
-_.next = function next_3(){
+_.next_0 = function next_4(){
   var entry;
-  entry = dynamicCast($next_2(this.val$outerIter.iter), 35);
+  entry = dynamicCast($next_3(this.val$outerIter.iter), 37);
   return entry.getKey();
 }
 ;
@@ -5546,7 +5895,7 @@ function $indexOf_2(this$static, o, index){
   return -1;
 }
 
-function $remove_4(this$static, index){
+function $remove_5(this$static, index){
   var previous;
   previous = (checkIndex(index, this$static.size) , this$static.array[index]);
   this$static.array.splice(index, 1);
@@ -5554,22 +5903,22 @@ function $remove_4(this$static, index){
   return previous;
 }
 
-function $remove_5(this$static, o){
+function $remove_6(this$static, o){
   var i;
   i = $indexOf_2(this$static, o, 0);
   if (i == -1) {
     return false;
   }
-  $remove_4(this$static, i);
+  $remove_5(this$static, i);
   return true;
 }
 
 function ArrayList_0(){
-  this.array = initDim(_3Ljava_lang_Object_2_classLit, 110, 0, 0, 0);
+  this.array = initDim(_3Ljava_lang_Object_2_classLit, 117, 0, 0, 0);
 }
 
 function ArrayList_1(c){
-  this.array = initDim(_3Ljava_lang_Object_2_classLit, 110, 0, 0, 0);
+  this.array = initDim(_3Ljava_lang_Object_2_classLit, 117, 0, 0, 0);
   Array.prototype.splice.apply(this.array, [0, 0].concat(c.toArray()));
   this.size = this.array.length;
 }
@@ -5594,7 +5943,7 @@ _.get = function get_2(index){
   return checkIndex(index, this.size) , this.array[index];
 }
 ;
-_.getClass$ = function getClass_127(){
+_.getClass$ = function getClass_139(){
   return Ljava_util_ArrayList_2_classLit;
 }
 ;
@@ -5617,7 +5966,7 @@ _.toArray_0 = function toArray_2(out){
   return out;
 }
 ;
-_.typeId$ = 85;
+_.typeId$ = 92;
 _.size = 0;
 function Arrays$ArrayList_0(array){
   this.array = array;
@@ -5635,7 +5984,7 @@ _.get = function get_3(index){
   return checkIndex(index, this.array.length) , this.array[index];
 }
 ;
-_.getClass$ = function getClass_128(){
+_.getClass$ = function getClass_140(){
   return Ljava_util_Arrays$ArrayList_2_classLit;
 }
 ;
@@ -5658,7 +6007,7 @@ _.toArray_0 = function toArray_4(out){
   return out;
 }
 ;
-_.typeId$ = 86;
+_.typeId$ = 93;
 _.array = null;
 function Collections$UnmodifiableCollection(){
 }
@@ -5668,11 +6017,11 @@ _.add = function add_5(o){
   throw new UnsupportedOperationException_0;
 }
 ;
-_.getClass$ = function getClass_129(){
+_.getClass$ = function getClass_141(){
   return Ljava_util_Collections$UnmodifiableCollection_2_classLit;
 }
 ;
-_.iterator = function iterator_4(){
+_.iterator_0 = function iterator_4(){
   return new Collections$UnmodifiableCollectionIterator_0(new AbstractHashMap$EntrySetIterator_0(this.coll.this$0));
 }
 ;
@@ -5694,16 +6043,16 @@ function Collections$UnmodifiableCollectionIterator(){
 }
 
 _ = Collections$UnmodifiableCollectionIterator_0.prototype = Collections$UnmodifiableCollectionIterator.prototype = new Object_0;
-_.getClass$ = function getClass_130(){
+_.getClass$ = function getClass_142(){
   return Ljava_util_Collections$UnmodifiableCollectionIterator_2_classLit;
 }
 ;
-_.hasNext = function hasNext_3(){
-  return $hasNext_1(this.it.iter);
+_.hasNext = function hasNext_4(){
+  return $hasNext_2(this.it.iter);
 }
 ;
-_.next = function next_4(){
-  return dynamicCast($next_2(this.it.iter), 35);
+_.next_0 = function next_5(){
+  return dynamicCast($next_3(this.it.iter), 37);
 }
 ;
 _.typeId$ = 0;
@@ -5725,7 +6074,7 @@ _.equals$ = function equals_9(o){
   return $equals_2(this.map, o);
 }
 ;
-_.getClass$ = function getClass_131(){
+_.getClass$ = function getClass_143(){
   return Ljava_util_Collections$UnmodifiableMap_2_classLit;
 }
 ;
@@ -5745,7 +6094,7 @@ _.toString$ = function toString_21(){
   return $toString_7(this.map);
 }
 ;
-_.typeId$ = 87;
+_.typeId$ = 94;
 _.entrySet = null;
 _.map = null;
 function Collections$UnmodifiableSet(){
@@ -5756,7 +6105,7 @@ _.equals$ = function equals_10(o){
   return $equals_3(this.coll, o);
 }
 ;
-_.getClass$ = function getClass_132(){
+_.getClass$ = function getClass_144(){
   return Ljava_util_Collections$UnmodifiableSet_2_classLit;
 }
 ;
@@ -5764,7 +6113,7 @@ _.hashCode$ = function hashCode_11(){
   return $hashCode_3(this.coll);
 }
 ;
-_.typeId$ = 88;
+_.typeId$ = 95;
 function Collections$UnmodifiableMap$UnmodifiableEntrySet_0(s){
   this.coll = s;
 }
@@ -5773,17 +6122,17 @@ function Collections$UnmodifiableMap$UnmodifiableEntrySet(){
 }
 
 _ = Collections$UnmodifiableMap$UnmodifiableEntrySet_0.prototype = Collections$UnmodifiableMap$UnmodifiableEntrySet.prototype = new Collections$UnmodifiableSet;
-_.getClass$ = function getClass_133(){
+_.getClass$ = function getClass_145(){
   return Ljava_util_Collections$UnmodifiableMap$UnmodifiableEntrySet_2_classLit;
 }
 ;
-_.iterator = function iterator_5(){
+_.iterator_0 = function iterator_5(){
   var it;
   it = new AbstractHashMap$EntrySetIterator_0(this.coll.this$0);
   return new Collections$UnmodifiableMap$UnmodifiableEntrySet$1_0(it);
 }
 ;
-_.typeId$ = 89;
+_.typeId$ = 96;
 function Collections$UnmodifiableMap$UnmodifiableEntrySet$1_0(val$it){
   this.val$it = val$it;
 }
@@ -5792,16 +6141,16 @@ function Collections$UnmodifiableMap$UnmodifiableEntrySet$1(){
 }
 
 _ = Collections$UnmodifiableMap$UnmodifiableEntrySet$1_0.prototype = Collections$UnmodifiableMap$UnmodifiableEntrySet$1.prototype = new Object_0;
-_.getClass$ = function getClass_134(){
+_.getClass$ = function getClass_146(){
   return Ljava_util_Collections$UnmodifiableMap$UnmodifiableEntrySet$1_2_classLit;
 }
 ;
-_.hasNext = function hasNext_4(){
-  return $hasNext_1(this.val$it.iter);
+_.hasNext = function hasNext_5(){
+  return $hasNext_2(this.val$it.iter);
 }
 ;
-_.next = function next_5(){
-  return new Collections$UnmodifiableMap$UnmodifiableEntrySet$UnmodifiableEntry_0(dynamicCast($next_2(this.val$it.iter), 35));
+_.next_0 = function next_6(){
+  return new Collections$UnmodifiableMap$UnmodifiableEntrySet$UnmodifiableEntry_0(dynamicCast($next_3(this.val$it.iter), 37));
 }
 ;
 _.typeId$ = 0;
@@ -5818,7 +6167,7 @@ _.equals$ = function equals_11(o){
   return this.entry.equals$(o);
 }
 ;
-_.getClass$ = function getClass_135(){
+_.getClass$ = function getClass_147(){
   return Ljava_util_Collections$UnmodifiableMap$UnmodifiableEntrySet$UnmodifiableEntry_2_classLit;
 }
 ;
@@ -5842,7 +6191,7 @@ _.toString$ = function toString_22(){
   return toString__devirtual$(this.entry);
 }
 ;
-_.typeId$ = 90;
+_.typeId$ = 97;
 _.entry = null;
 function $equals_4(value1, value2){
   return (value1 == null?null:value1) === (value2 == null?null:value2) || value1 != null && (value1.typeMarker$ == nullMethod || value1.typeId$ == 2?value1.equals$(value2):value1 === value2);
@@ -5856,11 +6205,11 @@ function HashMap(){
 }
 
 _ = HashMap_0.prototype = HashMap.prototype = new AbstractHashMap;
-_.getClass$ = function getClass_136(){
+_.getClass$ = function getClass_148(){
   return Ljava_util_HashMap_2_classLit;
 }
 ;
-_.typeId$ = 91;
+_.typeId$ = 98;
 function $add_6(this$static, o){
   var old;
   old = $put(this$static.map, o, this$static);
@@ -5884,11 +6233,11 @@ _.contains_0 = function contains_4(o){
   return $containsKey(this.map, o);
 }
 ;
-_.getClass$ = function getClass_137(){
+_.getClass$ = function getClass_149(){
   return Ljava_util_HashSet_2_classLit;
 }
 ;
-_.iterator = function iterator_6(){
+_.iterator_0 = function iterator_6(){
   var outerIter;
   return outerIter = new AbstractHashMap$EntrySetIterator_0($keySet_0(this.map).val$entrySet.this$0) , new AbstractMap$1$1_0(outerIter);
 }
@@ -5901,7 +6250,7 @@ _.toString$ = function toString_23(){
   return $toString_6($keySet_0(this.map));
 }
 ;
-_.typeId$ = 92;
+_.typeId$ = 99;
 _.map = null;
 function MapEntryImpl_0(key, value){
   this.key = key;
@@ -5912,7 +6261,7 @@ function MapEntryImpl(){
 }
 
 _ = MapEntryImpl_0.prototype = MapEntryImpl.prototype = new AbstractMapEntry;
-_.getClass$ = function getClass_138(){
+_.getClass$ = function getClass_150(){
   return Ljava_util_MapEntryImpl_2_classLit;
 }
 ;
@@ -5931,7 +6280,7 @@ _.setValue = function setValue_2(value){
   return old;
 }
 ;
-_.typeId$ = 93;
+_.typeId$ = 100;
 _.key = null;
 _.value = null;
 function MissingResourceException_0(s){
@@ -5943,11 +6292,11 @@ function MissingResourceException(){
 }
 
 _ = MissingResourceException_0.prototype = MissingResourceException.prototype = new RuntimeException;
-_.getClass$ = function getClass_139(){
+_.getClass$ = function getClass_151(){
   return Ljava_util_MissingResourceException_2_classLit;
 }
 ;
-_.typeId$ = 94;
+_.typeId$ = 101;
 function NoSuchElementException_0(){
   $fillInStackTrace();
 }
@@ -5956,11 +6305,11 @@ function NoSuchElementException(){
 }
 
 _ = NoSuchElementException_0.prototype = NoSuchElementException.prototype = new RuntimeException;
-_.getClass$ = function getClass_140(){
+_.getClass$ = function getClass_152(){
   return Ljava_util_NoSuchElementException_2_classLit;
 }
 ;
-_.typeId$ = 95;
+_.typeId$ = 102;
 function equalsWithNullCheck(a_0, b){
   return (a_0 == null?null:a_0) === (b == null?null:b) || a_0 != null && (a_0.typeMarker$ == nullMethod || a_0.typeId$ == 2?a_0.equals$(b):a_0 === b);
 }
@@ -5983,7 +6332,7 @@ function gwtOnLoad(errFn, modName, modBase, softPermutationId){
 
 --></script>
 <script><!--
-var Ljava_lang_Object_2_classLit = createForClass('java.lang.', 'Object'), Lcom_google_gwt_user_client_Timer_2_classLit = createForClass('com.google.gwt.user.client.', 'Timer'), _3I_classLit = createForArray('', '[I'), Ljava_lang_Throwable_2_classLit = createForClass('java.lang.', 'Throwable'), Ljava_lang_Exception_2_classLit = createForClass('java.lang.', 'Exception'), Ljava_lang_RuntimeException_2_classLit = createForClass('java.lang.', 'RuntimeException'), Lcom_google_gwt_core_client_Scheduler_2_classLit = createForClass('com.google.gwt.core.client.', 'Scheduler'), Lcom_google_gwt_core_client_impl_SchedulerImpl_2_classLit = createForClass('com.google.gwt.core.client.impl.', 'SchedulerImpl'), Ljava_lang_StackTraceElement_2_classLit = createForClass('java.lang.', 'StackTraceElement'), _3Ljava_lang_StackTraceElement_2_classLit = createForArray('[Ljava.lang.', 'StackTraceElement;'), Lcom_google_gwt_core_client_impl_StringBufferImpl_2_classLit = createForClass('com.google.gwt.core.client.impl.', 'StringBufferImpl'), Lcom_google_gwt_core_client_impl_StringBufferImplAppend_2_classLit = createForClass('com.google.gwt.core.client.impl.', 'StringBufferImplAppend'), Lcom_google_gwt_core_client_JavaScriptException_2_classLit = createForClass('com.google.gwt.core.client.', 'JavaScriptException'), Lcom_google_gwt_core_client_JavaScriptObject_2_classLit = createForClass('com.google.gwt.core.client.', 'JavaScriptObject$'), Ljava_lang_String_2_classLit = createForClass('java.lang.', 'String'), _3Ljava_lang_String_2_classLit = createForArray('[Ljava.lang.', 'String;'), Ljava_lang_Enum_2_classLit = createForClass('java.lang.', 'Enum'), Lcom_google_gwt_dom_client_Style$Unit_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit', values_0), _3Lcom_google_gwt_dom_client_Style$Unit_2_classLit = createForArray('[Lcom.google.gwt.dom.client.', 'Style$Unit;'), Lcom_google_gwt_dom_client_Style$Unit$1_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit$1', null), Lcom_google_gwt_dom_client_Style$Unit$2_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit$2', null), Lcom_google_gwt_dom_client_Style$Unit$3_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit$3', null), Lcom_google_gwt_dom_client_Style$Unit$4_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit$4', null), Lcom_google_gwt_dom_client_Style$Unit$5_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit$5', null), Lcom_google_gwt_dom_client_Style$Unit$6_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit$6', null), Lcom_google_gwt_dom_client_Style$Unit$7_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit$7', null), Lcom_google_gwt_dom_client_Style$Unit$8_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit$8', null), Lcom_google_gwt_dom_client_Style$Unit$9_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit$9', null), Lcom_google_gwt_event_shared_GwtEvent_2_classLit = createForClass('com.google.gwt.event.shared.', 'GwtEvent'), Lcom_google_gwt_event_dom_client_DomEvent_2_classLit = createForClass('com.google.gwt.event.dom.client.', 'DomEvent'), Lcom_google_gwt_event_shared_GwtEvent$Type_2_classLit = createForClass('com.google.gwt.event.shared.', 'GwtEvent$Type'), Lcom_google_gwt_event_dom_client_DomEvent$Type_2_classLit = createForClass('com.google.gwt.event.dom.client.', 'DomEvent$Type'), Lcom_google_gwt_event_dom_client_MouseEvent_2_classLit = createForClass('com.google.gwt.event.dom.client.', 'MouseEvent'), Lcom_google_gwt_event_dom_client_MouseDownEvent_2_classLit = createForClass('com.google.gwt.event.dom.client.', 'MouseDownEvent'), Lcom_google_gwt_event_dom_client_PrivateMap_2_classLit = createForClass('com.google.gwt.event.dom.client.', 'PrivateMap'), Lcom_google_gwt_event_logical_shared_CloseEvent_2_classLit = createForClass('com.google.gwt.event.logical.shared.', 'CloseEvent'), Lcom_google_gwt_event_shared_DefaultHandlerRegistration_2_classLit = createForClass('com.google.gwt.event.shared.', 'DefaultHandlerRegistration'), Lcom_google_gwt_event_shared_HandlerManager_2_classLit = createForClass('com.google.gwt.event.shared.', 'HandlerManager'), Lcom_google_gwt_event_shared_HandlerManager$HandlerRegistry_2_classLit = createForClass('com.google.gwt.event.shared.', 'HandlerManager$HandlerRegistry'), Lcom_google_gwt_event_shared_HandlerManager$1_2_classLit = createForClass('com.google.gwt.event.shared.', 'HandlerManager$1'), _3Ljava_lang_Throwable_2_classLit = createForArray('[Ljava.lang.', 'Throwable;'), Lcom_google_gwt_event_shared_UmbrellaException_2_classLit = createForClass('com.google.gwt.event.shared.', 'UmbrellaException'), Lcom_google_gwt_http_client_Request_2_classLit = createForClass('com.google.gwt.http.client.', 'Request'), Lcom_google_gwt_http_client_Response_2_classLit = createForClass('com.google.gwt.http.client.', 'Response'), Lcom_google_gwt_http_client_Request$1_2_classLit = createForClass('com.google.gwt.http.client.', 'Request$1'), Lcom_google_gwt_http_client_Request$3_2_classLit = createForClass('com.google.gwt.http.client.', 'Request$3'), Lcom_google_gwt_http_client_RequestBuilder_2_classLit = createForClass('com.google.gwt.http.client.', 'RequestBuilder'), Lcom_google_gwt_http_client_RequestBuilder$Method_2_classLit = createForClass('com.google.gwt.http.client.', 'RequestBuilder$Method'), Lcom_google_gwt_http_client_RequestBuilder$1_2_classLit = createForClass('com.google.gwt.http.client.', 'RequestBuilder$1'), Lcom_google_gwt_http_client_RequestException_2_classLit = createForClass('com.google.gwt.http.client.', 'RequestException'), Lcom_google_gwt_http_client_RequestPermissionException_2_classLit = createForClass('com.google.gwt.http.client.', 'RequestPermissionException'), Lcom_google_gwt_http_client_RequestTimeoutException_2_classLit = createForClass('com.google.gwt.http.client.', 'RequestTimeoutException'), Lcom_google_gwt_i18n_client_Dictionary_2_classLit = createForClass('com.google.gwt.i18n.client.', 'Dictionary'), Lcom_google_gwt_lang_LongEmul_2_classLit = createForClass('com.google.gwt.lang.', 'LongEmul'), _3Lcom_google_gwt_lang_LongEmul_2_classLit = createForArray('[Lcom.google.gwt.lang.', 'LongEmul;'), Lcom_google_gwt_user_client_ui_UIObject_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'UIObject'), Lcom_google_gwt_user_client_ui_Widget_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'Widget'), Lcom_google_gwt_user_client_ui_Panel_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'Panel'), Lcom_google_gwt_user_client_ui_ComplexPanel_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'ComplexPanel'), Lcom_google_gwt_user_client_ui_AbsolutePanel_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'AbsolutePanel'), Lcom_google_gwt_user_client_ui_FocusWidget_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'FocusWidget'), Lcom_google_gwt_user_client_ui_Anchor_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'Anchor'), Lcom_google_gwt_user_client_ui_AttachDetachException_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'AttachDetachException'), Lcom_google_gwt_user_client_ui_AttachDetachException$1_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'AttachDetachException$1'), Lcom_google_gwt_user_client_ui_AttachDetachException$2_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'AttachDetachException$2'), Lcom_google_gwt_user_client_ui_CellPanel_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'CellPanel'), _3Lcom_google_gwt_user_client_ui_Widget_2_classLit = createForArray('[Lcom.google.gwt.user.client.ui.', 'Widget;'), Lcom_google_gwt_user_client_ui_Label_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'Label'), Lcom_google_gwt_user_client_ui_HasHorizontalAlignment$HorizontalAlignmentConstant_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'HasHorizontalAlignment$HorizontalAlignmentConstant'), Lcom_google_gwt_user_client_ui_HasVerticalAlignment$VerticalAlignmentConstant_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'HasVerticalAlignment$VerticalAlignmentConstant'), Lcom_google_gwt_user_client_ui_HorizontalPanel_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'HorizontalPanel'), Ljava_util_AbstractCollection_2_classLit = createForClass('java.util.', 'AbstractCollection'), Ljava_util_AbstractList_2_classLit = createForClass('java.util.', 'AbstractList'), Ljava_util_ArrayList_2_classLit = createForClass('java.util.', 'ArrayList'), _3C_classLit = createForArray('', '[C'), Lcom_google_gwt_user_client_ui_RootPanel_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'RootPanel'), Lcom_google_gwt_user_client_ui_RootPanel$DefaultRootPanel_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'RootPanel$DefaultRootPanel'), Lcom_google_gwt_user_client_ui_RootPanel$1_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'RootPanel$1'), Lcom_google_gwt_user_client_ui_RootPanel$2_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'RootPanel$2'), Lcom_google_gwt_user_client_ui_VerticalPanel_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'VerticalPanel'), Lcom_google_gwt_user_client_ui_WidgetCollection_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'WidgetCollection'), Lcom_google_gwt_user_client_ui_WidgetCollection$WidgetIterator_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'WidgetCollection$WidgetIterator'), Lcom_google_gwt_user_client_Timer$1_2_classLit = createForClass('com.google.gwt.user.client.', 'Timer$1'), Lcom_google_gwt_user_client_Window$ClosingEvent_2_classLit = createForClass('com.google.gwt.user.client.', 'Window$ClosingEvent'), Lcom_google_gwt_user_client_Window$WindowHandlers_2_classLit = createForClass('com.google.gwt.user.client.', 'Window$WindowHandlers'), Lfreenet_client_connection_KeepaliveManager_2_classLit = createForClass('freenet.client.connection.', 'KeepaliveManager'), Lfreenet_client_connection_KeepaliveManager$KeepaliveTimer_2_classLit = createForClass('freenet.client.connection.', 'KeepaliveManager$KeepaliveTimer'), Lfreenet_client_connection_KeepaliveManager$KeepaliveTimer$1_2_classLit = createForClass('freenet.client.connection.', 'KeepaliveManager$KeepaliveTimer$1'), Lfreenet_client_connection_LongPollingConnectionManager_2_classLit = createForClass('freenet.client.connection.', 'LongPollingConnectionManager'), Lfreenet_client_connection_LongPollingConnectionManager$1_2_classLit = createForClass('freenet.client.connection.', 'LongPollingConnectionManager$1'), Lfreenet_client_connection_LongPollingConnectionManager$2_2_classLit = createForClass('freenet.client.connection.', 'LongPollingConnectionManager$2'), Lfreenet_client_connection_SharedConnectionManager_2_classLit = createForClass('freenet.client.connection.', 'SharedConnectionManager'), Lfreenet_client_tools_QueryParameter_2_classLit = createForClass('freenet.client.tools.', 'QueryParameter'), _3Lfreenet_client_tools_QueryParameter_2_classLit = createForArray('[Lfreenet.client.tools.', 'QueryParameter;'), Lfreenet_client_connection_SharedConnectionManager$1_2_classLit = createForClass('freenet.client.connection.', 'SharedConnectionManager$1'), Lfreenet_client_connection_SharedConnectionManager$2_2_classLit = createForClass('freenet.client.connection.', 'SharedConnectionManager$2'), Lfreenet_client_connection_SharedConnectionManager$3_2_classLit = createForClass('freenet.client.connection.', 'SharedConnectionManager$3'), Lfreenet_client_dynamics_TimeIncrementer$1_2_classLit = createForClass('freenet.client.dynamics.', 'TimeIncrementer$1'), Lfreenet_client_messages_Message_2_classLit = createForClass('freenet.client.messages.', 'Message'), Lfreenet_client_messages_MessageManager_2_classLit = createForClass('freenet.client.messages.', 'MessageManager'), Lfreenet_client_messages_MessageManager$1_2_classLit = createForClass('freenet.client.messages.', 'MessageManager$1'), Lfreenet_client_messages_MessageManager$1$1_2_classLit = createForClass('freenet.client.messages.', 'MessageManager$1$1'), Lfreenet_client_messages_Priority_2_classLit = createForEnum('freenet.client.messages.', 'Priority', values_1), _3Lfreenet_client_messages_Priority_2_classLit = createForArray('[Lfreenet.client.messages.', 'Priority;'), Lfreenet_client_tools_FreenetRequest$1_2_classLit = createForClass('freenet.client.tools.', 'FreenetRequest$1'), Lfreenet_client_update_DefaultUpdateManager_2_classLit = createForClass('freenet.client.update.', 'DefaultUpdateManager'), Lfreenet_client_update_DefaultUpdateManager$UpdaterRequestCallback_2_classLit = createForClass('freenet.client.update.', 'DefaultUpdateManager$UpdaterRequestCallback'), Lfreenet_client_updaters_ReplacerUpdater_2_classLit = createForClass('freenet.client.updaters.', 'ReplacerUpdater'), Lfreenet_client_updaters_ConnectionsListUpdater_2_classLit = createForClass('freenet.client.updaters.', 'ConnectionsListUpdater'), Lfreenet_client_updaters_ImageElementUpdater_2_classLit = createForClass('freenet.client.updaters.', 'ImageElementUpdater'), Lfreenet_client_updaters_ProgressBarUpdater_2_classLit = createForClass('freenet.client.updaters.', 'ProgressBarUpdater'), Lfreenet_client_updaters_XmlAlertUpdater_2_classLit = createForClass('freenet.client.updaters.', 'XmlAlertUpdater'), Lfreenet_client_FreenetJs$1_2_classLit = createForClass('freenet.client.', 'FreenetJs$1'), Ljava_lang_ArithmeticException_2_classLit = createForClass('java.lang.', 'ArithmeticException'), Ljava_lang_IndexOutOfBoundsException_2_classLit = createForClass('java.lang.', 'IndexOutOfBoundsException'), Ljava_lang_ArrayStoreException_2_classLit = createForClass('java.lang.', 'ArrayStoreException'), Ljava_lang_Boolean_2_classLit = createForClass('java.lang.', 'Boolean'), Ljava_lang_Class_2_classLit = createForClass('java.lang.', 'Class'), Ljava_lang_ClassCastException_2_classLit = createForClass('java.lang.', 'ClassCastException'), Ljava_lang_IllegalArgumentException_2_classLit = createForClass('java.lang.', 'IllegalArgumentException'), Ljava_lang_IllegalStateException_2_classLit = createForClass('java.lang.', 'IllegalStateException'), Ljava_lang_NullPointerException_2_classLit = createForClass('java.lang.', 'NullPointerException'), _3J_classLit = createForArray('', '[J'), Ljava_lang_NumberFormatException_2_classLit = createForClass('java.lang.', 'NumberFormatException'), Ljava_lang_StringBuffer_2_classLit = createForClass('java.lang.', 'StringBuffer'), Ljava_lang_StringBuilder_2_classLit = createForClass('java.lang.', 'StringBuilder'), Ljava_lang_UnsupportedOperationException_2_classLit = createForClass('java.lang.', 'UnsupportedOperationException'), _3Ljava_lang_Object_2_classLit = createForArray('[Ljava.lang.', 'Object;'), Ljava_util_AbstractMap_2_classLit = createForClass('java.util.', 'AbstractMap'), Ljava_util_AbstractHashMap_2_classLit = createForClass('java.util.', 'AbstractHashMap'), Ljava_util_AbstractSet_2_classLit = createForClass('java.util.', 'AbstractSet'), Ljava_util_AbstractHashMap$EntrySet_2_classLit = createForClass('java.util.', 'AbstractHashMap$EntrySet'), Ljava_util_AbstractHashMap$EntrySetIterator_2_classLit = createForClass('java.util.', 'AbstractHashMap$EntrySetIterator'), Ljava_util_AbstractMapEntry_2_classLit = createForClass('java.util.', 'AbstractMapEntry'), Ljava_util_AbstractHashMap$MapEntryNull_2_classLit = createForClass('java.util.', 'AbstractHashMap$MapEntryNull'), Ljava_util_AbstractHashMap$MapEntryString_2_classLit = createForClass('java.util.', 'AbstractHashMap$MapEntryString'), Ljava_util_AbstractList$IteratorImpl_2_classLit = createForClass('java.util.', 'AbstractList$IteratorImpl'), Ljava_util_AbstractMap$1_2_classLit = createForClass('java.util.', 'AbstractMap$1'), Ljava_util_AbstractMap$1$1_2_classLit = createForClass('java.util.', 'AbstractMap$1$1'), Ljava_util_Arrays$ArrayList_2_classLit = createForClass('java.util.', 'Arrays$ArrayList'), Ljava_util_Collections$UnmodifiableCollection_2_classLit = createForClass('java.util.', 'Collections$UnmodifiableCollection'), Ljava_util_Collections$UnmodifiableMap_2_classLit = createForClass('java.util.', 'Collections$UnmodifiableMap'), Ljava_util_Collections$UnmodifiableSet_2_classLit = createForClass('java.util.', 'Collections$UnmodifiableSet'), Ljava_util_Collections$UnmodifiableMap$UnmodifiableEntrySet_2_classLit = createForClass('java.util.', 'Collections$UnmodifiableMap$UnmodifiableEntrySet'), Ljava_util_Collections$UnmodifiableMap$UnmodifiableEntrySet$UnmodifiableEntry_2_classLit = createForClass('java.util.', 'Collections$UnmodifiableMap$UnmodifiableEntrySet$UnmodifiableEntry'), Ljava_util_Collections$UnmodifiableMap$UnmodifiableEntrySet$1_2_classLit = createForClass('java.util.', 'Collections$UnmodifiableMap$UnmodifiableEntrySet$1'), Ljava_util_Collections$UnmodifiableCollectionIterator_2_classLit = createForClass('java.util.', 'Collections$UnmodifiableCollectionIterator'), Ljava_util_HashMap_2_classLit = createForClass('java.util.', 'HashMap'), Ljava_util_HashSet_2_classLit = createForClass('java.util.', 'HashSet'), Ljava_util_MapEntryImpl_2_classLit = createForClass('java.util.', 'MapEntryImpl'), Ljava_util_MissingResourceException_2_classLit = createForClass('java.util.', 'MissingResourceException'), Ljava_util_NoSuchElementException_2_classLit = createForClass('java.util.', 'NoSuchElementException');
+var Ljava_lang_Object_2_classLit = createForClass('java.lang.', 'Object'), Lcom_google_gwt_user_client_Timer_2_classLit = createForClass('com.google.gwt.user.client.', 'Timer'), _3I_classLit = createForArray('', '[I'), Ljava_lang_Throwable_2_classLit = createForClass('java.lang.', 'Throwable'), Ljava_lang_Exception_2_classLit = createForClass('java.lang.', 'Exception'), Ljava_lang_RuntimeException_2_classLit = createForClass('java.lang.', 'RuntimeException'), Lcom_google_gwt_core_client_Scheduler_2_classLit = createForClass('com.google.gwt.core.client.', 'Scheduler'), Lcom_google_gwt_core_client_impl_SchedulerImpl_2_classLit = createForClass('com.google.gwt.core.client.impl.', 'SchedulerImpl'), Ljava_lang_StackTraceElement_2_classLit = createForClass('java.lang.', 'StackTraceElement'), _3Ljava_lang_StackTraceElement_2_classLit = createForArray('[Ljava.lang.', 'StackTraceElement;'), Lcom_google_gwt_core_client_impl_StringBufferImpl_2_classLit = createForClass('com.google.gwt.core.client.impl.', 'StringBufferImpl'), Lcom_google_gwt_core_client_impl_StringBufferImplAppend_2_classLit = createForClass('com.google.gwt.core.client.impl.', 'StringBufferImplAppend'), Lcom_google_gwt_core_client_JavaScriptException_2_classLit = createForClass('com.google.gwt.core.client.', 'JavaScriptException'), Lcom_google_gwt_core_client_JavaScriptObject_2_classLit = createForClass('com.google.gwt.core.client.', 'JavaScriptObject$'), Ljava_lang_String_2_classLit = createForClass('java.lang.', 'String'), _3Ljava_lang_String_2_classLit = createForArray('[Ljava.lang.', 'String;'), Ljava_lang_Enum_2_classLit = createForClass('java.lang.', 'Enum'), Lcom_google_gwt_dom_client_Style$Unit_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit', values_0), _3Lcom_google_gwt_dom_client_Style$Unit_2_classLit = createForArray('[Lcom.google.gwt.dom.client.', 'Style$Unit;'), Lcom_google_gwt_dom_client_Style$Unit$1_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit$1', null), Lcom_google_gwt_dom_client_Style$Unit$2_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit$2', null), Lcom_google_gwt_dom_client_Style$Unit$3_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit$3', null), Lcom_google_gwt_dom_client_Style$Unit$4_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit$4', null), Lcom_google_gwt_dom_client_Style$Unit$5_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit$5', null), Lcom_google_gwt_dom_client_Style$Unit$6_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit$6', null), Lcom_google_gwt_dom_client_Style$Unit$7_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit$7', null), Lcom_google_gwt_dom_client_Style$Unit$8_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit$8', null), Lcom_google_gwt_dom_client_Style$Unit$9_2_classLit = createForEnum('com.google.gwt.dom.client.', 'Style$Unit$9', null), Lcom_google_gwt_event_shared_GwtEvent_2_classLit = createForClass('com.google.gwt.event.shared.', 'GwtEvent'), Lcom_google_gwt_event_dom_client_DomEvent_2_classLit = createForClass('com.google.gwt.event.dom.client.', 'DomEvent'), Lcom_google_gwt_event_dom_client_ClickEvent_2_classLit = createForClass('com.google.gwt.event.dom.client.', 'ClickEvent'), Lcom_google_gwt_event_shared_GwtEvent$Type_2_classLit = createForClass('com.google.gwt.event.shared.', 'GwtEvent$Type'), Lcom_google_gwt_event_dom_client_DomEvent$Type_2_classLit = createForClass('com.google.gwt.event.dom.client.', 'DomEvent$Type'), Lcom_google_gwt_event_dom_client_MouseEvent_2_classLit = createForClass('com.google.gwt.event.dom.client.', 'MouseEvent'), Lcom_google_gwt_event_dom_client_MouseDownEvent_2_classLit = createForClass('com.google.gwt.event.dom.client.', 'MouseDownEvent'), Lcom_google_gwt_event_dom_client_PrivateMap_2_classLit = createForClass('com.google.gwt.event.dom.client.', 'PrivateMap'), Lcom_google_gwt_event_logical_shared_CloseEvent_2_classLit = createForClass('com.google.gwt.event.logical.shared.', 'CloseEvent'), Lcom_google_gwt_event_shared_DefaultHandlerRegistration_2_classLit = createForClass('com.google.gwt.event.shared.', 'DefaultHandlerRegistration'), Lcom_google_gwt_event_shared_HandlerManager_2_classLit = createForClass('com.google.gwt.event.shared.', 'HandlerManager'), Lcom_google_gwt_event_shared_HandlerManager$HandlerRegistry_2_classLit = createForClass('com.google.gwt.event.shared.', 'HandlerManager$HandlerRegistry'), Lcom_google_gwt_event_shared_HandlerManager$1_2_classLit = createForClass('com.google.gwt.event.shared.', 'HandlerManager$1'), _3Ljava_lang_Throwable_2_classLit = createForArray('[Ljava.lang.', 'Throwable;'), Lcom_google_gwt_event_shared_UmbrellaException_2_classLit = createForClass('com.google.gwt.event.shared.', 'UmbrellaException'), Lcom_google_gwt_http_client_Request_2_classLit = createForClass('com.google.gwt.http.client.', 'Request'), Lcom_google_gwt_http_client_Response_2_classLit = createForClass('com.google.gwt.http.client.', 'Response'), Lcom_google_gwt_http_client_Request$1_2_classLit = createForClass('com.google.gwt.http.client.', 'Request$1'), Lcom_google_gwt_http_client_Request$3_2_classLit = createForClass('com.google.gwt.http.client.', 'Request$3'), Lcom_google_gwt_http_client_RequestBuilder_2_classLit = createForClass('com.google.gwt.http.client.', 'RequestBuilder'), Lcom_google_gwt_http_client_RequestBuilder$Method_2_classLit = createForClass('com.google.gwt.http.client.', 'RequestBuilder$Method'), Lcom_google_gwt_http_client_RequestBuilder$1_2_classLit = createForClass('com.google.gwt.http.client.', 'RequestBuilder$1'), Lcom_google_gwt_http_client_RequestException_2_classLit = createForClass('com.google.gwt.http.client.', 'RequestException'), Lcom_google_gwt_http_client_RequestPermissionException_2_classLit = createForClass('com.google.gwt.http.client.', 'RequestPermissionException'), Lcom_google_gwt_http_client_RequestTimeoutException_2_classLit = createForClass('com.google.gwt.http.client.', 'RequestTimeoutException'), Lcom_google_gwt_i18n_client_Dictionary_2_classLit = createForClass('com.google.gwt.i18n.client.', 'Dictionary'), Lcom_google_gwt_lang_LongEmul_2_classLit = createForClass('com.google.gwt.lang.', 'LongEmul'), _3Lcom_google_gwt_lang_LongEmul_2_classLit = createForArray('[Lcom.google.gwt.lang.', 'LongEmul;'), Lcom_google_gwt_user_client_ui_UIObject_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'UIObject'), Lcom_google_gwt_user_client_ui_Widget_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'Widget'), Lcom_google_gwt_user_client_ui_Panel_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'Panel'), Lcom_google_gwt_user_client_ui_ComplexPanel_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'ComplexPanel'), Lcom_google_gwt_user_client_ui_AbsolutePanel_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'AbsolutePanel'), Lcom_google_gwt_user_client_ui_FocusWidget_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'FocusWidget'), Lcom_google_gwt_user_client_ui_Anchor_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'Anchor'), Lcom_google_gwt_user_client_ui_AttachDetachException_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'AttachDetachException'), Lcom_google_gwt_user_client_ui_AttachDetachException$1_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'AttachDetachException$1'), Lcom_google_gwt_user_client_ui_AttachDetachException$2_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'AttachDetachException$2'), Lcom_google_gwt_user_client_ui_CellPanel_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'CellPanel'), _3Lcom_google_gwt_user_client_ui_Widget_2_classLit = createForArray('[Lcom.google.gwt.user.client.ui.', 'Widget;'), Lcom_google_gwt_user_client_ui_Label_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'Label'), Lcom_google_gwt_user_client_ui_HasHorizontalAlignment$HorizontalAlignmentConstant_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'HasHorizontalAlignment$HorizontalAlignmentConstant'), Lcom_google_gwt_user_client_ui_HasVerticalAlignment$VerticalAlignmentConstant_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'HasVerticalAlignment$VerticalAlignmentConstant'), Lcom_google_gwt_user_client_ui_HorizontalPanel_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'HorizontalPanel'), Lcom_google_gwt_user_client_ui_Image_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'Image'), Lcom_google_gwt_user_client_ui_Image$State_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'Image$State'), Lcom_google_gwt_user_client_ui_Image$State$1_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'Image$State$1'), Lcom_google_gwt_user_client_ui_Image$UnclippedState_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'Image$UnclippedState'), Ljava_util_AbstractCollection_2_classLit = createForClass('java.util.', 'AbstractCollection'), Ljava_util_AbstractList_2_classLit = createForClass('java.util.', 'AbstractList'), Ljava_util_ArrayList_2_classLit = createForClass('java.util.', 'ArrayList'), _3C_classLit = createForArray('', '[C'), Lcom_google_gwt_user_client_ui_RootPanel_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'RootPanel'), Lcom_google_gwt_user_client_ui_RootPanel$DefaultRootPanel_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'RootPanel$DefaultRootPanel'), Lcom_google_gwt_user_client_ui_RootPanel$1_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'RootPanel$1'), Lcom_google_gwt_user_client_ui_RootPanel$2_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'RootPanel$2'), Lcom_google_gwt_user_client_ui_VerticalPanel_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'VerticalPanel'), Lcom_google_gwt_user_client_ui_WidgetCollection_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'WidgetCollection'), Lcom_google_gwt_user_client_ui_WidgetCollection$WidgetIterator_2_classLit = createForClass('com.google.gwt.user.client.ui.', 'WidgetCollection$WidgetIterator'), Lcom_google_gwt_user_client_CommandCanceledException_2_classLit = createForClass('com.google.gwt.user.client.', 'CommandCanceledException'), Lcom_google_gwt_user_client_CommandExecutor_2_classLit = createForClass('com.google.gwt.user.client.', 'CommandExecutor'), Lcom_google_gwt_user_client_CommandExecutor$CircularIterator_2_classLit = createForClass('com.google.gwt.user.client.', 'CommandExecutor$CircularIterator'), Lcom_google_gwt_user_client_CommandExecutor$1_2_classLit = createForClass('com.google.gwt.user.client.', 'CommandExecutor$1'), Lcom_google_gwt_user_client_CommandExecutor$2_2_classLit = createForClass('com.google.gwt.user.client.', 'CommandExecutor$2'), Lcom_google_gwt_user_client_Timer$1_2_classLit = createForClass('com.google.gwt.user.client.', 'Timer$1'), Lcom_google_gwt_user_client_Window$ClosingEvent_2_classLit = createForClass('com.google.gwt.user.client.', 'Window$ClosingEvent'), Lcom_google_gwt_user_client_Window$WindowHandlers_2_classLit = createForClass('com.google.gwt.user.client.', 'Window$WindowHandlers'), Lfreenet_client_connection_KeepaliveManager_2_classLit = createForClass('freenet.client.connection.', 'KeepaliveManager'), Lfreenet_client_connection_KeepaliveManager$KeepaliveTimer_2_classLit = createForClass('freenet.client.connection.', 'KeepaliveManager$KeepaliveTimer'), Lfreenet_client_connection_KeepaliveManager$KeepaliveTimer$1_2_classLit = createForClass('freenet.client.connection.', 'KeepaliveManager$KeepaliveTimer$1'), Lfreenet_client_connection_LongPollingConnectionManager_2_classLit = createForClass('freenet.client.connection.', 'LongPollingConnectionManager'), Lfreenet_client_connection_LongPollingConnectionManager$1_2_classLit = createForClass('freenet.client.connection.', 'LongPollingConnectionManager$1'), Lfreenet_client_connection_LongPollingConnectionManager$2_2_classLit = createForClass('freenet.client.connection.', 'LongPollingConnectionManager$2'), Lfreenet_client_connection_SharedConnectionManager_2_classLit = createForClass('freenet.client.connection.', 'SharedConnectionManager'), Lfreenet_client_tools_QueryParameter_2_classLit = createForClass('freenet.client.tools.', 'QueryParameter'), _3Lfreenet_client_tools_QueryParameter_2_classLit = createForArray('[Lfreenet.client.tools.', 'QueryParameter;'), Lfreenet_client_connection_SharedConnectionManager$1_2_classLit = createForClass('freenet.client.connection.', 'SharedConnectionManager$1'), Lfreenet_client_connection_SharedConnectionManager$2_2_classLit = createForClass('freenet.client.connection.', 'SharedConnectionManager$2'), Lfreenet_client_connection_SharedConnectionManager$3_2_classLit = createForClass('freenet.client.connection.', 'SharedConnectionManager$3'), Lfreenet_client_dynamics_TimeIncrementer$1_2_classLit = createForClass('freenet.client.dynamics.', 'TimeIncrementer$1'), Lfreenet_client_messages_Message_2_classLit = createForClass('freenet.client.messages.', 'Message'), Lfreenet_client_messages_MessageManager_2_classLit = createForClass('freenet.client.messages.', 'MessageManager'), Lfreenet_client_messages_MessageManager$1_2_classLit = createForClass('freenet.client.messages.', 'MessageManager$1'), Lfreenet_client_messages_MessageManager$1$1_2_classLit = createForClass('freenet.client.messages.', 'MessageManager$1$1'), Lfreenet_client_messages_Priority_2_classLit = createForEnum('freenet.client.messages.', 'Priority', values_1), _3Lfreenet_client_messages_Priority_2_classLit = createForArray('[Lfreenet.client.messages.', 'Priority;'), Lfreenet_client_tools_FreenetRequest$1_2_classLit = createForClass('freenet.client.tools.', 'FreenetRequest$1'), Lfreenet_client_update_DefaultUpdateManager_2_classLit = createForClass('freenet.client.update.', 'DefaultUpdateManager'), Lfreenet_client_update_DefaultUpdateManager$UpdaterRequestCallback_2_classLit = createForClass('freenet.client.update.', 'DefaultUpdateManager$UpdaterRequestCallback'), Lfreenet_client_updaters_ReplacerUpdater_2_classLit = createForClass('freenet.client.updaters.', 'ReplacerUpdater'), Lfreenet_client_updaters_ConnectionsListUpdater_2_classLit = createForClass('freenet.client.updaters.', 'ConnectionsListUpdater'), Lfreenet_client_updaters_ImageElementUpdater_2_classLit = createForClass('freenet.client.updaters.', 'ImageElementUpdater'), Lfreenet_client_updaters_MultimediaElementUpdater_2_classLit = createForClass('freenet.client.updaters.', 'MultimediaElementUpdater'), Lfreenet_client_updaters_MultimediaElementUpdater$1_2_classLit = createForClass('freenet.client.updaters.', 'MultimediaElementUpdater$1'), Lfreenet_client_updaters_ProgressBarUpdater_2_classLit = createForClass('freenet.client.updaters.', 'ProgressBarUpdater'), Lfreenet_client_updaters_XmlAlertUpdater_2_classLit = createForClass('freenet.client.updaters.', 'XmlAlertUpdater'), Lfreenet_client_FreenetJs$1_2_classLit = createForClass('freenet.client.', 'FreenetJs$1'), Ljava_lang_ArithmeticException_2_classLit = createForClass('java.lang.', 'ArithmeticException'), Ljava_lang_IndexOutOfBoundsException_2_classLit = createForClass('java.lang.', 'IndexOutOfBoundsException'), Ljava_lang_ArrayStoreException_2_classLit = createForClass('java.lang.', 'ArrayStoreException'), Ljava_lang_Boolean_2_classLit = createForClass('java.lang.', 'Boolean'), Ljava_lang_Class_2_classLit = createForClass('java.lang.', 'Class'), Ljava_lang_ClassCastException_2_classLit = createForClass('java.lang.', 'ClassCastException'), Ljava_lang_IllegalArgumentException_2_classLit = createForClass('java.lang.', 'IllegalArgumentException'), Ljava_lang_IllegalStateException_2_classLit = createForClass('java.lang.', 'IllegalStateException'), Ljava_lang_NullPointerException_2_classLit = createForClass('java.lang.', 'NullPointerException'), _3J_classLit = createForArray('', '[J'), Ljava_lang_NumberFormatException_2_classLit = createForClass('java.lang.', 'NumberFormatException'), Ljava_lang_StringBuffer_2_classLit = createForClass('java.lang.', 'StringBuffer'), Ljava_lang_StringBuilder_2_classLit = createForClass('java.lang.', 'StringBuilder'), Ljava_lang_UnsupportedOperationException_2_classLit = createForClass('java.lang.', 'UnsupportedOperationException'), _3Ljava_lang_Object_2_classLit = createForArray('[Ljava.lang.', 'Object;'), Ljava_util_AbstractMap_2_classLit = createForClass('java.util.', 'AbstractMap'), Ljava_util_AbstractHashMap_2_classLit = createForClass('java.util.', 'AbstractHashMap'), Ljava_util_AbstractSet_2_classLit = createForClass('java.util.', 'AbstractSet'), Ljava_util_AbstractHashMap$EntrySet_2_classLit = createForClass('java.util.', 'AbstractHashMap$EntrySet'), Ljava_util_AbstractHashMap$EntrySetIterator_2_classLit = createForClass('java.util.', 'AbstractHashMap$EntrySetIterator'), Ljava_util_AbstractMapEntry_2_classLit = createForClass('java.util.', 'AbstractMapEntry'), Ljava_util_AbstractHashMap$MapEntryNull_2_classLit = createForClass('java.util.', 'AbstractHashMap$MapEntryNull'), Ljava_util_AbstractHashMap$MapEntryString_2_classLit = createForClass('java.util.', 'AbstractHashMap$MapEntryString'), Ljava_util_AbstractList$IteratorImpl_2_classLit = createForClass('java.util.', 'AbstractList$IteratorImpl'), Ljava_util_AbstractMap$1_2_classLit = createForClass('java.util.', 'AbstractMap$1'), Ljava_util_AbstractMap$1$1_2_classLit = createForClass('java.util.', 'AbstractMap$1$1'), Ljava_util_Arrays$ArrayList_2_classLit = createForClass('java.util.', 'Arrays$ArrayList'), Ljava_util_Collections$UnmodifiableCollection_2_classLit = createForClass('java.util.', 'Collections$UnmodifiableCollection'), Ljava_util_Collections$UnmodifiableMap_2_classLit = createForClass('java.util.', 'Collections$UnmodifiableMap'), Ljava_util_Collections$UnmodifiableSet_2_classLit = createForClass('java.util.', 'Collections$UnmodifiableSet'), Ljava_util_Collections$UnmodifiableMap$UnmodifiableEntrySet_2_classLit = createForClass('java.util.', 'Collections$UnmodifiableMap$UnmodifiableEntrySet'), Ljava_util_Collections$UnmodifiableMap$UnmodifiableEntrySet$UnmodifiableEntry_2_classLit = createForClass('java.util.', 'Collections$UnmodifiableMap$UnmodifiableEntrySet$UnmodifiableEntry'), Ljava_util_Collections$UnmodifiableMap$UnmodifiableEntrySet$1_2_classLit = createForClass('java.util.', 'Collections$UnmodifiableMap$UnmodifiableEntrySet$1'), Ljava_util_Collections$UnmodifiableCollectionIterator_2_classLit = createForClass('java.util.', 'Collections$UnmodifiableCollectionIterator'), Ljava_util_HashMap_2_classLit = createForClass('java.util.', 'HashMap'), Ljava_util_HashSet_2_classLit = createForClass('java.util.', 'HashSet'), Ljava_util_MapEntryImpl_2_classLit = createForClass('java.util.', 'MapEntryImpl'), Ljava_util_MissingResourceException_2_classLit = createForClass('java.util.', 'MissingResourceException'), Ljava_util_NoSuchElementException_2_classLit = createForClass('java.util.', 'NoSuchElementException');
 $stats && $stats({moduleName:'freenetjs',sessionId:$sessionId,subSystem:'startup',evtGroup:'moduleStartup',millis:(new Date()).getTime(),type:'moduleEvalEnd'});
 if ($wnd.freenetjs) $wnd.freenetjs.onScriptLoad();
 --></script></body></html>

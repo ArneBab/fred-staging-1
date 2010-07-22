@@ -35,7 +35,7 @@ public abstract class MediaElement extends BaseUpdateableElement {
 	/** The maxSize */
 	public long						maxSize;
 	/** The FetchListener that gets notified when the download progresses */
-	private NotifierFetchListener	fetchListener;
+	final protected NotifierFetchListener	fetchListener;
 
 	// FIXME get this from global weakFastRandom ???
 	protected final int				randomNumber	= new Random().nextInt();
@@ -51,9 +51,9 @@ public abstract class MediaElement extends BaseUpdateableElement {
 		this.tracker = tracker;
 		this.key = this.origKey = key;
 		this.maxSize = maxSize;
-		if(!pushed) return;
 		// Creates and registers the FetchListener
 		fetchListener = new NotifierFetchListener(((SimpleToadletServer) ctx.getContainer()).pushDataManager, this);
+		if(!pushed) return;
 		startFetch();
 
 		if (logMINOR) {
