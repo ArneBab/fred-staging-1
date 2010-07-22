@@ -54,27 +54,7 @@ public abstract class MediaElement extends BaseUpdateableElement {
 		if(!pushed) return;
 		// Creates and registers the FetchListener
 		fetchListener = new NotifierFetchListener(((SimpleToadletServer) ctx.getContainer()).pushDataManager, this);
-		((SimpleToadletServer) ctx.getContainer()).getTicker().queueTimedJob(new Runnable() {
-			public void run() {
-				try {
-					FProxyFetchWaiter waiter = MediaElement.this.tracker.makeFetcher(MediaElement.this.key, MediaElement.this.maxSize, null);
-					MediaElement.this.tracker.getFetchInProgress(MediaElement.this.key, MediaElement.this.maxSize, null).addListener(fetchListener);
-					MediaElement.this.tracker.getFetchInProgress(MediaElement.this.key, MediaElement.this.maxSize, null).close(waiter);
-				} catch (FetchException fe) {
-					if (fe.newURI != null) {
-						try {
-							MediaElement.this.key = fe.newURI;
-							FProxyFetchWaiter waiter = MediaElement.this.tracker.makeFetcher(MediaElement.this.key, MediaElement.this.maxSize, null);
-							MediaElement.this.tracker.getFetchInProgress(MediaElement.this.key, MediaElement.this.maxSize, null).addListener(fetchListener);
-							MediaElement.this.tracker.getFetchInProgress(MediaElement.this.key, MediaElement.this.maxSize, null).close(waiter);
-						} catch (FetchException fe2) {
-							wasError = true;
-						}
-					}
-				}
-				fetchListener.onEvent();
-			}
-		}, 0);
+		startFetch();
 
 		if (logMINOR) {
 			Logger.minor(this, "MediaElement creating finished in:" + (System.currentTimeMillis() - now) + " ms");
@@ -140,6 +120,30 @@ public abstract class MediaElement extends BaseUpdateableElement {
 				}
 			}
 		}
+	}
+
+	protected void startFetch() {
+		((SimpleToadletServer) ctx.getContainer()).getTicker().queueTimedJob(new Runnable() {
+			public void run() {
+				try {
+					FProxyFetchWaiter waiter = MediaElement.this.tracker.makeFetcher(MediaElement.this.key, MediaElement.this.maxSize, null);
+					MediaElement.this.tracker.getFetchInProgress(MediaElement.this.key, MediaElement.this.maxSize, null).addListener(fetchListener);
+					MediaElement.this.tracker.getFetchInProgress(MediaElement.this.key, MediaElement.this.maxSize, null).close(waiter);
+				} catch (FetchException fe) {
+					if (fe.newURI != null) {
+						try {
+							MediaElement.this.key = fe.newURI;
+							FProxyFetchWaiter waiter = MediaElement.this.tracker.makeFetcher(MediaElement.this.key, MediaElement.this.maxSize, null);
+							MediaElement.this.tracker.getFetchInProgress(MediaElement.this.key, MediaElement.this.maxSize, null).addListener(fetchListener);
+							MediaElement.this.tracker.getFetchInProgress(MediaElement.this.key, MediaElement.this.maxSize, null).close(waiter);
+						} catch (FetchException fe2) {
+							wasError = true;
+						}
+					}
+				}
+				fetchListener.onEvent();
+			}
+		}, 0);
 	}
 
 	protected abstract void subsequentStateDisplay(FProxyFetchResult result, HTMLNode node);
