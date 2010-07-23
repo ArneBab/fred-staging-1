@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import freenet.keys.FreenetURI;
 import freenet.node.Ticker;
 import freenet.support.Logger;
 
@@ -148,6 +149,15 @@ public class PushDataManager {
 		}
 		Logger.error(this, "Could not find data for the element requested. requestId:"+requestId+" id:"+id+" pages:"+pages+" keepaliveReceived:"+isKeepaliveReceived);
 		return null;
+	}
+
+	public synchronized void setFinalizedKey(String requestId, String elementId, FreenetURI key) {
+		if (pages.get(requestId) != null) for (BaseUpdateableElement element : pages.get(requestId)) {
+			if (element.getUpdaterId(requestId).compareTo(elementId) == 0 && element instanceof LazyFetchingElement) {
+				((LazyFetchingElement) element).finalizeTarget(key);
+			}
+		}
+		Logger.error(this, "Could not set final key "+key+" for element: "+elementId+" in request "+requestId);
 	}
 
 	/**

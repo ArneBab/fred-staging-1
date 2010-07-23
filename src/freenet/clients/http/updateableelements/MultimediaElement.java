@@ -12,7 +12,7 @@ import freenet.keys.FreenetURI;
 import freenet.support.Base64;
 import freenet.support.HTMLNode;
 
-public class MultimediaElement extends MediaElement {
+public class MultimediaElement extends MediaElement implements LazyFetchingElement {
 
 	String tagName;
 	HTMLNode originalNode;
@@ -90,4 +90,9 @@ public class MultimediaElement extends MediaElement {
 		}
 		return Base64.encodeStandard(("element[URIs:" + buf.toString() + ",random:" + randomNumber + "]").getBytes());
 		}
+
+	public void finalizeTarget(FreenetURI key) {
+		this.key = key;
+		startFetch();
+	}
 }

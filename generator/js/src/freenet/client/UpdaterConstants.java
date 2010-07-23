@@ -42,6 +42,8 @@ public class UpdaterConstants {
 
 	public static final String	notificationPath			= "/pushnotifications/";
 
+	public static final String	queuePath					= "/queuefetch/";
+
 	public static final String	keepalivePath				= "/keepalive/";
 
 	public static final String	failoverPath				= "/failover/";
