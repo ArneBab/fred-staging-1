@@ -14,12 +14,14 @@ import freenet.support.HTMLNode;
 
 public class MultimediaElement extends MediaElement {
 
+	String tagName;
 	HTMLNode originalNode;
 	LinkedList<FreenetURI> keys = new LinkedList<FreenetURI>();
 
 	public MultimediaElement(FProxyFetchTracker tracker, ToadletContext ctx,
 			LinkedList<ParsedTag> blockElement) {
 		super(tracker, null, 0, ctx, false);
+		tagName = blockElement.getFirst().element;
 		originalNode = makeHtmlNodeForParsedTag(blockElement.getFirst());
 		originalNode.setContent("");
 		if(originalNode.getAttribute("src") != null) originalNode.addAttribute("src", originalNode.getAttribute("src").concat("?max-size=0"));
@@ -72,7 +74,7 @@ public class MultimediaElement extends MediaElement {
 
 	@Override
 	protected void addCompleteElement(HTMLNode node) {
-		node.addChild(originalNode);
+		node.addChild(tagName, "src", key.toString()).setContent("");
 	}
 
 	@Override
