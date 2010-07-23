@@ -54,7 +54,7 @@ public abstract class MediaElement extends BaseUpdateableElement {
 		// Creates and registers the FetchListener
 		fetchListener = new NotifierFetchListener(((SimpleToadletServer) ctx.getContainer()).pushDataManager, this);
 		if(!pushed) return;
-		startFetch();
+		if(key != null) startFetch();
 
 		if (logMINOR) {
 			Logger.minor(this, "MediaElement creating finished in:" + (System.currentTimeMillis() - now) + " ms");

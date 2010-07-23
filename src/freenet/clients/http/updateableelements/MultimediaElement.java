@@ -47,14 +47,22 @@ public class MultimediaElement extends MediaElement {
 	@Override
 	protected void subsequentStateDisplay(FProxyFetchResult result,
 			HTMLNode node) {
-		if(key == null) node.addChild(originalNode);
-		else {
-			int total = result.requiredBlocks;
-			int fetchedPercent = (int) (result.fetchedBlocks / (double) total * 100);
+		int total = result.requiredBlocks;
+		int fetchedPercent = (int) (result.fetchedBlocks / (double) total * 100);
+		node.addChild(originalNode);
+		node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "fetchedBlocks", String.valueOf(result.fetchedBlocks) });
+		node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "requiredBlocks", String.valueOf(result.requiredBlocks) });
+	}
+
+	@Override
+	public void updateState() {
+		if(key == null) {
+			children.clear();
+			HTMLNode node = new HTMLNode("span", "class", "jsonly MultimediaElement");
 			node.addChild(originalNode);
-			node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "fetchedBlocks", String.valueOf(result.fetchedBlocks) });
-			node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "requiredBlocks", String.valueOf(result.requiredBlocks) });
+			addChild(node);
 		}
+
 	}
 
 	@Override
