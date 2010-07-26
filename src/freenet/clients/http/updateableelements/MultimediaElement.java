@@ -3,6 +3,7 @@ package freenet.clients.http.updateableelements;
 import java.net.MalformedURLException;
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.Map;
 
 import freenet.client.filter.HTMLFilter.ParsedTag;
 import freenet.clients.http.FProxyFetchResult;
@@ -39,9 +40,20 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 			}
 			else break;
 		}
+
+		String sizePart = new String();
+		Map<String, String> attrs = originalNode.getAttributes();
+		HashMap<String, String> newAttrs = new HashMap<String, String>();
+		if(attrs.containsKey("width")) newAttrs.put("width", attrs.get("width"));
+		if(attrs.containsKey("height")) newAttrs.put("height", attrs.get("height"));
+		if (attrs.containsKey("width") && attrs.containsKey("height")) {
+			sizePart = "&width=" + attrs.get("width") + "&height=" + attrs.get("height");
+		}
+		newAttrs.put("src", "/imagecreator/?text=+"+FProxyToadlet.l10n("startmultimedia")+sizePart);
+
 		HTMLNode node = new HTMLNode("span", "class", "jsonly MultimediaElement unFinalized");
 		addChild(node);
-		node.addChild(new HTMLNode("img", "src", "/imagecreator/?text=+"+FProxyToadlet.l10n("startmultimedia")));
+		node.addChild(new HTMLNode("img", newAttrs));
 		addChild("noscript").addChild(originalNode);
 		init(false);
 		fetchListener.onEvent();
@@ -52,7 +64,17 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 			HTMLNode node) {
 		int total = result.requiredBlocks;
 		int fetchedPercent = (int) (result.fetchedBlocks / (double) total * 100);
-		node.addChild(new HTMLNode("img", "src", "/imagecreator/?text="+fetchedPercent+"%25"));
+		String sizePart = new String();
+		Map<String, String> attrs = originalNode.getAttributes();
+		HashMap<String, String> newAttrs = new HashMap<String, String>();
+		if(attrs.containsKey("width")) newAttrs.put("width", attrs.get("width"));
+		if(attrs.containsKey("height")) newAttrs.put("height", attrs.get("height"));
+		newAttrs.put("src", "/imagecreator/?text="+fetchedPercent+"%25"+sizePart);
+		if (attrs.containsKey("width") && attrs.containsKey("height")) {
+			sizePart = "&width=" + attrs.get("width") + "&height=" + attrs.get("height");
+		}
+	
+		node.addChild(new HTMLNode("img", newAttrs));
 		node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "fetchedBlocks", String.valueOf(result.fetchedBlocks) });
 		node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "requiredBlocks", String.valueOf(result.requiredBlocks) });
 	}
