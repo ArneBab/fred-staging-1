@@ -30,7 +30,7 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 		FreenetJs.log("Updating Multimedia element");
 		final String localElementId = elementId;
 		final com.google.gwt.dom.client.Element element = RootPanel.get(elementId).getElement().getFirstChildElement().getFirstChildElement();
-		if(element.getTagName() == "IMG") Image.wrap(element).addClickHandler(new ClickHandler() {
+		if(element.getParentElement().getClassName().contains("unFinalized")) Image.wrap(element).addClickHandler(new ClickHandler() {
 			public void onClick(ClickEvent event) {
 				FreenetRequest.sendRequest(UpdaterConstants.dataPath, new QueryParameter[] { new QueryParameter("requestId", FreenetJs.requestId),
 						new QueryParameter("elementId", localElementId) }, new RequestCallback(){

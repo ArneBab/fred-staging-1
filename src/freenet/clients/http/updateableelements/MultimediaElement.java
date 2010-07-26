@@ -38,7 +38,7 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 			}
 			else break;
 		}
-		HTMLNode node = new HTMLNode("span", "class", "jsonly MultimediaElement");
+		HTMLNode node = new HTMLNode("span", "class", "jsonly MultimediaElement unFinalized");
 		addChild(node);
 		node.addChild(new HTMLNode("img", "src", "/imagecreator/?text=+"+FProxyToadlet.l10n("startmultimedia")));
 		addChild("noscript").addChild(originalNode);
@@ -64,7 +64,7 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 			node.addChild(originalNode);
 			addChild(node);
 		}
-
+		
 	}
 
 	@Override
