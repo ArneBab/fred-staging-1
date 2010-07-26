@@ -26,11 +26,21 @@ public class HTMLNode implements XMLCharacterClasses {
 	protected final List<HTMLNode> children = new ArrayList<HTMLNode>();
 
 	public HTMLNode(String name) {
-		this(name, null);
+		this(name, (String) null);
+	}
+
+	public HTMLNode(String name, Map<String, String> attributes) {
+		this(name);
+		this.attributes.putAll(attributes);
 	}
 
 	public HTMLNode(String name, String content) {
 		this(name, (String[]) null, (String[]) null, content);
+	}
+
+	public HTMLNode(String name, Map<String, String> attributes, String content) {
+		this(name, content);
+		this.attributes.putAll(attributes);
 	}
 
 	public HTMLNode(String name, String attributeName, String attributeValue) {
