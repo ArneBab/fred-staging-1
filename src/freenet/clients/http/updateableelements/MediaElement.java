@@ -123,6 +123,7 @@ public abstract class MediaElement extends BaseUpdateableElement {
 	}
 
 	protected void startFetch() {
+		if(logMINOR) Logger.minor(this, "Beginning fetch of key "+key);
 		((SimpleToadletServer) ctx.getContainer()).getTicker().queueTimedJob(new Runnable() {
 			public void run() {
 				try {

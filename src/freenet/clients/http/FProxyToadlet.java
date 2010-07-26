@@ -34,6 +34,7 @@ import freenet.clients.http.ajaxpush.PushFailoverToadlet;
 import freenet.clients.http.ajaxpush.PushKeepaliveToadlet;
 import freenet.clients.http.ajaxpush.PushLeavingToadlet;
 import freenet.clients.http.ajaxpush.PushNotificationToadlet;
+import freenet.clients.http.ajaxpush.PushQueueFetchToadlet;
 import freenet.clients.http.ajaxpush.PushTesterToadlet;
 import freenet.clients.http.bookmark.BookmarkManager;
 import freenet.clients.http.updateableelements.ProgressBarElement;
@@ -1114,7 +1115,10 @@ public final class FProxyToadlet extends Toadlet implements RequestClient {
 		
 		PushFailoverToadlet pushFailoverToadlet = new PushFailoverToadlet(client);
 		server.register(pushFailoverToadlet, null, pushFailoverToadlet.path(), true, false);
-		
+
+		PushQueueFetchToadlet pushQueueFetchToadlet = new PushQueueFetchToadlet(client);
+		server.register(pushQueueFetchToadlet, null, pushQueueFetchToadlet.path(), true, false);
+
 		PushTesterToadlet pushTesterToadlet = new PushTesterToadlet(client);
 		server.register(pushTesterToadlet, null, pushTesterToadlet.path(), true, false);
 		

@@ -1,6 +1,7 @@
 package freenet.clients.http.ajaxpush;
 
 import java.io.IOException;
+import java.net.MalformedURLException;
 import java.net.URI;
 
 import freenet.client.HighLevelSimpleClient;
@@ -9,8 +10,10 @@ import freenet.clients.http.SimpleToadletServer;
 import freenet.clients.http.Toadlet;
 import freenet.clients.http.ToadletContext;
 import freenet.clients.http.ToadletContextClosedException;
+import freenet.clients.http.updateableelements.BaseUpdateableElement;
 import freenet.clients.http.updateableelements.UpdaterConstants;
 import freenet.keys.FreenetURI;
+import freenet.support.Base64;
 import freenet.support.Logger;
 import freenet.support.api.HTTPRequest;
 
@@ -22,18 +25,26 @@ public class PushQueueFetchToadlet extends Toadlet {
 		Logger.registerClass(PushQueueFetchToadlet.class);
 	}
 
-	protected PushQueueFetchToadlet(HighLevelSimpleClient client) {
+	public PushQueueFetchToadlet(HighLevelSimpleClient client) {
 		super(client);
 	}
 
 	public void handleMethodGET(URI uri, HTTPRequest req, ToadletContext ctx) throws ToadletContextClosedException, IOException, RedirectException {
+		if(logMINOR) Logger.minor(this, "Queueing a fetch...");
 		String requestId = req.getParam("requestId");
 		String elementId = req.getParam("elementId");
-		FreenetURI key = new FreenetURI(req.getParam("key"));
-		if (logMINOR) Logger.minor(this, "Retrieving key: "+key+" For element: "+elementId+" In request: "+requestId);
+		FreenetURI key = null;
+		try{
+			key = new FreenetURI(req.getParam("key"));
+		} catch(MalformedURLException e) {
+			Logger.error(this, "Invalid key scheduled to be fetched for element "+elementId, e);
+			throw e;
+		}
+		if(logMINOR) Logger.minor(this, "Retrieving key: "+key+" For element: "+elementId+" In request: "+requestId);
 		((SimpleToadletServer) ctx.getContainer()).pushDataManager.setFinalizedKey(requestId, elementId, key);
+		BaseUpdateableElement node = ((SimpleToadletServer) ctx.getContainer()).pushDataManager.getRenderedElement(requestId, elementId);
 
-		writeTemporaryRedirect(ctx, null, "/"+key);
+		writeHTMLReply(ctx, 200, "OK", UpdaterConstants.SUCCESS + ":" + Base64.encodeStandard(node.getUpdaterType().getBytes()) + ":" + Base64.encodeStandard(node.generateChildren().getBytes()));
 	}
 
 	@Override
