@@ -1,6 +1,7 @@
 package freenet.clients.http.updateableelements;
 
 import java.net.MalformedURLException;
+import java.util.HashMap;
 import java.util.LinkedList;
 
 import freenet.client.filter.HTMLFilter.ParsedTag;
@@ -51,7 +52,7 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 			HTMLNode node) {
 		int total = result.requiredBlocks;
 		int fetchedPercent = (int) (result.fetchedBlocks / (double) total * 100);
-		node.addChild(originalNode);
+		node.addChild(new HTMLNode("img", "src", "/imagecreator/?text="+fetchedPercent+"%25"));
 		node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "fetchedBlocks", String.valueOf(result.fetchedBlocks) });
 		node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "requiredBlocks", String.valueOf(result.requiredBlocks) });
 	}
@@ -64,7 +65,7 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 			node.addChild(originalNode);
 			addChild(node);
 		}
-		
+		else super.updateState();
 	}
 
 	@Override
@@ -74,7 +75,11 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 
 	@Override
 	protected void addCompleteElement(HTMLNode node) {
-		node.addChild(tagName, "src", key.toString()).setContent("");
+		String src = key.toString()+"?max-size=0";
+		if(!src.startsWith("/")) src = "/"+src;
+		HashMap<String, String> attrs = new HashMap<String, String>(originalNode.getAttributes());
+		attrs.put("src", src);
+		node.addChild(new HTMLNode(tagName, attrs, ""));
 	}
 
 	@Override

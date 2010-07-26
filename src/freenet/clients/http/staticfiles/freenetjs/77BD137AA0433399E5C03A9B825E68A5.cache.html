@@ -4,7 +4,7 @@ var $gwt_version = "2.1.0M2";
 var $wnd = parent;
 var $doc = $wnd.document;
 var $moduleName, $moduleBase;
-var $strongName = 'B03D60DCFAD89EBE6EDDE75FC9A24708';
+var $strongName = '77BD137AA0433399E5C03A9B825E68A5';
 var $stats = $wnd.__gwtStatsEvent ? function(a) {return $wnd.__gwtStatsEvent(a);} : null,
 $sessionId = $wnd.__gwtStatsSessionId ? $wnd.__gwtStatsSessionId : null;
 $stats && $stats({moduleName:'freenetjs',sessionId:$sessionId,subSystem:'startup',evtGroup:'moduleStartup',millis:(new Date()).getTime(),type:'moduleEvalStart'});
@@ -389,10 +389,6 @@ function $getParentElement(this$static){
   return parent_0 = ($clinit_21() , this$static).parentNode , (!parent_0 || parent_0.nodeType != 1) && (parent_0 = null) , parent_0;
 }
 
-function $getFirstChildElement(this$static){
-  return $getFirstChildElement_0(($clinit_21() , this$static));
-}
-
 function $getPropertyString(this$static, name_0){
   return this$static[name_0] == null?null:String(this$static[name_0]);
 }
@@ -737,10 +733,6 @@ function $clinit_42(){
   TYPE = new DomEvent$Type_0('click', new ClickEvent_0);
 }
 
-function $dispatch(handler){
-  sendRequest('/pushdata/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 126, 16, [new QueryParameter_0('requestId', requestId_0), new QueryParameter_0('elementId', handler.val$localElementId)]), new MultimediaElementUpdater$1$1_0(handler.val$localElementId));
-}
-
 function ClickEvent_0(){
 }
 
@@ -749,7 +741,7 @@ function ClickEvent(){
 
 _ = ClickEvent_0.prototype = ClickEvent.prototype = new DomEvent;
 _.dispatch = function dispatch(handler){
-  $dispatch(dynamicCast(handler, 3));
+  $onClick(dynamicCast(handler, 3));
 }
 ;
 _.getAssociatedType_0 = function getAssociatedType_0(){
@@ -2460,7 +2452,7 @@ function $clinit_122(){
   TYPE_2 = new GwtEvent$Type_0;
 }
 
-function $dispatch_1(){
+function $dispatch_0(){
   isPushingCancelledExpected = true;
   sendRequest('/leaving/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 126, 16, [new QueryParameter_0('requestId', requestId_0)]), null);
   $closeConnection_1(cm);
@@ -2475,7 +2467,7 @@ function Window$ClosingEvent(){
 
 _ = Window$ClosingEvent_0.prototype = Window$ClosingEvent.prototype = new GwtEvent;
 _.dispatch = function dispatch_2(handler){
-  $dispatch_1(dynamicCast(handler, 29));
+  $dispatch_0(dynamicCast(handler, 29));
 }
 ;
 _.getAssociatedType = function getAssociatedType_3(){
@@ -5030,15 +5022,28 @@ _.getClass$ = function getClass_129(){
 }
 ;
 _.updated = function updated_2(elementId, content_0){
-  var element, parent_0, parent_1, image;
-  log('Updating Multimedia element');
-  element = $getFirstChildElement($getFirstChildElement_0(($clinit_21() , get_0(elementId).element)));
-  log('Parent element has class of ' + (parent_0 = element.parentNode , (!parent_0 || parent_0.nodeType != 1) && (parent_0 = null) , parent_0).className);
-  (parent_1 = element.parentNode , (!parent_1 || parent_1.nodeType != 1) && (parent_1 = null) , parent_1).className.indexOf('unFinalized') != -1?$addHandler_1(($clinit_154() , image = new Image_1(element) , image.state = new Image$UnclippedState_0(element) , $onAttach(image) , $clinit_161() , $add_6(widgetsToDetach, image) , image), new MultimediaElementUpdater$1_0(elementId), ($clinit_42() , $clinit_42() , TYPE)):$updated_1(elementId, content_0);
+  var element, parentElement, image;
+  parentElement = $getFirstChildElement_0(($clinit_21() , get_0(elementId).element));
+  element = $getFirstChildElement_0(parentElement);
+  if (parentElement.className.indexOf('unFinalized') != -1)
+    $addHandler_1(($clinit_154() , image = new Image_1(element) , image.state = new Image$UnclippedState_0(element) , $onAttach(image) , $clinit_161() , $add_6(widgetsToDetach, image) , image), new MultimediaElementUpdater$1_0(element, parentElement, elementId), ($clinit_42() , $clinit_42() , TYPE));
+  else {
+    log('Updating an already finalized multimedia element');
+    $updated_1(elementId, content_0);
+  }
 }
 ;
 _.typeId$ = 79;
-function MultimediaElementUpdater$1_0(val$localElementId){
+function $onClick(this$static){
+  this$static.val$element.setAttribute('src', '/imagecreator/?text=0%25');
+  this$static.val$parentElement.className = 'jsonly MultimediaElement';
+  log('Unfinalized multimedia element detected');
+  sendRequest('/pushdata/', initValues(_3Lfreenet_client_tools_QueryParameter_2_classLit, 126, 16, [new QueryParameter_0('requestId', requestId_0), new QueryParameter_0('elementId', this$static.val$localElementId)]), new MultimediaElementUpdater$1$1_0(this$static.val$localElementId));
+}
+
+function MultimediaElementUpdater$1_0(val$element, val$parentElement, val$localElementId){
+  this.val$element = val$element;
+  this.val$parentElement = val$parentElement;
   this.val$localElementId = val$localElementId;
 }
 
@@ -5051,7 +5056,9 @@ _.getClass$ = function getClass_130(){
 }
 ;
 _.typeId$ = 80;
+_.val$element = null;
 _.val$localElementId = null;
+_.val$parentElement = null;
 function MultimediaElementUpdater$1$1_0(val$localElementId){
   this.val$localElementId = val$localElementId;
 }
@@ -5291,6 +5298,8 @@ _.getClass$ = function getClass_138(){
   return Ljava_lang_Class_2_classLit;
 }
 ;
+--></script>
+<script><!--
 _.toString$ = function toString_19(){
   return ((this.modifiers & 2) != 0?'interface ':(this.modifiers & 1) != 0?'':'class ') + this.typeName;
 }
@@ -5311,8 +5320,6 @@ _.getClass$ = function getClass_139(){
 }
 ;
 _.typeId$ = 88;
---></script>
-<script><!--
 function __parseAndValidateInt(s){
   var i, length_0, startIndex, toReturn;
   if (s == null) {
@@ -6449,6 +6456,8 @@ function $hasNext_2(this$static){
   return this$static.i < this$static.this$0.size_0();
 }
 
+--></script>
+<script><!--
 function $next_3(this$static){
   if (this$static.i >= this$static.this$0.size_0()) {
     throw new NoSuchElementException_0;
@@ -6464,8 +6473,6 @@ function AbstractList$IteratorImpl(){
 }
 
 _ = AbstractList$IteratorImpl_0.prototype = AbstractList$IteratorImpl.prototype = new Object_0;
---></script>
-<script><!--
 _.getClass$ = function getClass_160(){
   return Ljava_util_AbstractList$IteratorImpl_2_classLit;
 }

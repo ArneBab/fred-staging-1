@@ -27,11 +27,14 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 
 	@Override
 	public void updated(String elementId, String content) {
-		FreenetJs.log("Updating Multimedia element");
 		final String localElementId = elementId;
-		final com.google.gwt.dom.client.Element element = RootPanel.get(elementId).getElement().getFirstChildElement().getFirstChildElement();
-		if(element.getParentElement().getClassName().contains("unFinalized")) Image.wrap(element).addClickHandler(new ClickHandler() {
+		final com.google.gwt.dom.client.Element parentElement = RootPanel.get(elementId).getElement().getFirstChildElement();
+		final com.google.gwt.dom.client.Element element = parentElement.getFirstChildElement();
+		if(parentElement.getClassName().contains("unFinalized")) Image.wrap(element).addClickHandler(new ClickHandler() {
 			public void onClick(ClickEvent event) {
+				element.setAttribute("src", "/imagecreator/?text=0%25");
+				parentElement.setClassName("jsonly MultimediaElement");
+				FreenetJs.log("Unfinalized multimedia element detected");
 				FreenetRequest.sendRequest(UpdaterConstants.dataPath, new QueryParameter[] { new QueryParameter("requestId", FreenetJs.requestId),
 						new QueryParameter("elementId", localElementId) }, new RequestCallback(){
 					@Override
@@ -83,7 +86,10 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 				});
 			}
 		});
-		else super.updated(elementId, content);
+		else {
+			FreenetJs.log("Updating an already finalized multimedia element");
+			super.updated(elementId, content);
+		}
 	}
 
 	private void fetch(String elementId, String src) {
