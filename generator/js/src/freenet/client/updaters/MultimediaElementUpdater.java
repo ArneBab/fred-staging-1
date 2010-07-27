@@ -63,7 +63,11 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 								Node childNode = multimediaChildren.item(i);
 								if(childNode.getNodeName().toLowerCase() == "source") {
 									NamedNodeMap attributes = childNode.getAttributes();
-									potentialFiles.put(attributes.getNamedItem("src").getNodeValue(), attributes.getNamedItem("codec").getNodeValue());
+									Node srcNode = attributes.getNamedItem("src");
+									Node codecNode = attributes.getNamedItem("codec");
+									String src = srcNode != null ? srcNode.getNodeValue() : null;
+									String codec = codecNode != null ? codecNode.getNodeValue() : null;
+									potentialFiles.put(src, codec);
 								}
 							}
 						}
