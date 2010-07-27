@@ -2,7 +2,6 @@ package freenet.client.filter;
 
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
-import java.util.LinkedList;
 
 import freenet.client.filter.HTMLFilter.ParsedTag;
 import freenet.clients.http.FProxyFetchTracker;
@@ -12,6 +11,7 @@ import freenet.clients.http.updateableelements.MultimediaElement;
 import freenet.keys.FreenetURI;
 import freenet.l10n.NodeL10n;
 import freenet.support.HTMLEncoder;
+import freenet.support.HTMLNode;
 
 /** This TagReplacerCallback adds pushing support for freesites, and replaces their img's to pushed ones */
 public class PushingTagReplacerCallback implements TagReplacerCallback {
@@ -22,8 +22,8 @@ public class PushingTagReplacerCallback implements TagReplacerCallback {
 	private long				maxSize;
 	/** The current ToadletContext */
 	private ToadletContext		ctx;
-	/** */
-	private LinkedList<ParsedTag> blockElement = new LinkedList<ParsedTag>();
+	/** HTML nodes that may have children elements should be stored here*/
+	HTMLNode flowContent = null;
 
 	/**
 	 * Constructor
@@ -106,15 +106,15 @@ public class PushingTagReplacerCallback implements TagReplacerCallback {
 						if (src.startsWith("/")) {
 							src = src.substring(1);
 						}
-						if(blockElement.isEmpty()) blockElement.add(pt);
-						return "";
 					}
+					flowContent = pt.toHTMLNode();
+					return "";
 				} else {
-					String result = new MultimediaElement(tracker, ctx, blockElement).generate();
-					blockElement.clear();
+					String result = new MultimediaElement(tracker, ctx, flowContent).generate();
+					flowContent = null;
 					return result;
 				}
-			} else if(pt.element.toLowerCase().compareTo("source") == 0 && !blockElement.isEmpty()) {
+			} else if(pt.element.toLowerCase().compareTo("source") == 0 && flowContent != null) {
 				for (int i = 0; i < pt.unparsedAttrs.length; i++) {
 					String attr = pt.unparsedAttrs[i];
 					String name = attr.substring(0, attr.indexOf("="));
@@ -132,10 +132,10 @@ public class PushingTagReplacerCallback implements TagReplacerCallback {
 						if (src.startsWith("/")) {
 							src = src.substring(1);
 						}
-						blockElement.add(pt);
-						return "";
 					}
 				}
+				flowContent.addChild(pt.toHTMLNode());
+				return "";
 			} else if (pt.element.toLowerCase().compareTo("body") == 0 && pt.startSlash==true) {
 				// After the <body>, we need to insert the requestId and the l10n script
 				return "".concat(/*new XmlAlertElement(ctx).generate()*/"".concat("<input id=\"requestId\" type=\"hidden\" value=\"" + ctx.getUniqueId() + "\" name=\"requestId\"/>")).concat("<script type=\"text/javascript\" language=\"javascript\">".concat(getClientSideLocalizationScript()).concat("</script>")).concat("</body>");

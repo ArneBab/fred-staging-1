@@ -5,7 +5,6 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
 
-import freenet.client.filter.HTMLFilter.ParsedTag;
 import freenet.clients.http.FProxyFetchResult;
 import freenet.clients.http.FProxyFetchTracker;
 import freenet.clients.http.FProxyToadlet;
@@ -27,18 +26,17 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 	LinkedList<FreenetURI> keys = new LinkedList<FreenetURI>();
 
 	public MultimediaElement(FProxyFetchTracker tracker, ToadletContext ctx,
-			LinkedList<ParsedTag> blockElement) {
+			HTMLNode flowElement) {
 		super(tracker, null, 0, ctx, false);
-		tagName = blockElement.getFirst().element;
-		originalNode = makeHtmlNodeForParsedTag(blockElement.remove());
+		tagName = flowElement.getFirstTag();
+		originalNode = flowElement;
 		originalNode.setContent("");
 		if(originalNode.getAttribute("src") != null) originalNode.addAttribute("src", originalNode.getAttribute("src").concat("?max-size=0"));
-		else for(ParsedTag tag : blockElement) {
-			HTMLNode source = makeHtmlNodeForParsedTag(tag);
-			String src = source.getAttribute("src");
+		else for(HTMLNode child : originalNode.getChildren()) {
+			if(logMINOR) Logger.minor(this, "Processing potential source element: "+child.generate());
+			String src = child.getAttribute("src");
 			if(src != null) {
-				source.addAttribute("src", source.getAttribute("src").concat("?max-size=0"));
-				if(tag.element == "source") originalNode.addChild(source).generate();
+				child.addAttribute("src", child.getAttribute("src").concat("?max-size=0"));
 				try {
 					if (src.startsWith("/")) src = src.substring(1);
 					keys.add(new FreenetURI(src));
