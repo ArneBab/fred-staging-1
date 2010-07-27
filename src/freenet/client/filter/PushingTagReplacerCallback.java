@@ -89,22 +89,24 @@ public class PushingTagReplacerCallback implements TagReplacerCallback {
 					}
 				}
 			} else if(pt.element.toLowerCase().compareTo("video") == 0 || pt.element.toLowerCase().compareTo("audio") == 0) {
-				if(!pt.startSlash) for (int i = 0; i < pt.unparsedAttrs.length; i++) {
-					String attr = pt.unparsedAttrs[i];
-					String name = attr.substring(0, attr.indexOf("="));
-					String value = attr.substring(attr.indexOf("=") + 2, attr.length() - 1);
-					if (name.compareTo("src") == 0) {
-						String src;
-						try {
-							// We need absolute URI
-							src = uriProcessor.makeURIAbsolute(uriProcessor.processURI(value, null, false, false));
-						} catch (CommentException ce) {
-							return null;
-						} catch (URISyntaxException use) {
-							return null;
-						}
-						if (src.startsWith("/")) {
-							src = src.substring(1);
+				if(!pt.startSlash) { 
+					for (int i = 0; i < pt.unparsedAttrs.length; i++) {
+						String attr = pt.unparsedAttrs[i];
+						String name = attr.substring(0, attr.indexOf("="));
+						String value = attr.substring(attr.indexOf("=") + 2, attr.length() - 1);
+						if (name.compareTo("src") == 0) {
+							String src;
+							try {
+								// We need absolute URI
+								src = uriProcessor.makeURIAbsolute(uriProcessor.processURI(value, null, false, false));
+							} catch (CommentException ce) {
+								return null;
+							} catch (URISyntaxException use) {
+								return null;
+							}
+							if (src.startsWith("/")) {
+								src = src.substring(1);
+							}
 						}
 					}
 					flowContent = pt.toHTMLNode();
