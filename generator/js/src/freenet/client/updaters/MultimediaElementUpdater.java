@@ -47,11 +47,11 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 						//There should only be one multimedia element retrieved
 						multimedia = XMLParser.parse(content).getDocumentElement().getElementsByTagName("audio").item(0);
 						if(multimedia == null) multimedia = XMLParser.parse(content).getDocumentElement().getElementsByTagName("video").item(0);
-						if(multimedia != null) {
-							tagName = multimedia.getNodeName();
-							FreenetJs.log("Checking whether browser can support "+tagName+" multimedia elements");
+						if(multimedia == null) {
+							FreenetJs.log("ERROR: Unable to find a usable element");
+							return;
 						}
-						else return;
+						tagName = multimedia.getNodeName();
 						if(((Element)multimedia).hasAttribute("src")) {
 							FreenetJs.log("Dealing with one src attribute");
 							potentialFiles.put(((Element)multimedia).getAttribute("src"), ((Element)multimedia).getAttribute("codec"));
