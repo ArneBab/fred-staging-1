@@ -33,6 +33,7 @@ public class PushQueueFetchToadlet extends Toadlet {
 		if(logMINOR) Logger.minor(this, "Queueing a fetch...");
 		String requestId = req.getParam("requestId");
 		String elementId = req.getParam("elementId");
+		elementId = elementId.replace(" ", "+");// This is needed, because BASE64 has '+', but it is a HTML escape for ' '
 		FreenetURI key = null;
 		try{
 			key = new FreenetURI(req.getParam("key"));
