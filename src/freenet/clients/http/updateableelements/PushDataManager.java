@@ -152,12 +152,17 @@ public class PushDataManager {
 	}
 
 	public synchronized void setFinalizedKey(String requestId, String elementId, FreenetURI key) {
-		if (pages.get(requestId) != null) for (BaseUpdateableElement element : pages.get(requestId)) {
-			if (element.getUpdaterId(requestId).compareTo(elementId) == 0 && element instanceof LazyFetchingElement) {
-				((LazyFetchingElement) element).finalizeTarget(key);
+		boolean finalized = false;
+		if(logMINOR) Logger.minor(this, "Setting element: "+elementId+" in page: "+requestId+" to download key: "+key);
+		if (pages.get(requestId) != null) {
+			for (BaseUpdateableElement element : pages.get(requestId)) {
+				if (element.getUpdaterId(requestId).compareTo(elementId) == 0 && element instanceof LazyFetchingElement) {
+					((LazyFetchingElement) element).finalizeTarget(key);
+					finalized = true;
+				}
 			}
 		}
-		Logger.error(this, "Could not set final key "+key+" for element: "+elementId+" in request "+requestId);
+		if(!finalized) Logger.error(this, "Could not set final key "+key+" for element: "+elementId+" in request "+requestId);
 	}
 
 	/**

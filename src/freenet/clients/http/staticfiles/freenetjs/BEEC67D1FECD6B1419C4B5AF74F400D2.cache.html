@@ -4,7 +4,7 @@ var $gwt_version = "2.1.0M2";
 var $wnd = parent;
 var $doc = $wnd.document;
 var $moduleName, $moduleBase;
-var $strongName = '77BD137AA0433399E5C03A9B825E68A5';
+var $strongName = 'BEEC67D1FECD6B1419C4B5AF74F400D2';
 var $stats = $wnd.__gwtStatsEvent ? function(a) {return $wnd.__gwtStatsEvent(a);} : null,
 $sessionId = $wnd.__gwtStatsSessionId ? $wnd.__gwtStatsSessionId : null;
 $stats && $stats({moduleName:'freenetjs',sessionId:$sessionId,subSystem:'startup',evtGroup:'moduleStartup',millis:(new Date()).getTime(),type:'moduleEvalStart'});
@@ -5079,7 +5079,7 @@ _.onResponseReceived = function onResponseReceived_4(request, response){
   var attributes, childNode, content_0, entry, entry$iterator, i, multimedia, multimediaChildren, potentialFiles, tagName;
   potentialFiles = new HashMap_0;
   content_0 = decode($split(response.val$xmlHttpRequest.responseText, '[:]', 0)[2]);
-  log('Replacing Multimedia element ' + this.val$localElementId + ' with' + content_0);
+  log('Processing element ' + this.val$localElementId + ' which looks like ' + content_0);
   multimedia = ($clinit_188() , $getElementsByTagName_1(dynamicCast(build(($clinit_203() , $parse(impl_0, content_0).jsObject.documentElement)), 38), 'audio')).item_0(0);
   !multimedia && (multimedia = $getElementsByTagName_1(dynamicCast(build($parse(impl_0, content_0).jsObject.documentElement), 38), 'video').item_0(0));
   if (multimedia) {
@@ -5093,8 +5093,8 @@ _.onResponseReceived = function onResponseReceived_4(request, response){
     $put(potentialFiles, dynamicCast(multimedia, 38).jsObject.getAttribute('src'), dynamicCast(multimedia, 38).jsObject.getAttribute('codec'));
   }
    else {
-    log('There are one or more source elements');
     multimediaChildren = new NodeListImpl_0(multimedia.jsObject.childNodes);
+    log('Found ' + multimediaChildren.getLength() + ' potential source elements');
     for (i = 0; i < multimediaChildren.getLength(); ++i) {
       childNode = multimediaChildren.item_0(i);
       if (childNode.jsObject.nodeName.toLowerCase() == 'source') {
@@ -5103,7 +5103,7 @@ _.onResponseReceived = function onResponseReceived_4(request, response){
       }
     }
   }
-  log('Found ' + potentialFiles.size + ' potential files');
+  log('There are ' + potentialFiles.size + ' possible source elements');
   for (entry$iterator = new AbstractHashMap$EntrySetIterator_0((new AbstractHashMap$EntrySet_0(potentialFiles)).this$0); $hasNext_2(entry$iterator.iter);) {
     entry = dynamicCast($next_3(entry$iterator.iter), 40);
     $remove_4(potentialFiles, entry.getKey());
@@ -5294,12 +5294,12 @@ function Class(){
 }
 
 _ = Class_0.prototype = Class.prototype = new Object_0;
+--></script>
+<script><!--
 _.getClass$ = function getClass_138(){
   return Ljava_lang_Class_2_classLit;
 }
 ;
---></script>
-<script><!--
 _.toString$ = function toString_19(){
   return ((this.modifiers & 2) != 0?'interface ':(this.modifiers & 1) != 0?'':'class ') + this.typeName;
 }
@@ -6452,12 +6452,12 @@ _.iterator_0 = function iterator_2(){
 }
 ;
 _.typeId$ = 105;
+--></script>
+<script><!--
 function $hasNext_2(this$static){
   return this$static.i < this$static.this$0.size_0();
 }
 
---></script>
-<script><!--
 function $next_3(this$static){
   if (this$static.i >= this$static.this$0.size_0()) {
     throw new NoSuchElementException_0;

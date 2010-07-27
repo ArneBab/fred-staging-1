@@ -13,9 +13,15 @@ import freenet.clients.http.ToadletContext;
 import freenet.keys.FreenetURI;
 import freenet.support.Base64;
 import freenet.support.HTMLNode;
+import freenet.support.Logger;
 
 public class MultimediaElement extends MediaElement implements LazyFetchingElement {
 
+	static {
+		Logger.registerClass(MultimediaElement.class);
+	}
+
+	private static volatile boolean logMINOR;
 	String tagName;
 	HTMLNode originalNode;
 	LinkedList<FreenetURI> keys = new LinkedList<FreenetURI>();
@@ -24,22 +30,25 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 			LinkedList<ParsedTag> blockElement) {
 		super(tracker, null, 0, ctx, false);
 		tagName = blockElement.getFirst().element;
-		originalNode = makeHtmlNodeForParsedTag(blockElement.getFirst());
+		originalNode = makeHtmlNodeForParsedTag(blockElement.remove());
 		originalNode.setContent("");
 		if(originalNode.getAttribute("src") != null) originalNode.addAttribute("src", originalNode.getAttribute("src").concat("?max-size=0"));
-		for(ParsedTag tag : blockElement) {
+		else for(ParsedTag tag : blockElement) {
 			HTMLNode source = makeHtmlNodeForParsedTag(tag);
 			String src = source.getAttribute("src");
 			if(src != null) {
-				if(tag.element == "source") originalNode.addChild(source).addAttribute("src", originalNode.getAttribute("src").concat("?max-size=0"));
+				source.addAttribute("src", source.getAttribute("src").concat("?max-size=0"));
+				if(tag.element == "source") originalNode.addChild(source).generate();
 				try {
+					if (src.startsWith("/")) src = src.substring(1);
 					keys.add(new FreenetURI(src));
 				} catch (MalformedURLException e) {
-					//Do nothing
+					Logger.error(this, e.toString(), e);
 				}
 			}
 			else break;
 		}
+		if(logMINOR) Logger.minor(this, "Multimedia element populated: \""+originalNode.generateChildren()+"\" Keys: "+keys.toString());
 
 		String sizePart = new String();
 		Map<String, String> attrs = originalNode.getAttributes();
@@ -73,7 +82,7 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 		if (attrs.containsKey("width") && attrs.containsKey("height")) {
 			sizePart = "&width=" + attrs.get("width") + "&height=" + attrs.get("height");
 		}
-	
+
 		node.addChild(new HTMLNode("img", newAttrs));
 		node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "fetchedBlocks", String.valueOf(result.fetchedBlocks) });
 		node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "requiredBlocks", String.valueOf(result.requiredBlocks) });
@@ -119,6 +128,7 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 		}
 
 	public void finalizeTarget(FreenetURI key) {
+		if(logMINOR) Logger.minor(this, "Finalizing element with key "+key);
 		this.key = key;
 		startFetch();
 	}

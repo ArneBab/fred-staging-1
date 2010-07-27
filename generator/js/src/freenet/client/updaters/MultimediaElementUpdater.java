@@ -42,7 +42,7 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 						String tagName;
 						HashMap<String, String> potentialFiles = new HashMap<String, String>();
 						String content = Base64.decode(response.getText().split("[:]")[2]);
-						FreenetJs.log("Replacing Multimedia element "+localElementId+" with"+content);
+						FreenetJs.log("Processing element "+localElementId+" which looks like "+content);
 						Node multimedia = null;
 						//There should only be one multimedia element retrieved
 						multimedia = XMLParser.parse(content).getDocumentElement().getElementsByTagName("audio").item(0);
@@ -57,8 +57,8 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 							potentialFiles.put(((Element)multimedia).getAttribute("src"), ((Element)multimedia).getAttribute("codec"));
 						}
 						else {
-							FreenetJs.log("There are one or more source elements");
 							NodeList multimediaChildren = multimedia.getChildNodes();
+							FreenetJs.log("Found "+multimediaChildren.getLength()+" potential source elements");
 							for(int i = 0; i < multimediaChildren.getLength(); i++) {
 								Node childNode = multimediaChildren.item(i);
 								if(childNode.getNodeName().toLowerCase() == "source") {
@@ -67,7 +67,7 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 								}
 							}
 						}
-						FreenetJs.log("Found "+potentialFiles.size()+" potential files");
+						FreenetJs.log("There are "+potentialFiles.size()+" possible source elements");
 
 						for(Map.Entry<String, String> entry : potentialFiles.entrySet()) {
 							potentialFiles.remove(entry.getKey());
