@@ -36,6 +36,7 @@ import freenet.clients.http.ToadletContextImpl;
 import freenet.l10n.NodeL10n;
 import freenet.support.HTMLDecoder;
 import freenet.support.HTMLEncoder;
+import freenet.support.HTMLNode;
 import freenet.support.Logger;
 import freenet.support.URLDecoder;
 import freenet.support.URLEncodedFormatException;
@@ -846,6 +847,16 @@ public class HTMLFilter implements ContentDataFilter, CharsetExtractor {
 					htmlwrite(w,pc);
 				}
 			}
+		}
+
+		public HTMLNode toHTMLNode() {
+			List<String> attributeNames = new ArrayList<String>();
+			List<String> attributeValues = new ArrayList<String>();
+			for (Entry<String, String> att : getAttributesAsMap().entrySet()) {
+				attributeNames.add(att.getKey());
+				attributeValues.add(att.getValue());
+			}
+			return new HTMLNode(element, attributeNames.toArray(new String[] {}), attributeValues.toArray(new String[] {}));
 		}
 	}
 

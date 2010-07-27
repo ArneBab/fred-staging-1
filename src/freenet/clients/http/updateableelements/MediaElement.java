@@ -1,12 +1,8 @@
 package freenet.clients.http.updateableelements;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Random;
-import java.util.Map.Entry;
 
 import freenet.client.FetchException;
-import freenet.client.filter.HTMLFilter.ParsedTag;
 import freenet.clients.http.FProxyFetchInProgress;
 import freenet.clients.http.FProxyFetchResult;
 import freenet.clients.http.FProxyFetchTracker;
@@ -150,17 +146,6 @@ public abstract class MediaElement extends BaseUpdateableElement {
 	protected abstract void subsequentStateDisplay(FProxyFetchResult result, HTMLNode node);
 
 	protected abstract void addCompleteElement(HTMLNode node);
-
-	// FIXME move this to some global utilities class.
-	protected HTMLNode makeHtmlNodeForParsedTag(ParsedTag pt) {
-		List<String> attributeNames = new ArrayList<String>();
-		List<String> attributeValues = new ArrayList<String>();
-		for (Entry<String, String> att : pt.getAttributesAsMap().entrySet()) {
-			attributeNames.add(att.getKey());
-			attributeValues.add(att.getValue());
-		}
-		return new HTMLNode(pt.element, attributeNames.toArray(new String[] {}), attributeValues.toArray(new String[] {}));
-	}
 
 	@Override
 	public abstract String toString();

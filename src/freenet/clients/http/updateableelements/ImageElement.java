@@ -21,7 +21,7 @@ public class ImageElement extends MediaElement {
 		this.originalElement = originalElement;
 		HTMLNode node = new HTMLNode("span", "class", "jsonly ImageElement");
 		addChild(node);
-		if(wasError) node.addChild(makeHtmlNodeForParsedTag(this.originalElement));
+		if(wasError) node.addChild(this.originalElement.toHTMLNode());
 		else {
 			Map<String, String> attr = ImageElement.this.originalElement.getAttributesAsMap();
 			String sizePart = new String();
@@ -29,10 +29,10 @@ public class ImageElement extends MediaElement {
 				sizePart = "&width=" + attr.get("width") + "&height=" + attr.get("height");
 			}
 			attr.put("src", "/imagecreator/?text=+"+FProxyToadlet.l10n("imageinitializing")+"+" + sizePart);
-			node.addChild(makeHtmlNodeForParsedTag(new ParsedTag(ImageElement.this.originalElement, attr)));
+			node.addChild(new ParsedTag(ImageElement.this.originalElement, attr).toHTMLNode());
 			node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "fetchedBlocks", String.valueOf(0) });
 			node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "requiredBlocks", String.valueOf(1) });
-			addChild("noscript").addChild(makeHtmlNodeForParsedTag(ImageElement.this.originalElement));
+			addChild("noscript").addChild(ImageElement.this.originalElement.toHTMLNode());
 			init(pushed);
 		}
 	}
@@ -52,14 +52,14 @@ public class ImageElement extends MediaElement {
 			sizePart = "&width=" + attr.get("width") + "&height=" + attr.get("height");
 		}
 		attr.put("src", "/imagecreator/?text=" + fetchedPercent + "%25" + sizePart);
-		node.addChild(makeHtmlNodeForParsedTag(new ParsedTag(ImageElement.this.originalElement, attr)));
+		node.addChild(new ParsedTag(ImageElement.this.originalElement, attr).toHTMLNode());
 		node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "fetchedBlocks", String.valueOf(result.fetchedBlocks) });
 		node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "requiredBlocks", String.valueOf(result.requiredBlocks) });
 	}
 
 	@Override
 	protected void addCompleteElement(HTMLNode node) {
-		node.addChild(makeHtmlNodeForParsedTag(ImageElement.this.originalElement));
+		node.addChild(ImageElement.this.originalElement.toHTMLNode());
 	}
 
 	@Override
