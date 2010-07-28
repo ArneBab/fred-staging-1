@@ -146,18 +146,6 @@ public class PushingTagReplacerCallback implements TagReplacerCallback {
 			} else if (pt.element.toLowerCase().compareTo("head") == 0) {
 				// After the <head>, we need to add GWT support
 				return "<head><script type=\"text/javascript\" language=\"javascript\" src=\"/static/freenetjs/freenetjs.nocache.js\"></script><noscript><style> .jsonly {display:none;}</style></noscript><link href=\"/static/reset.css\" rel=\"stylesheet\" type=\"text/css\" />";
-			} else if(pt.element.toLowerCase().compareTo("video") == 0 || pt.element.toLowerCase().compareTo("audio") == 0) {
-				if(pt.unparsedAttrs != null) {
-					for (int i = 0; i < pt.unparsedAttrs.length; i++) {
-						String attr = pt.unparsedAttrs[i];
-						String name = attr.substring(0, attr.indexOf("="));
-						String value = attr.substring(attr.indexOf("=") + 2, attr.length() - 1);
-						if(name.compareTo("src") == 0) {
-							pt.unparsedAttrs[i] = name+"=\""+value+"?max-size=0\"";
-						}
-					}
-				}
-				return pt.toString();
 			}
 		}
 		return null;
