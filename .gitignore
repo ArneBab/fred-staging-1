@@ -8,6 +8,8 @@
 /generator/js/lib
 /generator/js/tests/lib
 /generator/js/tests/bin
+/src/freenet/clients/http/staticfiles/freenetjs/
+cache.properties
 .classpath
 *.swp
 *.iml
