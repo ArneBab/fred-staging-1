@@ -51,11 +51,15 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 		String sizePart = new String();
 		Map<String, String> attrs = originalNode.getAttributes();
 		HashMap<String, String> newAttrs = new HashMap<String, String>();
-		if(attrs.containsKey("width")) newAttrs.put("width", attrs.get("width"));
-		if(attrs.containsKey("height")) newAttrs.put("height", attrs.get("height"));
-		if (attrs.containsKey("width") && attrs.containsKey("height")) {
-			sizePart = "&width=" + attrs.get("width") + "&height=" + attrs.get("height");
+		if(attrs.containsKey("width") && attrs.containsKey("height")) {
+			if(attrs.containsKey("width")) newAttrs.put("width", attrs.get("width"));
+			if(attrs.containsKey("height")) newAttrs.put("height", attrs.get("height"));
+		} else {
+			//These defaults come from the HTML5 spec.
+			newAttrs.put("width", "300");
+			newAttrs.put("height", "150");
 		}
+		sizePart = "&width=" + newAttrs.get("width") + "&height=" + newAttrs.get("height");
 		newAttrs.put("src", "/imagecreator/?text=+"+FProxyToadlet.l10n("startmultimedia")+sizePart);
 
 		HTMLNode node = new HTMLNode("span", "class", "jsonly MultimediaElement unFinalized");
@@ -74,12 +78,15 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 		String sizePart = new String();
 		Map<String, String> attrs = originalNode.getAttributes();
 		HashMap<String, String> newAttrs = new HashMap<String, String>();
-		if(attrs.containsKey("width")) newAttrs.put("width", attrs.get("width"));
-		if(attrs.containsKey("height")) newAttrs.put("height", attrs.get("height"));
-		newAttrs.put("src", "/imagecreator/?text="+fetchedPercent+"%25"+sizePart);
-		if (attrs.containsKey("width") && attrs.containsKey("height")) {
-			sizePart = "&width=" + attrs.get("width") + "&height=" + attrs.get("height");
+		if(attrs.containsKey("width") && attrs.containsKey("height")) {
+			if(attrs.containsKey("width")) newAttrs.put("width", attrs.get("width"));
+			if(attrs.containsKey("height")) newAttrs.put("height", attrs.get("height"));
+		} else {
+			newAttrs.put("width", "300");
+			newAttrs.put("height", "150");
 		}
+		sizePart = "&width=" + newAttrs.get("width") + "&height=" + newAttrs.get("height");
+		newAttrs.put("src", "/imagecreator/?text="+fetchedPercent+"%25"+sizePart);
 
 		node.addChild(new HTMLNode("img", newAttrs));
 		node.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "fetchedBlocks", String.valueOf(result.fetchedBlocks) });
