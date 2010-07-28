@@ -107,6 +107,7 @@ public class PushingTagReplacerCallback implements TagReplacerCallback {
 							if (src.startsWith("/")) {
 								src = src.substring(1);
 							}
+							pt.unparsedAttrs[i] = name+"=\""+src+"\"";
 						}
 					}
 					flowContent = pt.toHTMLNode();
@@ -134,6 +135,7 @@ public class PushingTagReplacerCallback implements TagReplacerCallback {
 						if (src.startsWith("/")) {
 							src = src.substring(1);
 						}
+						pt.unparsedAttrs[i] = name+"=\""+src+"\"";
 					}
 				}
 				flowContent.addChild(pt.toHTMLNode());
