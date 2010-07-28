@@ -550,10 +550,10 @@ public class HTMLFilter implements ContentDataFilter, CharsetExtractor {
 			pc.currentStyleScriptChunk += sout;
 			return; // is parsed and written elsewhere
 		}
-		if(pc.cb != null)
+		if(pc.cb != null) {
 			pc.cb.onText(HTMLDecoder.decode(sout), tagName); /* Tag name is given as type for the text */
-		
-		w.write(sout);
+			w.write(pc.cb.processText(HTMLDecoder.decode(sout), tagName));
+		} else w.write(sout);
 	}
 
 	String processTag(List<String> splitTag, Writer w, HTMLParseContext pc)

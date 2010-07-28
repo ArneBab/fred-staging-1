@@ -21,4 +21,13 @@ public class GeneralTagReplacerCallback implements TagReplacerCallback {
 		return null;
 	}
 
+	public boolean inFlowContent() {
+		//We don't actually care about flow content
+		return false;
+	}
+
+	public String processText(String text, String type) {
+		return text;
+	}
+
 }

@@ -57,5 +57,6 @@ public interface FilterCallback {
 	 * @return The new tag, or null, if it doesn't need changing
 	 * */
 	public String processTag(ParsedTag pt);
-	
+
+	public String processText(String text, String type);
 }

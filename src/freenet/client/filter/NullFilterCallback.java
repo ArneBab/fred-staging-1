@@ -31,4 +31,8 @@ public class NullFilterCallback implements FilterCallback {
 		return null;
 	}
 
+	public String processText(String text, String type) {
+		return text;
+	}
+
 }

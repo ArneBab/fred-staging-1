@@ -367,8 +367,7 @@ public class GenericReadFilterCallback implements FilterCallback, URIProcessor {
 	}
 
 	public void onText(String s, String type) {
-		if(cb != null)
-			cb.onText(s, type, baseURI);
+		if(cb != null) cb.onText(s, type, baseURI);
 	}
 
 	static final String PLUGINS_PREFIX = "/plugins/";
@@ -425,6 +424,11 @@ public class GenericReadFilterCallback implements FilterCallback, URIProcessor {
 
 	public static String escapeURL(String uri) {
 		return "/?" + magicHTTPEscapeString + '=' + uri;
+	}
+
+	public String processText(String text, String type) {
+		if(trc != null && trc.inFlowContent()) return trc.processText(text, type);
+		else return text;
 	}
 	
 }

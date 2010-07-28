@@ -14,4 +14,8 @@ public interface TagReplacerCallback {
 	 * @return the replacement for the tag, or null if not needed
 	 */
 	public String processTag(ParsedTag pt, URIProcessor uriProcessor);
+
+	public boolean inFlowContent();
+
+	public String processText(String text, String type);
 }

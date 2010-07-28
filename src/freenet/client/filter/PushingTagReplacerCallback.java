@@ -23,7 +23,8 @@ public class PushingTagReplacerCallback implements TagReplacerCallback {
 	/** The current ToadletContext */
 	private ToadletContext		ctx;
 	/** HTML nodes that may have children elements should be stored here*/
-	HTMLNode flowContent = null;
+	private HTMLNode flowContent = null;
+	private HTMLNode currentElement = null;
 
 	/**
 	 * Constructor
@@ -110,11 +111,11 @@ public class PushingTagReplacerCallback implements TagReplacerCallback {
 							pt.unparsedAttrs[i] = name+"=\""+src+"\"";
 						}
 					}
-					flowContent = pt.toHTMLNode();
+					flowContent = currentElement = pt.toHTMLNode();
 					return "";
 				} else {
 					String result = new MultimediaElement(tracker, ctx, flowContent).generate();
-					flowContent = null;
+					flowContent = currentElement = null;
 					return result;
 				}
 			} else if(pt.element.toLowerCase().compareTo("source") == 0 && flowContent != null) {
@@ -138,7 +139,8 @@ public class PushingTagReplacerCallback implements TagReplacerCallback {
 						pt.unparsedAttrs[i] = name+"=\""+src+"\"";
 					}
 				}
-				flowContent.addChild(pt.toHTMLNode());
+				currentElement = pt.toHTMLNode();
+				flowContent.addChild(currentElement);
 				return "";
 			} else if (pt.element.toLowerCase().compareTo("body") == 0 && pt.startSlash==true) {
 				// After the <body>, we need to insert the requestId and the l10n script
@@ -149,6 +151,18 @@ public class PushingTagReplacerCallback implements TagReplacerCallback {
 			}
 		}
 		return null;
+	}
+
+	public boolean inFlowContent() {
+		return (flowContent != null && currentElement != null);
+	}
+
+	public String processText(String text, String type) {
+		if(inFlowContent()) {
+			currentElement.setContent(text);
+			return "";
+		}
+		return text;
 	}
 
 }
