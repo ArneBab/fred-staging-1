@@ -298,8 +298,9 @@
 
 
 	<target name="javadoc">
-		<javadoc sourcepath="${src}" destdir="${javadoc}" use="true">
+		<javadoc destdir="${javadoc}" use="true">
 			<fileset dir="${src}" includes="**/*.java" />
+			<fileset dir="generator/js/src" includes="**/*.java" />
 			<classpath>
 				<pathelement location="${freenet-ext.location}"/>
 			</classpath>
