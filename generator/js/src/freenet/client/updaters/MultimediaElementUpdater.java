@@ -122,8 +122,29 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 		var mime;
 		@freenet.client.FreenetJs::log(Ljava/lang/String;)("File has an extension of "+extension);
 		switch(extension) {
+			case "ogx":
+				mime='application/ogg';
+				break;
 			case "ogg":
-				mime='application/ogg;';
+				mime='audio/ogg'
+				break;
+			case "oga":
+				mime='audio/ogg'
+				break;
+			case "ogv":
+				mime='video/ogg'
+				break;
+			case "webm":
+				mime='video/webm';
+				break;
+			case "mp3":
+				mime='audio/mpeg3'
+				break;
+			case "wav":
+				mime='audio/wav'
+				break;
+			case "avi":
+				mime='video/x-msvideo';
 				break;
 			default:
 				mime = 'unknown/unsupported;';
