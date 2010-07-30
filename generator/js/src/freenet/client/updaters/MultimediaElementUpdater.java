@@ -67,6 +67,8 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 						if(multimedia == null) {
 							FreenetJs.log("ERROR: Unable to find a usable element");
 							element.setAttribute("src", "/imagecreator/?text="+L10n.get("multimediaFailure"));
+							element.setAttribute("alt", L10n.get("multimediaFailureUnknownElement"));
+							element.setAttribute("title", L10n.get("multimediaFailureUnknownElement"));
 							return;
 						}
 						tagName = multimedia.getNodeName();
@@ -74,6 +76,8 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 						if(!supportsElement(tagName)) {
 							FreenetJs.log("ERROR: Browser does not support "+tagName);
 							element.setAttribute("src", "/imagecreator/?text="+L10n.get("multimediaFailure"));
+							element.setAttribute("alt", L10n.get("multimediaFailureUnsupportedElement"));
+							element.setAttribute("title", L10n.get("multimediaFailureUnsupportedElement"));
 							return;
 						}
 						/*Figure out how many sources exist. These can come from
@@ -114,6 +118,8 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 						}
 						FreenetJs.log("ERROR: No compatible multimedia source was found.");
 						element.setAttribute("src", "/imagecreator/?text="+L10n.get("multimediaFailure"));
+						element.setAttribute("alt", L10n.get("multimediaFailureUnsupportedSources"));
+						element.setAttribute("title", L10n.get("multimediaFailureUnsupportedSources"));
 					}
 					@Override
 					public void onError(Request request, Throwable exception) {
