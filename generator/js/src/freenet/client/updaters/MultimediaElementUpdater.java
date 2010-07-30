@@ -23,6 +23,17 @@ import com.google.gwt.xml.client.NodeList;
 import com.google.gwt.xml.client.NamedNodeMap;
 import com.google.gwt.xml.client.Element;
 
+/**An Updater which aids in the retrieval of multimedia elements, such as audio and
+ * video. A placeholder image is originally provided by the node with a class
+ * containing the keyword <code>unFinalized</code>. The Updater creates an onClick
+ * event for this image, which will send a request for data from the
+ * {@link MultimediaElement}, which will respond with the entire original element. The
+ * Updater will extract all the potential sources which <em>could</em> be fetched, and
+ * will run them by the browser to see if they may be rendered. When/if it finds one
+ * the browsers thinks is acceptable, it will notify the node to fetch that source.
+ * It will then update the placeholder with a progress image. The elements
+ * <code>&lt;video&gt;</code> and <code>&lt;audio&gt;</code> are supported.
+ */
 public class MultimediaElementUpdater extends ReplacerUpdater {
 
 	@Override
@@ -30,11 +41,13 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 		final String localElementId = elementId;
 		final com.google.gwt.dom.client.Element parentElement = RootPanel.get(elementId).getElement().getFirstChildElement();
 		final com.google.gwt.dom.client.Element element = parentElement.getFirstChildElement();
+		//Begin the fetch process when the placeholder is clicked
 		if(parentElement.getClassName().contains("unFinalized")) Image.wrap(element).addClickHandler(new ClickHandler() {
 			public void onClick(ClickEvent event) {
 				element.setAttribute("src", "/imagecreator/?text=0%25");
 				parentElement.setClassName("jsonly MultimediaElement");
 				FreenetJs.log("Unfinalized multimedia element detected");
+				//Request the original element
 				FreenetRequest.sendRequest(UpdaterConstants.dataPath, new QueryParameter[] { new QueryParameter("requestId", FreenetJs.requestId),
 						new QueryParameter("elementId", localElementId) }, new RequestCallback(){
 					@Override
@@ -44,7 +57,10 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 						String content = Base64.decode(response.getText().split("[:]")[2]);
 						FreenetJs.log("Processing element "+localElementId+" which looks like "+content);
 						Node multimedia = null;
-						//There should only be one multimedia element retrieved
+						/*There should only be one multimedia element retrieved
+						 * Check whether it is an <audio> or <video> element. If it
+						 * isn't, then it isn't supported by this Updater.
+						 */
 						multimedia = XMLParser.parse(content).getDocumentElement().getElementsByTagName("audio").item(0);
 						if(multimedia == null) multimedia = XMLParser.parse(content).getDocumentElement().getElementsByTagName("video").item(0);
 						if(multimedia == null) {
@@ -52,6 +68,13 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 							return;
 						}
 						tagName = multimedia.getNodeName();
+						FreenetJs.log("Checking whether browser supports "+tagName+" elements");
+						if(!supportsElement(tagName)) return;
+						/*Figure out how many sources exist. These can come from
+						 * either an 'src' attribute on the element, or from one or
+						 * more child <source> elements.
+						 * Place all the sources into potentialFiles.
+						 */
 						if(((Element)multimedia).hasAttribute("src")) {
 							FreenetJs.log("Dealing with one src attribute");
 							potentialFiles.put(((Element)multimedia).getAttribute("src"), ((Element)multimedia).getAttribute("codec"));
@@ -73,10 +96,12 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 						}
 						FreenetJs.log("There are "+potentialFiles.size()+" possible source elements");
 
+						//Check each source for compatibility with the browser
 						for(Map.Entry<String, String> entry : potentialFiles.entrySet()) {
 							potentialFiles.remove(entry.getKey());
 							FreenetJs.log("Checking whether browser can process "+entry.getKey());
 							if(isPotentiallyValid(tagName, entry.getKey(), entry.getValue())) {
+								//Fetch the supported element
 								fetch(localElementId, entry.getKey());
 								break;
 							}
@@ -96,6 +121,11 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 		}
 	}
 
+	/**
+	 * Instructs the node to fetch a particular source for this element.
+	 * @param elementId id of the element whose source has been finalized
+	 * @param src the key to fetch
+	 */
 	private void fetch(String elementId, String src) {
 		if(src.startsWith("/")) src = src.substring(1);
 		src = src.substring(0, src.lastIndexOf("?"));
@@ -112,10 +142,21 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 			}
 		});
 	}
+
+	/**Checks whether the browser is capable of rendering the element in question*/
 	private native boolean supportsElement(String tagName) /*-{
 		return $doc.createElement(tagName).play ? true : false;
 	}-*/;
 
+	/**Queries the browser to figure out whether a given file might be playable. Checks
+	 * whether the browser supports the mimetype(guessed from the filename), and codec,
+	 * if given.
+	 * @param tagName The type of tag. Generally should be <code>&ltaudio&rt</code> or
+	 * <code>&lt;video&gt;</code>.
+	 * @param src The complete key
+	 * @param codec The codec, defined in the element
+	 * @return
+	 */
 	private native boolean isPotentiallyValid(String tagName, String src, String codec) /*-{
 		var node = $doc.createElement(tagName);
 		var extension = src.substring(src.lastIndexOf(".")+1, src.lastIndexOf("?"));

@@ -11,6 +11,7 @@ import freenet.keys.FreenetURI;
 import freenet.support.Base64;
 import freenet.support.HTMLNode;
 
+/** A pushed image. */
 public class ImageElement extends MediaElement {
 
 	final ParsedTag originalElement;

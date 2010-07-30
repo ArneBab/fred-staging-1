@@ -14,6 +14,19 @@ import freenet.support.Base64;
 import freenet.support.HTMLNode;
 import freenet.support.Logger;
 
+/** A pushed video or audio element.
+ * <p>Initially this class will present a placeholder img tag. When data is requested,
+ * without a key being finalized, the original content will be pushed. The key that
+ * will be fetched by this element is specified by a call to
+ * <code>PushQueueFetchToadlet</code>. After this has happened, progress updates will
+ * be provided by this class until fetch completion.</p>
+ * <p>All of this is necessary because the browser will have multiple multimedia
+ * sources it may choose to download from. These may or may not be in a format
+ * compatible with the browser's rendering systems. Furthermore, multimedia files can
+ * be very large. As browsers tend to try to download the first couple of frames, we
+ * must take care that the fetch is delayed until expressly requested by the user.</p>
+ * <p>This class supports <code>&lt;audio&gt;</code> and <code>&lt;video&gt;</code></p>
+ * */
 public class MultimediaElement extends MediaElement implements LazyFetchingElement {
 
 	static {

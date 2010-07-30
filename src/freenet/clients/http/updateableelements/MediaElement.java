@@ -13,7 +13,9 @@ import freenet.keys.FreenetURI;
 import freenet.support.HTMLNode;
 import freenet.support.Logger;
 
-/** A pushed image, the progress is shown with the ImageCreatorToadlet */
+/** An element which will be referenced in an HTML file and need to be fetched
+ * independently. The progress of this fetch will be continually updated in the
+ * browser, using the <code>ImageCreatorToadlet</code> */
 public abstract class MediaElement extends BaseUpdateableElement {
 
 	private static volatile boolean	logMINOR;
@@ -143,8 +145,11 @@ public abstract class MediaElement extends BaseUpdateableElement {
 		}, 0);
 	}
 
+	/** Update the element created to display the progress of the fetch*/
 	protected abstract void subsequentStateDisplay(FProxyFetchResult result, HTMLNode node);
 
+	/** Display the requested element. This method should be called after said
+	 * element has been completely fetched. */
 	protected abstract void addCompleteElement(HTMLNode node);
 
 	@Override

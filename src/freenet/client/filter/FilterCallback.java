@@ -53,10 +53,17 @@ public interface FilterCallback {
 	/**
 	 * Process a tag. If it needs changing, then return the changed
 	 * HTML, if not, then return null;
-	 * @param pt - The tag to be replaced
+	 * @param pt The tag to be replaced
 	 * @return The new tag, or null, if it doesn't need changing
 	 * */
 	public String processTag(ParsedTag pt);
 
+	/**
+	 * Process text. If it does not need to be changed it will be returned unmodified.
+	 * It may be removed, in which case an empty String is returned.
+	 * @param text Text to process
+	 * @param type The type of tag which the text is content of
+	 * @return Processed text
+	 */
 	public String processText(String text, String type);
 }

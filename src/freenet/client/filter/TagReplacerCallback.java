@@ -15,7 +15,21 @@ public interface TagReplacerCallback {
 	 */
 	public String processTag(ParsedTag pt, URIProcessor uriProcessor);
 
+	/** Reveals whether a the callback is processing an element which is a member of
+	 * the 'Flow Content' category. Such elements may have text content and zero or
+	 * more child elements.
+	 * See {@link http://dev.w3.org/html5/spec/Overview.html#flow-content} for details.
+	 * @return whether the callback is processing Flow Content
+	 */
 	public boolean inFlowContent();
 
+	/** Processes text and returns a replacement. This is probably only useful when
+	 * the TagReplacerCallback needs to extract text content from a flow element.
+	 * If the text does not need to be changed it will be returned unmodified. It may
+	 * be removed, in which case an empty String is returned.
+	 * @param text Text to process
+	 * @param type Type of tag that is being processed
+	 * @return Processed text
+	 */
 	public String processText(String text, String type);
 }
