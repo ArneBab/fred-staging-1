@@ -3,6 +3,7 @@ package freenet.client.updaters;
 import java.util.HashMap;
 import java.util.Map;
 
+import freenet.client.l10n.L10n;
 import freenet.client.tools.Base64;
 import freenet.client.tools.FreenetRequest;
 import freenet.client.tools.QueryParameter;
@@ -65,11 +66,16 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 						if(multimedia == null) multimedia = XMLParser.parse(content).getDocumentElement().getElementsByTagName("video").item(0);
 						if(multimedia == null) {
 							FreenetJs.log("ERROR: Unable to find a usable element");
+							element.setAttribute("src", "/imagecreator/?text="+L10n.get("multimediaFailure"));
 							return;
 						}
 						tagName = multimedia.getNodeName();
 						FreenetJs.log("Checking whether browser supports "+tagName+" elements");
-						if(!supportsElement(tagName)) return;
+						if(!supportsElement(tagName)) {
+							FreenetJs.log("ERROR: Browser does not support "+tagName);
+							element.setAttribute("src", "/imagecreator/?text="+L10n.get("multimediaFailure"));
+							return;
+						}
 						/*Figure out how many sources exist. These can come from
 						 * either an 'src' attribute on the element, or from one or
 						 * more child <source> elements.
@@ -103,9 +109,11 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 							if(isPotentiallyValid(tagName, entry.getKey(), entry.getValue())) {
 								//Fetch the supported element
 								fetch(localElementId, entry.getKey());
-								break;
+								return;
 							}
 						}
+						FreenetJs.log("ERROR: No compatible multimedia source was found.");
+						element.setAttribute("src", "/imagecreator/?text="+L10n.get("multimediaFailure"));
 					}
 					@Override
 					public void onError(Request request, Throwable exception) {
