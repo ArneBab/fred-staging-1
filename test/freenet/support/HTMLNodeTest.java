@@ -391,7 +391,7 @@ public class HTMLNodeTest extends TestCase {
 			assertNotNull(anException); }
 		try {
 			new HTMLNode(SAMPLE_OKAY_NODE_NAME,
-					null,SAMPLE_ATTRIBUTE_VALUE);
+					(String)null,SAMPLE_ATTRIBUTE_VALUE);
 			fail("Expected Exception Error Not Thrown!"); } 
 		catch (IllegalArgumentException anException) {
 			assertNotNull(anException); }
