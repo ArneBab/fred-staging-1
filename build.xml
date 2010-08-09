@@ -113,22 +113,6 @@
 		  </not>
 		 </or>
 		</condition>
-
-		<!-- <uptodate property="GWT.regenerateNotNeeded">
-			<srcfiles dir="generator/js/war/freenetjs/"/>
-			<mapper type="merge" to="${GWT.generatedjs}"/>
-		</uptodate> -->
-		<!-- <loadfile srcFile="generator/js/lastUpdate" property="GWT.lastUpdate" failonerror="false"/>
-		<condition property="GWT.regenerateNotNeeded">
-		 <and>
-		  <isset property="GWT.lastUpdate"/>
-	          <isset property="GWT.generatedjs.available"/>
-		  <islastmodified datetime="GWT.lastUpdate" mode="equals">
-		   <file file="${GWT.generatedjs}/freenetjs.nocache.js"/>
-		  </islastmodified>
-		 </and>
-		</condition> -->
-			
 	</target>
 
 	<target name="generate-js" depends="env,get-GWT-libs,check-js-uptodate" if="GWT.regenerateNotNeeded">
