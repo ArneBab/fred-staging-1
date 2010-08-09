@@ -17,9 +17,9 @@ public class OggPageTest extends TestCase {
 		DataOutputStream output = new DataOutputStream(filteredDataStream);
 		DataInputStream input = new DataInputStream(badData);
 		OggPage page = OggPage.readPage(input);
-		if(page.headerValid()) output.write(page.array());
+		if(page.headerValid()) output.write(page.toArray());
 		page = OggPage.readPage(input);
-		if(page.headerValid()) output.write(page.array());
+		if(page.headerValid()) output.write(page.toArray());
 		byte[] filteredData = filteredDataStream.toByteArray();
 		output.close();
 		input.close();
@@ -29,9 +29,9 @@ public class OggPageTest extends TestCase {
 		ByteArrayOutputStream expectedDataStream = new ByteArrayOutputStream();
 		output = new DataOutputStream(expectedDataStream);
 		page = OggPage.readPage(input);
-		if(page.headerValid()) output.write(page.array());
+		if(page.headerValid()) output.write(page.toArray());
 		page = OggPage.readPage(input);
-		if(page.headerValid()) output.write(page.array());
+		if(page.headerValid()) output.write(page.toArray());
 		byte[] expectedData = expectedDataStream.toByteArray();
 		output.close();
 		input.close();
@@ -50,16 +50,6 @@ public class OggPageTest extends TestCase {
 		DataInputStream input = new DataInputStream(getClass().getResourceAsStream("./ogg/invalid_checksum.ogg"));
 		OggPage page = OggPage.readPage(input);
 		Assert.assertFalse(page.headerValid());
-		input.close();
-	}
-
-	public void testValidSubPageCausesFailure() throws IOException {
-		DataInputStream input = new DataInputStream(getClass().getResourceAsStream("./ogg/contains_subpages.ogg"));
-		try {
-			@SuppressWarnings("unused")
-			OggPage page = OggPage.readPage(input);
-			Assert.fail("Expected exception not caught");
-		} catch(DataFilterException e) {}
 		input.close();
 	}
 }

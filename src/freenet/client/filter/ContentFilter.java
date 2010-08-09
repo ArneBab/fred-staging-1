@@ -73,7 +73,7 @@ public class ContentFilter {
 				l10n("imageBMPReadAdvice"),
 				l10n("imageBMPWriteAdvice"), false, null, null, false));	
 
-		/* Ogg - filter in process of being written
+		/* Ogg - has a filter
 		 * Xiph's container format. Contains one or more logical bitstreams.
 		 * Each type of bitstream will likely require additional processing,
 		 * on top of that needed for the Ogg container itself.
@@ -252,6 +252,7 @@ public class ContentFilter {
 					handler.readFilter.readFilter(input, output, charset, otherParams, filterCallback);
 				}
 				catch(EOFException e) {
+					Logger.error(ContentFilter.class, "EOFException caught: "+e,e);
 					throw new DataFilterException(l10n("EOFMessage"), l10n("EOFMessage"), l10n("EOFDescription"));
 				}
 				catch(IOException e) {
