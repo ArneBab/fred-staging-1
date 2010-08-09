@@ -916,7 +916,8 @@ public class SingleFileFetcher extends SimpleSingleFileFetcher {
 				if(metadata.uncompressedDataLength() > len)
 					len = metadata.uncompressedDataLength();
 				
-				if(((len > ctx.maxOutputLength) || (len > ctx.maxTempLength)) && ctx.maxOutputLength != 0) {
+				if((len > ctx.maxOutputLength) ||
+						(len > ctx.maxTempLength)) {
 					// Just in case...
 					boolean compressed = metadata.isCompressed();
 					if(persistent) removeFrom(container, context);
