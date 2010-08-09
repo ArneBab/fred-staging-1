@@ -91,7 +91,8 @@ public abstract class BaseSingleFileFetcher extends SendableGet implements HasKe
 	}
 	
 	@Override
-	public FetchContext getContext() {
+	public FetchContext getContext(ObjectContainer container) {
+		if(persistent) container.activate(ctx, 1);
 		return ctx;
 	}
 
@@ -154,11 +155,6 @@ public abstract class BaseSingleFileFetcher extends SendableGet implements HasKe
 		if(persistent) container.activate(parent, 1); // Not much point deactivating it
 		short retval = parent.getPriorityClass();
 		return retval;
-	}
-
-	@Override
-	public boolean ignoreStore() {
-		return ctx.ignoreStore;
 	}
 
 	public void cancel(ObjectContainer container, ClientContext context) {
@@ -239,17 +235,17 @@ public abstract class BaseSingleFileFetcher extends SendableGet implements HasKe
 	public abstract void onSuccess(ClientKeyBlock block, boolean fromStore, Object token, ObjectContainer container, ClientContext context);
 	
 	@Override
-	public long getCooldownWakeup(Object token, ObjectContainer container) {
+	public long getCooldownWakeup(Object token, ObjectContainer container, ClientContext context) {
 		return cooldownWakeupTime;
 	}
 
 	@Override
-	public long getCooldownWakeupByKey(Key key, ObjectContainer container) {
+	public long getCooldownWakeupByKey(Key key, ObjectContainer container, ClientContext context) {
 		return cooldownWakeupTime;
 	}
 	
 	@Override
-	public synchronized void resetCooldownTimes(ObjectContainer container) {
+	public synchronized void resetCooldownTimes(ObjectContainer container, ClientContext context) {
 		cooldownWakeupTime = -1;
 		if(persistent)
 			container.store(this);
@@ -310,6 +306,8 @@ public abstract class BaseSingleFileFetcher extends SendableGet implements HasKe
 
 	@Override
 	public Key[] listKeys(ObjectContainer container) {
+		if(container != null && !persistent)
+			Logger.error(this, "listKeys() on "+this+" but persistent=false, stored is "+container.ext().isStored(this)+" active is "+container.ext().isActive(this));
 		synchronized(this) {
 			if(cancelled || finished)
 				return new Key[0];
