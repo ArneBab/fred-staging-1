@@ -1246,7 +1246,7 @@ public class HTMLFilter implements ContentDataFilter, CharsetExtractor {
 				emptyStringArray));
 		allowedTagsVerifiers.put(
 				"video",
-				new CoreTagVerifier(
+				new MultimediaTagVerifier(
 					"video",
 					new String[] {"width", "height" },
 					emptyStringArray,
@@ -1255,7 +1255,7 @@ public class HTMLFilter implements ContentDataFilter, CharsetExtractor {
 					new String[] {"preload", "autoplay", "loop", "controls"}));
 			allowedTagsVerifiers.put(
 					"audio",
-					new CoreTagVerifier(
+					new MultimediaTagVerifier(
 						"audio",
 						emptyStringArray,
 						emptyStringArray,
@@ -1264,7 +1264,7 @@ public class HTMLFilter implements ContentDataFilter, CharsetExtractor {
 						new String[] {"preload", "autoplay", "loop", "controls"}));
 			allowedTagsVerifiers.put(
 					"source",
-					new CoreTagVerifier(
+					new SourceTagVerifier(
 						"source",
 						new String[] {"type", "media" },
 						emptyStringArray,
@@ -1984,6 +1984,63 @@ public class HTMLFilter implements ContentDataFilter, CharsetExtractor {
 				}
 			}
 			
+			return hn;
+		}
+	}
+
+	static class MultimediaTagVerifier extends CoreTagVerifier {
+		static final String[] locallyVerifiedAttrs = {
+			"preload"
+		};
+
+		MultimediaTagVerifier(
+				String tag,
+				String[] allowedAttrs,
+				String[] uriAttrs,
+				String[] inlineURIAttrs,
+				String[] eventAttrs,
+				String[] booleanAttrs) {
+				super(tag, allowedAttrs, uriAttrs, inlineURIAttrs, eventAttrs, booleanAttrs);
+				for(String attr : locallyVerifiedAttrs) {
+					this.parsedAttrs.add(attr);
+				}
+			}
+
+		@Override
+		Map<String, Object> sanitizeHash(Map<String, Object> h,
+			ParsedTag p,
+			HTMLParseContext pc) throws DataFilterException {
+			Map<String, Object> hn = super.sanitizeHash(h, p, pc);
+			String preload = getHashString(h, "preload");
+			if(preload != null && (preload.equalsIgnoreCase("none")
+					|| preload.equalsIgnoreCase("metadata")
+					|| preload.equalsIgnoreCase("auto"))) {
+				hn.put("preload", preload);
+			}
+			return hn;
+		}
+	}
+	static class SourceTagVerifier extends CoreTagVerifier {
+		static final String[] locallyVerifiedAttrs = emptyStringArray;
+
+		SourceTagVerifier(
+				String tag,
+				String[] allowedAttrs,
+				String[] uriAttrs,
+				String[] inlineURIAttrs,
+				String[] eventAttrs,
+				String[] booleanAttrs) {
+				super(tag, allowedAttrs, uriAttrs, inlineURIAttrs, eventAttrs, booleanAttrs);
+				for(String attr : locallyVerifiedAttrs) {
+					this.parsedAttrs.add(attr);
+				}
+			}
+
+		@Override
+		Map<String, Object> sanitizeHash(Map<String, Object> h,
+			ParsedTag p,
+			HTMLParseContext pc) throws DataFilterException {
+			Map<String, Object> hn = super.sanitizeHash(h, p, pc);
 			return hn;
 		}
 	}
