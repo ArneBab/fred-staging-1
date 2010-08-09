@@ -13,7 +13,8 @@ public class GeneralTagReplacerCallback implements TagReplacerCallback {
 					String name = attr.substring(0, attr.indexOf("="));
 					String value = attr.substring(attr.indexOf("=") + 2, attr.length() - 1);
 					if(name.compareTo("src") == 0) {
-						pt.unparsedAttrs[i] = name+"=\""+value+"?noprogress&max-size="+Long.MAX_VALUE+"\"";
+						//Set a hard limit on the size of multimedia files to 25MB
+						pt.unparsedAttrs[i] = name+"=\""+value+"?noprogress&max-size="+new Long((long) (25*Math.pow(2, 20)))+"\"";
 					}
 				}
 			}
