@@ -96,7 +96,7 @@
 			usetimestamp="true"/>
 		<property name="GWT.lib.user.present" value="true"/>
 	</target>
-	
+
 	<target name="get-GWT-libs" depends="get-GWT-lib-dev,get-GWT-lib-user">
 	</target>
 
@@ -132,6 +132,32 @@
 	</target>
 
 	<target name="generate-js" depends="env,get-GWT-libs,check-js-uptodate" if="GWT.regenerateNotNeeded">
+		<!-- Validate the GWT-dev library -->
+		<property name="GWT.lib.dev.md5" value="34d17a1d650e7bc7982d6f7dd2d96152" />
+		<property name="GWT.lib.dev.sha" value="8d7b35b70f1309f790bda19f131445bfb20fd66a" />
+		<checksum file="${GWT.lib}/gwt-dev.jar" algorithm="MD5" property="${GWT.lib.dev.md5}" verifyProperty="GWTDevMD5ok" />
+		<checksum file="${GWT.lib}/gwt-dev.jar" algorithm="SHA" property="${GWT.lib.dev.sha}" verifyProperty="GWTDevSHAok" />
+		<fail message="gwt-dev checksum mismatch">
+			<condition>
+				<or>
+					<equals arg1="${GWTDevMD5ok}" arg2="false" />
+					<equals arg1="${GWTDevSHAok}" arg2="false" />
+				</or>
+			</condition>
+		</fail>
+		<!--Validate the GWT-user library -->
+		<property name="GWT.lib.user.md5" value="e95a7f4eafba262e54cc08831cd8f083" />
+		<property name="GWT.lib.user.sha" value="ee3df1969d06c990c82a1cd1a5d0db6e2a321c7b" />
+		<checksum file="${GWT.lib}/gwt-user.jar" algorithm="MD5" property="${GWT.lib.user.md5}" verifyProperty="GWTUserMD5ok" />
+		<checksum file="${GWT.lib}/gwt-user.jar" algorithm="SHA" property="${GWT.lib.user.sha}" verifyProperty="GWTUserSHAok" />
+		<fail message="gwt-user checksum mismatch">
+			<condition>
+				<or>
+					<equals arg1="${GWTUserMD5ok}" arg2="false" />
+					<equals arg1="${GWTUserSHAok}" arg2="false" />
+				</or>
+			</condition>
+		</fail>
 		<ant antfile="build.xml" dir="generator/js"/>
 	</target>
 
