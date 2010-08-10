@@ -52,6 +52,7 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 				child.addAttribute("src", child.getAttribute("src").concat("?noprogress&max-size="+Long.MAX_VALUE));
 				try {
 					if (src.startsWith("/")) src = src.substring(1);
+					if(src.contains("?")) src = src.substring(0, src.indexOf("?"));
 					keys.add(new FreenetURI(src));
 				} catch (MalformedURLException e) {
 					Logger.error(this, e.toString(), e);

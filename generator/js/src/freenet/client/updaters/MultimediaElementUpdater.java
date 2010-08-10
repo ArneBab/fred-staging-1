@@ -142,7 +142,9 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 	 */
 	private void fetch(String elementId, String src) {
 		if(src.startsWith("/")) src = src.substring(1);
-		src = src.substring(0, src.lastIndexOf("?"));
+		int srcEnd = src.indexOf("?");
+		if(srcEnd == -1) srcEnd = src.length();
+		src = src.substring(0, srcEnd);
 		FreenetJs.log("Queuing multimedia element "+src);
 		FreenetRequest.sendRequest(UpdaterConstants.queuePath, new QueryParameter[] { new QueryParameter("requestId", FreenetJs.requestId),
 				new QueryParameter("elementId", elementId), new QueryParameter("key", src) }, new RequestCallback() {
@@ -173,7 +175,12 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 	 */
 	private native boolean isPotentiallyValid(String tagName, String src, String codec) /*-{
 		var node = $doc.createElement(tagName);
-		var extension = src.substring(src.lastIndexOf(".")+1, src.lastIndexOf("?"));
+		var srcEnd = src.indexOf("?");
+		if(srcEnd == -1) {
+			srcEnd = src.length;
+		}
+		@freenet.client.FreenetJs::log(Ljava/lang/String;)("Source end index "+srcEnd);
+		var extension = src.substring(src.indexOf(".")+1, srcEnd);
 		var mime;
 		@freenet.client.FreenetJs::log(Ljava/lang/String;)("File has an extension of "+extension);
 		switch(extension) {
