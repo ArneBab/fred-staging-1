@@ -40,7 +40,7 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 
 	public MultimediaElement(FProxyFetchTracker tracker, ToadletContext ctx,
 			HTMLNode flowElement) {
-		super(tracker, null, 0, ctx, false);
+		super(tracker, null, Long.MAX_VALUE, ctx, false);
 		tagName = flowElement.getFirstTag();
 		originalNode = flowElement;
 		originalNode.setContent("");
