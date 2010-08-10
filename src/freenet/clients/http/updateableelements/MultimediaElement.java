@@ -44,13 +44,15 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 		tagName = flowElement.getFirstTag();
 		originalNode = flowElement;
 		originalNode.setContent("");
-		if(originalNode.getAttribute("src") == null) for(HTMLNode child : originalNode.getChildren()) {
-			if(logMINOR) Logger.minor(this, "Processing potential source element: "+child.generate());
-			String src = child.getAttribute("src");
+		LinkedList<HTMLNode> nodes = new LinkedList<HTMLNode>(originalNode.getChildren());
+		nodes.add(originalNode);
+		for(HTMLNode node : nodes) {
+			if(logMINOR) Logger.minor(this, "Processing potential source element: "+node.generate());
+			String src = node.getAttribute("src");
 			if(src != null) {
 				String character = src.contains("?") ? "&" : "?";
 				String srcWithQuery = src+character+"noprogress&max-size="+Long.MAX_VALUE;
-				child.addAttribute("src", srcWithQuery);
+				node.addAttribute("src", srcWithQuery);
 				try {
 					if (src.startsWith("/")) src = src.substring(1);
 					if(src.contains("?")) src = src.substring(0, src.indexOf("?"));
