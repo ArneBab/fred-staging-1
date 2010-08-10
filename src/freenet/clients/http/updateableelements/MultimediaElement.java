@@ -44,8 +44,7 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 		tagName = flowElement.getFirstTag();
 		originalNode = flowElement;
 		originalNode.setContent("");
-		if(originalNode.getAttribute("src") != null) originalNode.addAttribute("src", originalNode.getAttribute("src").concat("?noprogress&max-size="+Long.MAX_VALUE));
-		else for(HTMLNode child : originalNode.getChildren()) {
+		if(originalNode.getAttribute("src") == null) for(HTMLNode child : originalNode.getChildren()) {
 			if(logMINOR) Logger.minor(this, "Processing potential source element: "+child.generate());
 			String src = child.getAttribute("src");
 			if(src != null) {
@@ -125,8 +124,10 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 
 	@Override
 	protected void addCompleteElement(HTMLNode node) {
-		String src = key.toString()+"?noprogress&max-size="+Long.MAX_VALUE;
+		String src = key.toString();
 		if(!src.startsWith("/")) src = "/"+src;
+		String character = src.contains("?") ? "&" : "?";
+		src += character+"noprogress&max-size="+Long.MAX_VALUE;
 		HashMap<String, String> attrs = new HashMap<String, String>(originalNode.getAttributes());
 		attrs.put("src", src);
 		node.addChild(new HTMLNode(tagName, attrs, ""));

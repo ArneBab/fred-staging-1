@@ -108,7 +108,8 @@ public class PushingTagReplacerCallback implements TagReplacerCallback {
 							if (src.startsWith("/")) {
 								src = src.substring(1);
 							}
-							pt.unparsedAttrs[i] = name+"=\""+src+"\"";
+							String character = src.contains("?") ? "&" : "?";
+							pt.unparsedAttrs[i] = name+"=\""+src+character+"noprogress&max-size="+Long.MAX_VALUE+"\"";
 						}
 					}
 					flowContent = currentElement = pt.toHTMLNode();
@@ -136,7 +137,8 @@ public class PushingTagReplacerCallback implements TagReplacerCallback {
 						if (src.startsWith("/")) {
 							src = src.substring(1);
 						}
-						pt.unparsedAttrs[i] = name+"=\""+src+"\"";
+						String character = src.contains("?") ? "&" : "?";
+						pt.unparsedAttrs[i] = name+"=\""+src+character+"noprogress&max-size="+Long.MAX_VALUE+"\"";
 					}
 				}
 				currentElement = pt.toHTMLNode();
