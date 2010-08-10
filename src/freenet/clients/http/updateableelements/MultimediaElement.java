@@ -48,7 +48,9 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 			if(logMINOR) Logger.minor(this, "Processing potential source element: "+child.generate());
 			String src = child.getAttribute("src");
 			if(src != null) {
-				child.addAttribute("src", child.getAttribute("src").concat("?noprogress&max-size="+Long.MAX_VALUE));
+				String character = src.contains("?") ? "&" : "?";
+				String srcWithQuery = src+character+"noprogress&max-size="+Long.MAX_VALUE;
+				child.addAttribute("src", srcWithQuery);
 				try {
 					if (src.startsWith("/")) src = src.substring(1);
 					if(src.contains("?")) src = src.substring(0, src.indexOf("?"));
