@@ -79,10 +79,22 @@ public class ContentFilter {
 		 * on top of that needed for the Ogg container itself.
 		 * Reference: http://xiph.org/ogg/doc/rfc3533.txt
 		 */
-		register(new MIMEType("application/ogg", "ogx", new String[] {"video/ogg", "audio/ogg", "audio/flac"}, new String[]{"ogg", "oga", "ogv", "flac"},
+		register(new MIMEType("application/ogg", "ogx", new String[] {"video/ogg", "audio/ogg"}, new String[]{"ogg", "oga", "ogv"},
 				true, false, new OggFilter(), null, true, true, false, true, false, false,
 				l10n("containerOggReadAdvice"),
 				l10n("containerOggWriteAdvice"), false, null, null, false));
+
+		/* FLAC - Needs filter
+		 * Lossless audio format. This data is sometimes encapsulated inside
+		 * of ogg containers. It is, however, not currently supported, and
+		 * is very dangerous, as it may specify URLs from which album art
+		 * will be dwonloaded from
+		 */
+		register(new MIMEType("audio/flac", "flac", new String[0], new String[0],
+				false, true, null, null, true, false, false, true, false, false,
+				l10n("audioFLACReadAdvice"),
+				l10n("audioFLACWriteAdvice"),
+				false, null, null, false));
 
 		// ICO needs filtering.
 		// Format is not the same as BMP iirc.
