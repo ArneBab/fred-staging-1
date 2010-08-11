@@ -1,6 +1,6 @@
 package freenet.client.updaters;
 
-import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.Map;
 
 import freenet.client.l10n.L10n;
@@ -54,7 +54,7 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 					@Override
 					public void onResponseReceived(Request request, Response response) {
 						String tagName;
-						HashMap<String, String> potentialFiles = new HashMap<String, String>();
+						ArrayList<SourceElement> potentialFiles = new ArrayList<SourceElement>();
 						String content = Base64.decode(response.getText().split("[:]")[2]);
 						FreenetJs.log("Processing element "+localElementId+" which looks like "+content);
 						Node multimedia = null;
@@ -87,7 +87,7 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 						 */
 						if(((Element)multimedia).hasAttribute("src")) {
 							FreenetJs.log("Dealing with one src attribute");
-							potentialFiles.put(((Element)multimedia).getAttribute("src"), ((Element)multimedia).getAttribute("codec"));
+							potentialFiles.add(new SourceElement(((Element)multimedia).getAttribute("src"), null, null));
 						}
 						else {
 							NodeList multimediaChildren = multimedia.getChildNodes();
@@ -97,25 +97,28 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 								if(childNode.getNodeName().toLowerCase() == "source") {
 									NamedNodeMap attributes = childNode.getAttributes();
 									Node srcNode = attributes.getNamedItem("src");
+									Node typeNode = attributes.getNamedItem("type");
 									Node codecNode = attributes.getNamedItem("codec");
 									String src = srcNode != null ? srcNode.getNodeValue() : null;
+									String type = typeNode != null ? typeNode.getNodeValue() : null;
 									String codec = codecNode != null ? codecNode.getNodeValue() : null;
-									potentialFiles.put(src, codec);
+									potentialFiles.add(new SourceElement(src, type, codec));
 								}
 							}
 						}
 						FreenetJs.log("There are "+potentialFiles.size()+" possible source elements");
 
 						//Check each source for compatibility with the browser
-						for(Map.Entry<String, String> entry : potentialFiles.entrySet()) {
-							potentialFiles.remove(entry.getKey());
-							FreenetJs.log("Checking whether browser can process "+entry.getKey());
-							if(isPotentiallyValid(tagName, entry.getKey(), entry.getValue())) {
+						for(SourceElement element : potentialFiles) {
+							FreenetJs.log("Checking whether browser can process "+element.src);
+							if(isPotentiallyValid(tagName, element.src, element.type, element.codec)) {
 								//Fetch the supported element
-								fetch(localElementId, entry.getKey());
+								fetch(localElementId, element.src);
+								potentialFiles.clear();
 								return;
 							}
 						}
+						potentialFiles.clear();
 						FreenetJs.log("ERROR: No compatible multimedia source was found.");
 						element.setAttribute("src", "/imagecreator/?text="+L10n.get("multimediaFailure"));
 						element.setAttribute("alt", L10n.get("multimediaFailureUnsupportedSources"));
@@ -173,7 +176,7 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 	 * @param codec The codec, defined in the element
 	 * @return
 	 */
-	private native boolean isPotentiallyValid(String tagName, String src, String codec) /*-{
+	private native boolean isPotentiallyValid(String tagName, String src, String type, String codec) /*-{
 		var node = $doc.createElement(tagName);
 		var srcEnd = src.indexOf("?");
 		if(srcEnd == -1) {
@@ -181,39 +184,53 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 		}
 		@freenet.client.FreenetJs::log(Ljava/lang/String;)("Source end index "+srcEnd);
 		var extension = src.substring(src.indexOf(".")+1, srcEnd);
-		var mime;
 		@freenet.client.FreenetJs::log(Ljava/lang/String;)("File has an extension of "+extension);
-		switch(extension) {
-			case "ogx":
-				mime='application/ogg';
-				break;
-			case "ogg":
-				mime='audio/ogg'
-				break;
-			case "oga":
-				mime='audio/ogg'
-				break;
-			case "ogv":
-				mime='video/ogg'
-				break;
-			case "webm":
-				mime='video/webm';
-				break;
-			case "mp3":
-				mime='audio/mpeg3'
-				break;
-			case "wav":
-				mime='audio/wav'
-				break;
-			case "avi":
-				mime='video/x-msvideo';
-				break;
-			default:
-				mime = 'unknown/unsupported;';
+		var mime = type;
+		if(mime == undefined) {
+			switch(extension) {
+				case "ogx":
+					mime='application/ogg';
+					break;
+				case "ogg":
+					mime='audio/ogg'
+					break;
+				case "oga":
+					mime='audio/ogg'
+					break;
+				case "ogv":
+					mime='video/ogg'
+					break;
+				case "webm":
+					mime='video/webm';
+					break;
+				case "mp3":
+					mime='audio/mpeg3'
+					break;
+				case "wav":
+					mime='audio/wav'
+					break;
+				case "avi":
+					mime='video/x-msvideo';
+					break;
+				default:
+					mime = 'unknown/unsupported;';
+			}
 		}
 		if(codec == undefined) codec = "";
 		@freenet.client.FreenetJs::log(Ljava/lang/String;)("Checking if browser can play "+mime+codec);
 		if(node.canPlayType(mime+codec) == "probably" || node.canPlayType(mime+codec) == "maybe") return true;
 		return false;
 	}-*/;
+
+	private class SourceElement {
+		public String type;
+		public String codec;
+		public String src;
+
+		SourceElement(String src, String type, String codec) {
+			this.src = src;
+			this.type = type;
+			this.codec = codec;
+		}
+	}
 }
