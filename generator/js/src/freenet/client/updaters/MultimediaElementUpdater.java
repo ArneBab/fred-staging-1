@@ -187,10 +187,11 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 		if(extension.equalsIgnoreCase("ogg")) return "audio/ogg";
 		if(extension.equalsIgnoreCase("oga")) return "audio/ogg";
 		if(extension.equalsIgnoreCase("ogv")) return "video/ogg";
-		if(extension.equalsIgnoreCase("webm")) return "video/webm";
 		if(extension.equalsIgnoreCase("mp3")) return "audio/mpeg3";
+		/* Disable currently unsuported formats
+		if(extension.equalsIgnoreCase("webm")) return "video/webm";
 		if(extension.equalsIgnoreCase("wav")) return "audio/wav";
-		if(extension.equalsIgnoreCase("avi")) return "video/x-msvideo";
+		if(extension.equalsIgnoreCase("avi")) return "video/x-msvideo";*/
 		return "unknown/unsupported";
 	}
 	/**Queries the browser to figure out whether a given file might be playable. Checks
