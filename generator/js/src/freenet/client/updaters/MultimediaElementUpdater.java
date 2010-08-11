@@ -87,7 +87,9 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 						 */
 						if(((Element)multimedia).hasAttribute("src")) {
 							FreenetJs.log("Dealing with one src attribute");
-							potentialFiles.add(new SourceElement(((Element)multimedia).getAttribute("src"), null, null));
+							String src = ((Element)multimedia).getAttribute("src");
+							String type = guessMimeType(src);
+							potentialFiles.add(new SourceElement(src, type, null));
 						}
 						else {
 							NodeList multimediaChildren = multimedia.getChildNodes();
@@ -100,7 +102,9 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 									Node typeNode = attributes.getNamedItem("type");
 									Node codecNode = attributes.getNamedItem("codec");
 									String src = srcNode != null ? srcNode.getNodeValue() : null;
-									String type = typeNode != null ? typeNode.getNodeValue() : null;
+									String type;
+									if(typeNode != null) type = typeNode.getNodeValue();
+									else type = guessMimeType(src);
 									String codec = codecNode != null ? codecNode.getNodeValue() : null;
 									potentialFiles.add(new SourceElement(src, type, codec));
 								}
@@ -110,10 +114,10 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 
 						//Check each source for compatibility with the browser
 						for(SourceElement element : potentialFiles) {
-							FreenetJs.log("Checking whether browser can process "+element.src);
-							if(isPotentiallyValid(tagName, element.src, element.type, element.codec)) {
+							FreenetJs.log("Checking whether browser can process source "+element.src+" with mime type "+element.type);
+							if(isPotentiallyValid(tagName, element.type, element.codec)) {
 								//Fetch the supported element
-								fetch(localElementId, element.src);
+								fetch(localElementId, element.src, element.type);
 								potentialFiles.clear();
 								return;
 							}
@@ -142,15 +146,20 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 	 * Instructs the node to fetch a particular source for this element.
 	 * @param elementId id of the element whose source has been finalized
 	 * @param src the key to fetch
+	 * @param type the mimetype of the file to be fetched
 	 */
-	private void fetch(String elementId, String src) {
+	private void fetch(String elementId, String src, String type) {
 		if(src.startsWith("/")) src = src.substring(1);
 		int srcEnd = src.indexOf("?");
 		if(srcEnd == -1) srcEnd = src.length();
 		src = src.substring(0, srcEnd);
 		FreenetJs.log("Queuing multimedia element "+src);
-		FreenetRequest.sendRequest(UpdaterConstants.queuePath, new QueryParameter[] { new QueryParameter("requestId", FreenetJs.requestId),
-				new QueryParameter("elementId", elementId), new QueryParameter("key", src) }, new RequestCallback() {
+		ArrayList<QueryParameter> parameters = new ArrayList<QueryParameter>();
+		parameters.add(new QueryParameter("requestId", FreenetJs.requestId));
+		parameters.add(new QueryParameter("elementId", elementId));
+		parameters.add(new QueryParameter("key", src));
+		if(type != null) parameters.add(new QueryParameter("type", type));
+		FreenetRequest.sendRequest(UpdaterConstants.queuePath, (QueryParameter[])parameters.toArray(new QueryParameter[parameters.size()]), new RequestCallback() {
 			@Override
 			public void onResponseReceived(Request request, Response response) {
 				FreenetJs.log("Fetch queued");
@@ -167,58 +176,39 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 		return $doc.createElement(tagName).play ? true : false;
 	}-*/;
 
+	private String guessMimeType(String src){
+		int srcEnd = src.indexOf("?");
+		if(srcEnd == -1) {
+			srcEnd = src.length();
+		}
+		String extension = src.substring(src.indexOf(".")+1, srcEnd);
+		FreenetJs.log("File has an extension of "+extension);
+		if(extension.equalsIgnoreCase("ogx")) return "application/ogg";
+		if(extension.equalsIgnoreCase("ogg")) return "audio/ogg";
+		if(extension.equalsIgnoreCase("oga")) return "audio/ogg";
+		if(extension.equalsIgnoreCase("ogv")) return "video/ogg";
+		if(extension.equalsIgnoreCase("webm")) return "video/webm";
+		if(extension.equalsIgnoreCase("mp3")) return "audio/mpeg3";
+		if(extension.equalsIgnoreCase("wav")) return "audio/wav";
+		if(extension.equalsIgnoreCase("avi")) return "video/x-msvideo";
+		return "unknown/unsupported";
+	}
 	/**Queries the browser to figure out whether a given file might be playable. Checks
 	 * whether the browser supports the mimetype(guessed from the filename), and codec,
 	 * if given.
 	 * @param tagName The type of tag. Generally should be <code>&ltaudio&rt</code> or
 	 * <code>&lt;video&gt;</code>.
 	 * @param src The complete key
+	 * @param type The mimetype of the key, as defined by the 'type' attribute
 	 * @param codec The codec, defined in the element
 	 * @return
 	 */
-	private native boolean isPotentiallyValid(String tagName, String src, String type, String codec) /*-{
+	private native boolean isPotentiallyValid(String tagName, String type, String codec) /*-{
 		var node = $doc.createElement(tagName);
-		var srcEnd = src.indexOf("?");
-		if(srcEnd == -1) {
-			srcEnd = src.length;
-		}
-		@freenet.client.FreenetJs::log(Ljava/lang/String;)("Source end index "+srcEnd);
-		var extension = src.substring(src.indexOf(".")+1, srcEnd);
-		@freenet.client.FreenetJs::log(Ljava/lang/String;)("File has an extension of "+extension);
-		var mime = type;
-		if(mime == undefined) {
-			switch(extension) {
-				case "ogx":
-					mime='application/ogg';
-					break;
-				case "ogg":
-					mime='audio/ogg'
-					break;
-				case "oga":
-					mime='audio/ogg'
-					break;
-				case "ogv":
-					mime='video/ogg'
-					break;
-				case "webm":
-					mime='video/webm';
-					break;
-				case "mp3":
-					mime='audio/mpeg3'
-					break;
-				case "wav":
-					mime='audio/wav'
-					break;
-				case "avi":
-					mime='video/x-msvideo';
-					break;
-				default:
-					mime = 'unknown/unsupported;';
-			}
-		}
+
 		if(codec == undefined) codec = "";
-		@freenet.client.FreenetJs::log(Ljava/lang/String;)("Checking if browser can play "+mime+codec);
-		if(node.canPlayType(mime+codec) == "probably" || node.canPlayType(mime+codec) == "maybe") return true;
+		@freenet.client.FreenetJs::log(Ljava/lang/String;)("Checking if browser can play "+type+codec);
+		if(node.canPlayType(type+codec) == "probably" || node.canPlayType(type+codec) == "maybe") return true;
 		return false;
 	}-*/;
 

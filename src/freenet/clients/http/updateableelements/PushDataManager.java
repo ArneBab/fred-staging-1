@@ -151,13 +151,13 @@ public class PushDataManager {
 		return null;
 	}
 
-	public synchronized void setFinalizedKey(String requestId, String elementId, FreenetURI key) {
+	public synchronized void setFinalizedKey(String requestId, String elementId, FreenetURI key, String type) {
 		boolean finalized = false;
-		if(logMINOR) Logger.minor(this, "Setting element: "+elementId+" in page: "+requestId+" to download key: "+key);
+		if(logMINOR) Logger.minor(this, "Setting element: "+elementId+" in page: "+requestId+" to download key: "+key+"Of type "+ type == null ? "unknown" : type);
 		if (pages.get(requestId) != null) {
 			for (BaseUpdateableElement element : pages.get(requestId)) {
 				if (element.getUpdaterId(requestId).compareTo(elementId) == 0 && element instanceof LazyFetchingElement) {
-					((LazyFetchingElement) element).finalizeTarget(key);
+					((LazyFetchingElement) element).finalizeTarget(key, type);
 					finalized = true;
 				}
 			}

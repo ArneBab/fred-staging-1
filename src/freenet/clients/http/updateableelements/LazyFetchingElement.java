@@ -11,5 +11,5 @@ import freenet.keys.FreenetURI;
 public interface LazyFetchingElement {
 
 	/**Sets the key which will be fetched by the instance.*/
-	void finalizeTarget(FreenetURI key);
+	void finalizeTarget(FreenetURI key, String type);
 }

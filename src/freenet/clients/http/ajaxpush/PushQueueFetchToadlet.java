@@ -41,8 +41,10 @@ public class PushQueueFetchToadlet extends Toadlet {
 			Logger.error(this, "Invalid key scheduled to be fetched for element "+elementId, e);
 			throw e;
 		}
-		if(logMINOR) Logger.minor(this, "Retrieving key: "+key+" For element: "+elementId+" In request: "+requestId);
-		((SimpleToadletServer) ctx.getContainer()).pushDataManager.setFinalizedKey(requestId, elementId, key);
+		String mimeType = null;
+		if(req.isParameterSet("type")) mimeType = req.getParam("type");
+		if(logMINOR) Logger.minor(this, "Retrieving key: "+key+"Of type"+mimeType+" For element: "+elementId+" In request: "+requestId);
+		((SimpleToadletServer) ctx.getContainer()).pushDataManager.setFinalizedKey(requestId, elementId, key, mimeType);
 		BaseUpdateableElement node = ((SimpleToadletServer) ctx.getContainer()).pushDataManager.getRenderedElement(requestId, elementId);
 
 		writeHTMLReply(ctx, 200, "OK", UpdaterConstants.SUCCESS + ":" + Base64.encodeStandard(node.getUpdaterType().getBytes()) + ":" + Base64.encodeStandard(node.generateChildren().getBytes()));

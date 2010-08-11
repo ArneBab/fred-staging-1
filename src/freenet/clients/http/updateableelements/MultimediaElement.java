@@ -37,6 +37,7 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 	String tagName;
 	HTMLNode originalNode;
 	LinkedList<FreenetURI> keys = new LinkedList<FreenetURI>();
+	String mimeType;
 
 	public MultimediaElement(FProxyFetchTracker tracker, ToadletContext ctx,
 			HTMLNode flowElement) {
@@ -131,7 +132,9 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 		String src = key.toString();
 		if(!src.startsWith("/")) src = "/"+src;
 		String character = src.contains("?") ? "&" : "?";
-		src += character+"noprogress&max-size="+Long.MAX_VALUE;
+		String extras = character+"noprogress&max-size="+Long.MAX_VALUE;
+		if(mimeType != null) extras += "&type="+mimeType;
+		src += extras;
 		HashMap<String, String> attrs = new HashMap<String, String>(originalNode.getAttributes());
 		attrs.put("src", src);
 		node.addChild(new HTMLNode(tagName, attrs, ""));
@@ -151,9 +154,10 @@ public class MultimediaElement extends MediaElement implements LazyFetchingEleme
 		return Base64.encodeStandard(("element[URIs:" + buf.toString() + ",random:" + randomNumber + "]").getBytes());
 		}
 
-	public void finalizeTarget(FreenetURI key) {
+	public void finalizeTarget(FreenetURI key, String type) {
 		if(logMINOR) Logger.minor(this, "Finalizing element with key "+key);
 		this.key = key;
+		this.mimeType = type;
 		startFetch();
 	}
 }
