@@ -176,6 +176,10 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 		return $doc.createElement(tagName).play ? true : false;
 	}-*/;
 
+	/**Guesses the mimetype of a given file.
+	 * @param src Source of the file to examine
+	 * @return Detected mimetype
+	 */
 	private String guessMimeType(String src){
 		int srcEnd = src.indexOf("?");
 		if(srcEnd == -1) {
@@ -195,13 +199,12 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 		return "unknown/unsupported";
 	}
 	/**Queries the browser to figure out whether a given file might be playable. Checks
-	 * whether the browser supports the mimetype(guessed from the filename), and codec,
-	 * if given.
+	 * whether the browser supports the mimetype, and codec, if given.
 	 * @param tagName The type of tag. Generally should be <code>&ltaudio&rt</code> or
 	 * <code>&lt;video&gt;</code>.
-	 * @param src The complete key
-	 * @param type The mimetype of the key, as defined by the 'type' attribute
-	 * @param codec The codec, defined in the element
+	 * @param type The mimetype of the key, as defined by the 'type' attribute,
+	 * or a best guess
+	 * @param codec The codec, defined in the element, or undefined
 	 * @return
 	 */
 	private native boolean isPotentiallyValid(String tagName, String type, String codec) /*-{
@@ -213,6 +216,8 @@ public class MultimediaElementUpdater extends ReplacerUpdater {
 		return false;
 	}-*/;
 
+	/** Represents a potential source for a multimedia element.
+	 * Contains all the information needed to verify its support and enqueue it.*/
 	private class SourceElement {
 		public String type;
 		public String codec;

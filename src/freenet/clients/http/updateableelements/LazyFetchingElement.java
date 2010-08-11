@@ -10,6 +10,8 @@ import freenet.keys.FreenetURI;
  */
 public interface LazyFetchingElement {
 
-	/**Sets the key which will be fetched by the instance.*/
+	/**Sets the key which will be fetched by the instance.
+	 * @param src URI to fetch
+	 * @param type The mimetype of the fetched file*/
 	void finalizeTarget(FreenetURI key, String type);
 }
