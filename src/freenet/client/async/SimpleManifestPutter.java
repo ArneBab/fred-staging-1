@@ -29,7 +29,6 @@ import freenet.client.MetadataUnresolvedException;
 import freenet.client.ArchiveManager.ARCHIVE_TYPE;
 import freenet.client.events.SplitfileProgressEvent;
 import freenet.client.filter.ContentFilter;
-import freenet.client.filter.InsertFilterCallback;
 import freenet.client.filter.UnknownContentTypeException;
 import freenet.client.filter.UnsafeContentTypeException;
 import freenet.keys.BaseClientKey;
@@ -765,7 +764,7 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 						filteredData = bf.makeBucket(-1);
 						input = data.getInputStream();
 						output = filteredData.getOutputStream();
-						ContentFilter.filter(input, output, false, mimeType, null, new InsertFilterCallback());
+						ContentFilter.filter(input, output, false, mimeType, null, null);
 						input.close();
 						output.close();
 						data.free();
