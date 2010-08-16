@@ -15,6 +15,7 @@ import freenet.keys.FreenetURI;
 import freenet.node.Node;
 import freenet.node.RequestStarter;
 import freenet.support.Fields;
+import freenet.support.HexUtil;
 import freenet.support.SimpleFieldSet;
 import freenet.support.api.Bucket;
 import freenet.support.api.BucketFactory;
@@ -78,6 +79,7 @@ public class ClientPutMessage extends DataCarryingMessage {
 	final int extraInsertsSingleBlock;
 	final int extraInsertsSplitfileHeaderBlock;
 	final InsertContext.CompatibilityMode compatibilityMode;
+	final byte[] overrideSplitfileCryptoKey;
 	final boolean localRequestOnly;
 	final boolean filterData;
 	
@@ -110,6 +112,17 @@ public class ClientPutMessage extends DataCarryingMessage {
 			}
 		}
 		compatibilityMode = cmode;
+		s = fs.get("OverrideSplitfileCryptoKey");
+		if(s == null)
+			overrideSplitfileCryptoKey = null;
+		else
+			try {
+				overrideSplitfileCryptoKey = HexUtil.hexToBytes(s);
+			} catch (NumberFormatException e1) {
+				throw new MessageInvalidException(ProtocolErrorMessage.INVALID_FIELD, "Invalid splitfile crypto key (not hex)", identifier, global);
+			} catch (IndexOutOfBoundsException e1) {
+				throw new MessageInvalidException(ProtocolErrorMessage.INVALID_FIELD, "Invalid splitfile crypto key (too short)", identifier, global);
+			}
 		if(identifier == null)
 			throw new MessageInvalidException(ProtocolErrorMessage.MISSING_FIELD, "No Identifier", null, global);
 		try {

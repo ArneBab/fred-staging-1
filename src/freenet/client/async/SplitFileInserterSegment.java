@@ -5,6 +5,7 @@ import java.net.MalformedURLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Random;
 
 import com.db4o.ObjectContainer;
 
@@ -25,6 +26,7 @@ import freenet.keys.FreenetURI;
 import freenet.keys.Key;
 import freenet.node.KeysFetchingLocally;
 import freenet.node.LowLevelPutException;
+import freenet.node.Node;
 import freenet.node.NodeClientCore;
 import freenet.node.RequestClient;
 import freenet.node.RequestScheduler;
@@ -116,18 +118,40 @@ public class SplitFileInserterSegment extends SendableInsert implements FECCallb
 	
 	private byte cryptoAlgorithm;
 	private final byte[] cryptoKey;
+	
+	// Cross-segment redundancy
+	
+	private final int crossCheckBlocks;
+	
+	// Only used in initial allocation
+	private transient int crossDataBlocksAllocated;
+	private transient int crossCheckBlocksAllocated;
+	
+	private final SplitFileInserterCrossSegment[] crossSegmentsByBlock;
+	
+	/** When this reaches crossCheckBlocks, we can encode the check blocks. */
+	private int encodedCrossCheckBlocks;
 
 	public SplitFileInserterSegment(SplitFileInserter parent, boolean persistent, BaseClientPutter putter,
-			short splitfileAlgo, int checkBlockCount, Bucket[] origDataBlocks,
+			short splitfileAlgo, int crossCheckBlocks, int checkBlockCount, Bucket[] origDataBlocks,
 			InsertContext blockInsertContext, boolean getCHKOnly, int segNo, byte cryptoAlgorithm, byte[] cryptoKey, ObjectContainer container) {
 		super(persistent);
+		this.crossCheckBlocks = crossCheckBlocks;
+		this.crossSegmentsByBlock = new SplitFileInserterCrossSegment[origDataBlocks.length + crossCheckBlocks];
 		this.parent = parent;
 		this.getCHKOnly = getCHKOnly;
 		this.persistent = persistent;
 		this.errors = new FailureCodeTracker(true);
 		this.blockInsertContext = blockInsertContext;
 		this.splitfileAlgo = splitfileAlgo;
-		this.dataBlocks = origDataBlocks;
+		if(crossCheckBlocks != 0) {
+			// Cross check blocks count as data blocks for most purposes.
+			this.dataBlocks = new Bucket[origDataBlocks.length + crossCheckBlocks];
+			System.arraycopy(origDataBlocks, 0, dataBlocks, 0, origDataBlocks.length);
+			origDataBlocks = dataBlocks;
+		} else {
+			this.dataBlocks = origDataBlocks;
+		}
 		checkBlocks = new Bucket[checkBlockCount];
 		checkURIs = new ClientCHK[checkBlockCount];
 		dataURIs = new ClientCHK[origDataBlocks.length];
@@ -161,6 +185,8 @@ public class SplitFileInserterSegment extends SendableInsert implements FECCallb
 		super(persistent);
 		this.cryptoAlgorithm = Key.ALGO_AES_PCFB_256_SHA256;
 		this.cryptoKey = null;
+		this.crossCheckBlocks = 0;
+		this.crossSegmentsByBlock = null;
 		this.parent = parent;
 		this.splitfileAlgo = splitfileAlgorithm;
 		this.getCHKOnly = getCHKOnly;
@@ -392,6 +418,20 @@ public class SplitFileInserterSegment extends SendableInsert implements FECCallb
 	}
 
 	public void start(ObjectContainer container, ClientContext context) throws InsertException {
+		synchronized(this) {
+			if(crossCheckBlocks != 0) {
+				// FIXME
+				// This simplifies matters significantly, but it reduces performance.
+				// We should really have a separate startEncode, and ensure that if we
+				// are scheduled before we have all the cross check blocks we just don't select them.
+				// See onEncodedCrossCheckBlock().
+				if(encodedCrossCheckBlocks != crossCheckBlocks)
+					return;
+				System.out.println("Starting segment "+segNo);
+			}
+			if(started) return;
+			started = true;
+		}
 		// Always called by parent, so don't activate or deactivate parent.
 		if(persistent) {
 			container.activate(parent, 1);
@@ -418,7 +458,6 @@ public class SplitFileInserterSegment extends SendableInsert implements FECCallb
 			}
 		}
 		// parent.parent.notifyClients();
-		started = true;
 		FECJob job = null;
 		FECCodec splitfileAlgo = null;
 		if (!encoded) {
@@ -779,6 +818,7 @@ public class SplitFileInserterSegment extends SendableInsert implements FECCallb
 		return checkURIs;
 	}
 
+	/** Note that this includes cross-check blocks. */
 	public ClientCHK[] getDataCHKs() {
 		return dataURIs;
 	}
@@ -855,7 +895,7 @@ public class SplitFileInserterSegment extends SendableInsert implements FECCallb
 	public void fail(InsertException e, ObjectContainer container, ClientContext context) {
 		synchronized(this) {
 			if(finished) {
-				Logger.error(this, "Failing but already finished on "+this);
+				Logger.error(this, "Failing but already finished on "+this, new Exception("error"));
 				return;
 			}
 			finished = true;
@@ -1179,13 +1219,13 @@ public class SplitFileInserterSegment extends SendableInsert implements FECCallb
 		else if(treatAsSuccess)
 			putter.completedBlock(false, container, context);
 		if(persistent) container.deactivate(putter, 1);
-		if(treatAsSuccess && succeeded == dataBlocks.length) {
-			if(persistent) container.activate(parent, 1);
-			parent.segmentFetchable(this, container);
-			if(persistent) container.deactivate(parent, 1);
-		} else if(completed == dataBlocks.length + checkBlocks.length) {
+		if(completed == dataBlocks.length + checkBlocks.length) {
 			if(persistent) container.activate(parent, 1);
 			finish(container, context, parent);
+			if(persistent) container.deactivate(parent, 1);
+		} else if(treatAsSuccess && succeeded == dataBlocks.length) {
+			if(persistent) container.activate(parent, 1);
+			parent.segmentFetchable(this, container);
 			if(persistent) container.deactivate(parent, 1);
 		}
 	}
@@ -1263,13 +1303,13 @@ public class SplitFileInserterSegment extends SendableInsert implements FECCallb
 		if(persistent) container.activate(putter, 1);
 		putter.completedBlock(false, container, context);
 		if(persistent) container.deactivate(putter, 1);
-		if(succeeded == dataBlocks.length) {
-			if(persistent) container.activate(parent, 1);
-			parent.segmentFetchable(this, container);
-			if(persistent) container.deactivate(parent, 1);
-		} else if(completed == dataBlocks.length + checkBlocks.length) {
+		if(completed == dataBlocks.length + checkBlocks.length) {
 			if(persistent) container.activate(parent, 1);
 			finish(container, context, parent);
+			if(persistent) container.deactivate(parent, 1);
+		} else if(succeeded == dataBlocks.length) {
+			if(persistent) container.activate(parent, 1);
+			parent.segmentFetchable(this, container);
 			if(persistent) container.deactivate(parent, 1);
 		}
 	}
@@ -1285,7 +1325,6 @@ public class SplitFileInserterSegment extends SendableInsert implements FECCallb
 			container.activate(this, 1);
 			container.activate(blocks, 1);
 		}
-		byte crytoAlgorithm = getCryptoAlgorithm(container);
 		synchronized(this) {
 			if(finished) return null;
 			if(blocks.isEmpty()) {
@@ -1335,14 +1374,6 @@ public class SplitFileInserterSegment extends SendableInsert implements FECCallb
 		return putter.getPriorityClass();
 	}
 
-	@Override
-	public int getRetryCount() {
-		// No point scheduling inserts by retry count.
-		// FIXME: Either implement sub-segments to schedule by retry count,
-		// or (more likely imho) make the scheduler not care about retry counts for inserts.
-		return 0;
-	}
-
 	static class MySendableRequestSender implements SendableRequestSender {
 		private final String compressorDescriptor;
 		/** May be deactivated, not safe to just use. */
@@ -1351,10 +1382,12 @@ public class SplitFileInserterSegment extends SendableInsert implements FECCallb
 			compressorDescriptor = compressorDescriptor2;
 			this.seg = seg;
 		}
-		public boolean send(NodeClientCore core, RequestScheduler sched, final ClientContext context, ChosenBlock req) {
+		public boolean send(NodeClientCore core, RequestScheduler sched, final ClientContext context, final ChosenBlock req) {
 				// Ignore keyNum, key, since we're only sending one block.
+			final int num;
+			final ClientCHK key;
+			BlockItem block = (BlockItem) req.token;
 				try {
-					BlockItem block = (BlockItem) req.token;
 					if(SplitFileInserterSegment.logMINOR) Logger.minor(this, "Starting request: block number "+block.blockNum);
 					ClientCHKBlock b;
 					try {
@@ -1372,11 +1405,11 @@ public class SplitFileInserterSegment extends SendableInsert implements FECCallb
 						Logger.error(this, "Asked to send empty block", new Exception("error"));
 						return false;
 					}
-					final ClientCHK key = b.getClientKey();
-					final int num = block.blockNum;
+					key = b.getClientKey();
+					num = block.blockNum;
 					if(block.persistent) {
 						req.setGeneratedKey(key);
-					} else {
+					} else if(!req.localRequestOnly) {
 						context.mainExecutor.execute(new Runnable() {
 
 							public void run() {
@@ -1393,14 +1426,34 @@ public class SplitFileInserterSegment extends SendableInsert implements FECCallb
 							throw new LowLevelPutException(LowLevelPutException.COLLISION);
 						}
 					else
-						core.realPut(b, req.canWriteClientCache, req.forkOnCacheable);
+						core.realPut(b, req.canWriteClientCache, req.forkOnCacheable, Node.PREFER_INSERT_DEFAULT, Node.IGNORE_LOW_BACKOFF_DEFAULT);
 				} catch (LowLevelPutException e) {
 					req.onFailure(e, context);
 					if(SplitFileInserterSegment.logMINOR) Logger.minor(this, "Request failed for "+e);
 					return true;
 				}
 				if(SplitFileInserterSegment.logMINOR) Logger.minor(this, "Request succeeded");
-				req.onInsertSuccess(context);
+				if(req.localRequestOnly) {
+					// Must run on-thread or we will have exploding threads.
+					// Plus must run before onInsertSuccess().
+					if(!block.persistent)
+						seg.onEncode(num, key, null, context);
+					req.onInsertSuccess(context);
+				} else if(!block.persistent) {
+					// Must run after onEncode.
+					context.mainExecutor.execute(new Runnable() {
+
+						public void run() {
+							// Make absolutely sure even if we run the two jobs out of order.
+							// Overhead for double-checking should be very low.
+							seg.onEncode(num, key, null, context);
+							req.onInsertSuccess(context);
+						}
+
+					}, "Succeeded");
+				} else {
+					req.onInsertSuccess(context);
+				}
 				return true;
 			}
 
@@ -1719,6 +1772,67 @@ public class SplitFileInserterSegment extends SendableInsert implements FECCallb
 	@Override
 	public void onEncode(SendableRequestItem token, ClientKey key, ObjectContainer container, ClientContext context) {
 		onEncode(((BlockItem)token).blockNum, (ClientCHK)key, container, context);
+	}
+
+	public int allocateCrossDataBlock(SplitFileInserterCrossSegment seg, Random random) {
+		int size = realDataBlocks();
+		if(crossDataBlocksAllocated == size) return -1;
+		int x = 0;
+		for(int i=0;i<10;i++) {
+			x = random.nextInt(size);
+			if(crossSegmentsByBlock[x] == null) {
+				crossSegmentsByBlock[x] = seg;
+				crossDataBlocksAllocated++;
+				return x;
+			}
+		}
+		for(int i=0;i<size;i++) {
+			x++;
+			if(x == size) x = 0;
+			if(crossSegmentsByBlock[x] == null) {
+				crossSegmentsByBlock[x] = seg;
+				crossDataBlocksAllocated++;
+				return x;
+			}
+		}
+		throw new IllegalStateException("Unable to allocate cross data block even though have not used all slots up???");
+	}
+
+	public int allocateCrossCheckBlock(SplitFileInserterCrossSegment seg, Random random) {
+		if(crossCheckBlocksAllocated == crossCheckBlocks) return -1;
+		int x = dataBlocks.length - (1 + random.nextInt(crossCheckBlocks));
+		for(int i=0;i<crossCheckBlocks;i++) {
+			x++;
+			if(x == dataBlocks.length) x = dataBlocks.length - crossCheckBlocks;
+			if(crossSegmentsByBlock[x] == null) {
+				crossSegmentsByBlock[x] = seg;
+				crossCheckBlocksAllocated++;
+				return x;
+			}
+		}
+		throw new IllegalStateException("Unable to allocate cross check block even though have not used all slots up???");
+	}
+	
+	public final int realDataBlocks() {
+		return dataBlocks.length - crossCheckBlocks;
+	}
+
+	public void onEncodedCrossCheckBlock(int blockNum, Bucket data, ObjectContainer container, ClientContext context) {
+		synchronized(this) {
+			if(dataBlocks[blockNum] != null) {
+				Logger.error(this, "Cross-check block already encoded??? "+blockNum+" on "+this);
+				data.free();
+				return;
+			}
+			dataBlocks[blockNum] = data;
+			++encodedCrossCheckBlocks;
+			if(encodedCrossCheckBlocks != crossCheckBlocks)
+				System.out.println("Segment "+segNo+" has "+encodedCrossCheckBlocks+" encoded of "+crossCheckBlocks+", still waiting...");
+		}
+		if(persistent) {
+			data.storeTo(container);
+			container.store(this);
+		}
 	}
 
 }

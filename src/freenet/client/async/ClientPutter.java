@@ -13,20 +13,20 @@ import freenet.client.ClientMetadata;
 import freenet.client.DefaultMIMETypes;
 import freenet.client.InsertBlock;
 import freenet.client.InsertContext;
+import freenet.client.InsertContext.CompatibilityMode;
 import freenet.client.InsertException;
 import freenet.client.Metadata;
-import freenet.client.InsertContext.CompatibilityMode;
 import freenet.client.events.SendingToNetworkEvent;
 import freenet.client.events.SplitfileProgressEvent;
 import freenet.client.filter.ContentFilter;
 import freenet.client.filter.InsertFilterCallback;
 import freenet.keys.BaseClientKey;
 import freenet.keys.FreenetURI;
-import freenet.keys.InsertableClientSSK;
+import freenet.keys.Key;
 import freenet.node.RequestClient;
 import freenet.support.Logger;
-import freenet.support.SimpleFieldSet;
 import freenet.support.Logger.LogLevel;
+import freenet.support.SimpleFieldSet;
 import freenet.support.api.Bucket;
 import freenet.support.io.Closer;
 
@@ -62,6 +62,7 @@ public class ClientPutter extends BaseClientPutter implements PutCompletionCallb
 	/** SimpleFieldSet containing progress information from last startup.
 	 * Will be progressively cleared during startup. */
 	private SimpleFieldSet oldProgress;
+	private final byte[] overrideSplitfileCrypto;
 	
 	/**
 	 * @param client The object to call back when we complete, or don't.
@@ -81,20 +82,21 @@ public class ClientPutter extends BaseClientPutter implements PutCompletionCallb
 	 */
 	public ClientPutter(ClientPutCallback client, Bucket data, FreenetURI targetURI, ClientMetadata cm, InsertContext ctx,
 			short priorityClass, boolean getCHKOnly,
-			boolean isMetadata, RequestClient clientContext, SimpleFieldSet stored, String targetFilename, boolean binaryBlob, ClientContext context) {
+			boolean isMetadata, RequestClient clientContext, SimpleFieldSet stored, String targetFilename, boolean binaryBlob, ClientContext context, byte[] overrideSplitfileCrypto) {
 		super(priorityClass, clientContext);
 		this.cm = cm;
 		this.isMetadata = isMetadata;
 		this.getCHKOnly = getCHKOnly;
 		this.client = client;
 		this.data = data;
-		this.targetURI = targetURI;
+		this.targetURI = targetURI.clone();
 		this.ctx = ctx;
 		this.finished = false;
 		this.cancelled = false;
 		this.oldProgress = stored;
 		this.targetFilename = targetFilename;
 		this.binaryBlob = binaryBlob;
+		this.overrideSplitfileCrypto = overrideSplitfileCrypto;
 	}
 
 	/** Start the insert.
@@ -158,6 +160,13 @@ public class ClientPutter extends BaseClientPutter implements PutCompletionCallb
 					return false;
 				}
 				cancel = this.cancelled;
+				byte[] cryptoKey = null;
+				if(overrideSplitfileCrypto != null) {
+					cryptoKey = overrideSplitfileCrypto;
+				} else if(randomiseSplitfileKeys) {
+					cryptoKey = new byte[32];
+					context.random.nextBytes(cryptoKey);
+				}
 				if(!cancel) {
 					if(!binaryBlob) {
 						ClientMetadata meta = cm;
@@ -188,7 +197,7 @@ public class ClientPutter extends BaseClientPutter implements PutCompletionCallb
 						}
 						currentState =
 							new SingleFileInserter(this, this, new InsertBlock(data, meta, persistent() ? targetURI.clone() : targetURI), isMetadata, ctx, 
-									false, getCHKOnly, false, null, null, false, targetFilename, earlyEncode, false, persistent(), 0, 0, null, randomiseSplitfileKeys);
+									false, getCHKOnly, false, null, null, false, targetFilename, earlyEncode, false, persistent(), 0, 0, null, Key.ALGO_AES_PCFB_256_SHA256, cryptoKey);
 					} else
 						currentState =
 							new BinaryBlobInserter(data, this, null, false, priorityClass, ctx, context, container);
@@ -282,11 +291,11 @@ public class ClientPutter extends BaseClientPutter implements PutCompletionCallb
 		if(randomiseSplitfileKeys) {
 			boolean ctxActive = true;
 			if(persistent) {
-				ctxActive = container.ext().isActive(ctx);
-				container.activate(ctx, 1);
+				ctxActive = container.ext().isActive(ctx) || !container.ext().isStored(ctx);
+				if(ctxActive) container.activate(ctx, 1);
 			}
 			CompatibilityMode cmode = ctx.getCompatibilityMode();
-			if(!(cmode == CompatibilityMode.COMPAT_CURRENT || cmode.ordinal() >= CompatibilityMode.COMPAT_1254.ordinal()))
+			if(!(cmode == CompatibilityMode.COMPAT_CURRENT || cmode.ordinal() >= CompatibilityMode.COMPAT_1255.ordinal()))
 				randomiseSplitfileKeys = false;
 			if(!ctxActive)
 				container.deactivate(ctx, 1);
@@ -312,9 +321,12 @@ public class ClientPutter extends BaseClientPutter implements PutCompletionCallb
 		if(state != null && state != oldState && persistent())
 			state.removeFrom(container, context);
 		if(super.failedBlocks > 0 || super.fatallyFailedBlocks > 0 || super.successfulBlocks < super.totalBlocks) {
-			Logger.error(this, "Failed blocks: "+failedBlocks+", Fatally failed blocks: "+fatallyFailedBlocks+
-					", Successful blocks: "+successfulBlocks+", Total blocks: "+totalBlocks+" but success?! on "+this+" from "+state,
-					new Exception("debug"));
+			if(persistent()) container.activate(uri, 1);
+			// USK auxiliary inserts are allowed to fail.
+			if(!uri.isUSK())
+				Logger.error(this, "Failed blocks: "+failedBlocks+", Fatally failed blocks: "+fatallyFailedBlocks+
+						", Successful blocks: "+successfulBlocks+", Total blocks: "+totalBlocks+" but success?! on "+this+" from "+state,
+						new Exception("debug"));
 		}
 		if(persistent())
 			container.store(this);

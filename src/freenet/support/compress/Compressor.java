@@ -10,6 +10,7 @@ import java.util.Vector;
 
 import com.db4o.ObjectContainer;
 
+import freenet.support.Logger;
 import freenet.support.api.Bucket;
 import freenet.support.api.BucketFactory;
 
@@ -26,7 +27,7 @@ public interface Compressor {
 		// They will be tried in order: put the less resource consuming first
 		GZIP("GZIP", new GzipCompressor(), (short) 0),
 		BZIP2("BZIP2", new Bzip2Compressor(), (short) 1),
-		LZMA_OLD("LZMA_OLD", new OldLZMACompressor(), (short)2),
+		LZMA("LZMA", new OldLZMACompressor(), (short)2),
 		LZMA_NEW("LZMA_NEW", new NewLZMACompressor(), (short)3);
 
 		public final String name;
@@ -100,7 +101,7 @@ public interface Compressor {
 				COMPRESSOR_TYPE[] ret = new COMPRESSOR_TYPE[val.length-1];
 				int x = 0;
 				for(int i=0;i<val.length;i++) {
-					if((val[i] == LZMA_OLD) && !pre1254) continue;
+					if((val[i] == LZMA) && !pre1254) continue;
 					if((val[i] == LZMA_NEW) && pre1254) continue;
 					ret[x++] = val[i];
 				}
@@ -152,12 +153,12 @@ public interface Compressor {
 			return compressor.compress(is, os, maxReadLength, maxWriteLength);
 		}
 
-		public Bucket decompress(Bucket data, BucketFactory bucketFactory, long maxLength, long maxEstimateSizeLength, Bucket preferred) throws IOException, CompressionOutputSizeException {
+		public long decompress(InputStream input, OutputStream output, long maxLength, long maxEstimateSizeLength) throws IOException, CompressionOutputSizeException {
 			if(compressor == null) {
 				// DB4O VOODOO! See below.
-				if(name != null) return getOfficial().decompress(data, bucketFactory, maxLength, maxEstimateSizeLength, preferred);
+				if(name != null) return getOfficial().decompress(input, output, maxLength, maxEstimateSizeLength);
 			}
-			return compressor.decompress(data, bucketFactory, maxLength, maxEstimateSizeLength, preferred);
+			return compressor.decompress(input, output, maxLength, maxEstimateSizeLength);
 		}
 
 		public int decompress(byte[] dbuf, int i, int j, byte[] output) throws CompressionOutputSizeException {
@@ -167,13 +168,6 @@ public interface Compressor {
 			}
 			return compressor.decompress(dbuf, i, j, output);
 		}
-		
-		public long decompress(InputStream is, OutputStream os, long maxReadLength, long maxWriteLength) throws IOException, CompressionOutputSizeException {
-			if(compressor == null) {
-				if(name != null) return getOfficial().decompress(is, os, maxReadLength, maxWriteLength);
-			}
-			return compressor.decompress(is, os, maxReadLength, maxWriteLength);
-		}
 
 		// DB4O VOODOO!
 		// Copies of the static fields get stored into the database.
@@ -182,7 +176,8 @@ public interface Compressor {
 		private Compressor getOfficial() {
 			if(name.equals("GZIP")) return GZIP;
 			if(name.equals("BZIP2")) return BZIP2;
-			if(name.equals("LZMA_OLD")) return LZMA_OLD;
+			if(name.equals("LZMA")) return LZMA;
+			if(name.equals("LZMA_OLD")) return LZMA;
 			if(name.equals("LZMA_NEW")) return LZMA_NEW;
 			if(name.equals("LZMA")) return LZMA_NEW;
 			return null;
@@ -201,7 +196,13 @@ public interface Compressor {
 		}
 
 		public boolean isOfficial() {
-			return this == GZIP || this == BZIP2 || this == LZMA_OLD || this == LZMA_NEW;
+			if(!(this == GZIP || this == BZIP2 || this == LZMA || this == LZMA_NEW)) {
+				Logger.error(this, "Unofficial COMPESSOR_TYPE, isn't this impossible?");
+				// Initially I had thought db4o was copying the enum values, but testing shows this doesn't happen.
+				// So this is definitely an error.
+				return false;
+			}
+			return true;
 		}
 
 		public static int countCompressors() {
@@ -222,8 +223,6 @@ public interface Compressor {
 	 */
 	public abstract Bucket compress(Bucket data, BucketFactory bf, long maxReadLength, long maxWriteLength) throws IOException, CompressionOutputSizeException;
 
-	public abstract long decompress(InputStream is, OutputStream os, long maxReadLength, long maxWriteLength) throws IOException, CompressionOutputSizeException;
-
 	/**
 	 * Compress the data.
 	 * @param input The InputStream to read from.
@@ -238,16 +237,15 @@ public interface Compressor {
 
 	/**
 	 * Decompress data.
-	 * @param data The data to decompress.
-	 * @param bucketFactory A BucketFactory to create a new Bucket with if necessary.
+	 * @param input Where to read the data to decompress from
+	 * @param output Where to write the final product to
 	 * @param maxLength The maximum length to decompress (we throw if more is present).
 	 * @param maxEstimateSizeLength If the data is too big, and this is >0, read up to this many bytes in order to try to get the data size.
-	 * @param preferred A Bucket to use instead. If null, we allocate one from the BucketFactory.
-	 * @return
+	 * @return Number of bytes copied
 	 * @throws IOException
 	 * @throws CompressionOutputSizeException
 	 */
-	public abstract Bucket decompress(Bucket data, BucketFactory bucketFactory, long maxLength, long maxEstimateSizeLength, Bucket preferred) throws IOException, CompressionOutputSizeException;
+	public abstract long decompress(InputStream input, OutputStream output, long maxLength, long maxEstimateSizeLength) throws IOException, CompressionOutputSizeException;
 
 	/** Decompress in RAM only.
 	 * @param dbuf Input buffer.

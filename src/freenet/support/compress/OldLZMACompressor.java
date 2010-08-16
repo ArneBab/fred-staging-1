@@ -77,10 +77,10 @@ public class OldLZMACompressor implements Compressor {
 		os.close();
 		if(Logger.shouldLog(LogLevel.MINOR, this))
 			Logger.minor(this, "Output: "+output+" size "+output.size()+" read "+is.count());
+		is.close();
 		return output;
 	}
 
-	
 	// Copied from DecoderThread
 	// LICENSING: DecoderThread is LGPL 2.1/CPL according to comments.
 	
@@ -99,9 +99,9 @@ public class OldLZMACompressor implements Compressor {
     }
 
 	public long decompress(InputStream is, OutputStream os, long maxLength, long maxCheckSizeBytes) throws IOException, CompressionOutputSizeException {
+		CountedOutputStream cos = new CountedOutputStream(os);
 		Decoder decoder = new Decoder();
 		decoder.SetDecoderProperties(props);
-		CountedOutputStream cos = new CountedOutputStream(os);
 		decoder.Code(is, cos, maxLength);
 		return cos.written();
 	}

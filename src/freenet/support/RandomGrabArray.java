@@ -3,22 +3,17 @@ package freenet.support;
 import com.db4o.ObjectContainer;
 
 import freenet.client.async.ClientContext;
-import freenet.support.Logger.LogLevel;
+import freenet.client.async.HasCooldownCacheItem;
 
 /**
  * An array which supports very fast remove-and-return-a-random-element.
  */
 // WARNING: THIS CLASS IS STORED IN DB4O -- THINK TWICE BEFORE ADD/REMOVE/RENAME FIELDS/
-public class RandomGrabArray implements RemoveRandom {
+public class RandomGrabArray implements RemoveRandom, HasCooldownCacheItem {
 	private static volatile boolean logMINOR;
 	
 	static {
-		Logger.registerLogThresholdCallback(new LogThresholdCallback() {
-			@Override
-			public void shouldUpdate() {
-				logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
-			}
-		});
+		Logger.registerClass(RandomGrabArray.class);
 	}
 	
 	private static class Block {
@@ -35,9 +30,9 @@ public class RandomGrabArray implements RemoveRandom {
 	private int index;
 	private final static int MIN_SIZE = 32;
 	private final static int BLOCK_SIZE = 1024;
-	private final boolean persistent;
+	protected final boolean persistent;
 	private final int hashCode;
-	private final RemoveRandomParent parent;
+	private RemoveRandomParent parent;
 
 	public RandomGrabArray(boolean persistent, ObjectContainer container, RemoveRandomParent parent) {
 		this.blocks = new Block[] { new Block() };
@@ -53,13 +48,13 @@ public class RandomGrabArray implements RemoveRandom {
 		return hashCode;
 	}
 	
-	public void add(RandomGrabArrayItem req, ObjectContainer container) {
+	public void add(RandomGrabArrayItem req, ObjectContainer container, ClientContext context) {
 		if(req.persistent() != persistent) throw new IllegalArgumentException("req.persistent()="+req.persistent()+" but array.persistent="+persistent+" item="+req+" array="+this);
-		if(req.isEmpty(container)) {
+		if(context != null && req.getCooldownTime(container, context, System.currentTimeMillis()) < 0) { 
 			if(logMINOR) Logger.minor(this, "Is finished already: "+req);
 			return;
 		}
-		req.setParentGrabArray(this, container);
+		req.setParentGrabArray(this, container); // will store() self
 		synchronized(this) {
 			int x = 0;
 			if(blocks.length == 1 && index < BLOCK_SIZE) {
@@ -77,11 +72,13 @@ public class RandomGrabArray implements RemoveRandom {
 					blocks[0].reqs = newReqs;
 				}
 				blocks[0].reqs[index++] = req;
+				if(logMINOR) Logger.minor(this, "Added "+req+" before index "+index);
 				if(persistent) {
 					container.store(blocks[0]);
 					container.store(this);
 					container.deactivate(blocks[0], 1);
 				}
+				if(context != null) context.cooldownTracker.clearCachedWakeup(this, persistent, container, false);
 				return;
 			}
 			int targetBlock = index / BLOCK_SIZE;
@@ -134,235 +131,342 @@ public class RandomGrabArray implements RemoveRandom {
 		}
 	}
 	
-	public RandomGrabArrayItem removeRandom(RandomGrabArrayItemExclusionList excluding, ObjectContainer container, ClientContext context) {
-		RandomGrabArrayItem ret, oret;
+	/** Must be less than BLOCK_SIZE */
+	static final int MAX_EXCLUDED = 10;
+	
+	public RemoveRandomReturn removeRandom(RandomGrabArrayItemExclusionList excluding, ObjectContainer container, ClientContext context, long now) {
 		if(logMINOR) Logger.minor(this, "removeRandom() on "+this+" index="+index);
 		synchronized(this) {
-			int lastActiveBlock = -1;
-			/** Must be less than BLOCK_SIZE */
-			final int MAX_EXCLUDED = 10;
-			int excluded = 0;
-			boolean changedMe = false;
-			while(true) {
-				if(index == 0) {
-					if(logMINOR) Logger.minor(this, "All null on "+this);
-					return null;
-				}
-				if(index < MAX_EXCLUDED) {
-					// Optimise the common case of not many items, and avoid some spurious errors.
-					int random = -1;
-					if(persistent) container.activate(blocks[0], 1);
-					RandomGrabArrayItem[] reqs = blocks[0].reqs;
-					while(true) {
-						int exclude = 0;
-						int valid = 0;
-						int validIndex = -1;
-						int target = 0;
-						int chosenIndex = -1;
-						RandomGrabArrayItem chosenItem = null;
-						RandomGrabArrayItem validItem = null;
-						for(int i=0;i<index;i++) {
-							// Compact the array.
-							RandomGrabArrayItem item = reqs[i];
-							if(persistent)
-								container.activate(item, 1);
-							if(item == null)
-								continue;
-							boolean broken = false;
-							broken = persistent && item.isStorageBroken(container);
-							if(broken) {
-								Logger.error(this, "Storage broken on "+item);
-								try {
-									item.removeFrom(container, context);
-								} catch (Throwable t) {
-									// Ignore
-									container.delete(item);
-								}
-							}
-							if(item.isEmpty(container) || broken) {
-								changedMe = true;
-								// We are doing compaction here. We don't need to swap with the end; we write valid ones to the target location.
-								reqs[i] = null;
-								item.setParentGrabArray(null, container);
-								if(persistent)
-									container.deactivate(item, 1);
-								continue;
-							}
-							if(i != target) {
-								changedMe = true;
-								reqs[i] = null;
-								reqs[target] = item;
-							} // else the request can happily stay where it is
-							target++;
-							if(excluding.exclude(item, container, context)) {
-								exclude++;
-							} else {
-								if(valid == random) { // Picked on previous round
-									chosenIndex = target-1;
-									chosenItem = item;
-								}
-								if(validIndex == -1) {
-									// Take the first valid item
-									validIndex = target-1;
-									validItem = item;
-								}
-								valid++;
-							}
-							if(persistent && item != chosenItem && item != validItem) {
-								if(logMINOR)
-									Logger.minor(this, "Deactivating "+item);
-								container.deactivate(item, 1);
-								if(container.ext().isActive(item))
-									Logger.error(this, "Still active after deactivation: "+item);
-								else if(logMINOR)
-									Logger.minor(this, "Deactivated: "+item);
-							}
-						}
-						if(index != target) {
-							changedMe = true;
-							index = target;
-						}
-						// We reach this point if 1) the random number we picked last round is invalid because an item became cancelled or excluded
-						// or 2) we are on the first round anyway.
-						if(chosenItem != null) {
-							if(persistent && validItem != null && validItem != chosenItem)
-								container.deactivate(validItem, 1);
-							changedMe = true;
-							ret = chosenItem;
-							assert(ret == reqs[chosenIndex]);
-							if(logMINOR) Logger.minor(this, "Chosen random item "+ret+" out of "+valid+" total "+index);
-							if(persistent && changedMe) {
-								container.store(blocks[0]);
-								container.store(this);
-							}
-							return ret;
-						}
-						if(valid == 0 && exclude == 0) {
-							index = 0;
-							if(persistent) {
-								container.store(blocks[0]);
-								container.store(this);
-							}
-							if(logMINOR) Logger.minor(this, "No valid or excluded items total "+index);
-							return null;
-						} else if(valid == 0) {
-							if(persistent && changedMe) {
-								container.store(blocks[0]);
-								container.store(this);
-							}
-							if(logMINOR) Logger.minor(this, "No valid items, "+exclude+" excluded items total "+index);
-							return null;
-						} else if(valid == 1) {
-							ret = validItem;
-							assert(ret == reqs[validIndex]);
-							if(logMINOR) Logger.minor(this, "No valid or excluded items apart from "+ret+" total "+index);
-							if(persistent && changedMe) {
-								container.store(blocks[0]);
-								container.store(this);
-							}
-							return ret;
-						} else {
-							random = context.fastWeakRandom.nextInt(valid);
-						}
-					}
-				}
-				int i = context.fastWeakRandom.nextInt(index);
-				int blockNo = i / BLOCK_SIZE;
-				if(persistent && blockNo != lastActiveBlock) {
-					if(lastActiveBlock != -1)
-						container.deactivate(blocks[lastActiveBlock], 1);
-					lastActiveBlock = blockNo;
-					container.activate(blocks[blockNo], 1);
-				}
-				ret = blocks[blockNo].reqs[i % BLOCK_SIZE];
-				if(ret == null) {
-					Logger.error(this, "reqs["+i+"] = null");
-					remove(blockNo, i, container);
-					changedMe = true;
-					continue;
-				}
-				if(persistent)
-					container.activate(ret, 1);
-				oret = ret;
-				boolean broken = false;
-				broken = persistent && ret.isStorageBroken(container);
-				if(broken) {
-					Logger.error(this, "Storage broken on "+ret);
-					try {
-						ret.removeFrom(container, context);
-					} catch (Throwable t) {
-						// Ignore
-						container.delete(ret);
-					}
-				}
-				if(broken || ret.isEmpty(container)) {
-					if(logMINOR) Logger.minor(this, "Not returning because cancelled: "+ret);
-					ret = null;
-					// Will be removed in the do{} loop
-					// Tell it that it's been removed first.
-					oret.setParentGrabArray(null, container);
-				}
-				if(ret != null && excluding.exclude(ret, container, context)) {
-					excluded++;
-					if(persistent)
-						container.deactivate(ret, 1);
-					if(excluded > MAX_EXCLUDED) {
-						Logger.normal(this, "Remove random returning null because "+excluded+" excluded items, length = "+index, new Exception("error"));
-						if(persistent && changedMe)
-							container.store(this);
-						return null;
-					}
-					continue;
-				}
-				if(ret != null) {
-					if(logMINOR) Logger.minor(this, "Returning (cannot remove): "+ret+" of "+index);
-					if(persistent && changedMe)
-						container.store(this);
-					return ret;
-				}
-				// Remove an element.
-				do {
-					changedMe = true;
-					remove(blockNo, i, container);
-					if(persistent && oret != null && ret == null) // if ret != null we will return it
-						container.deactivate(oret, 1);
-					oret = blocks[blockNo].reqs[i % BLOCK_SIZE];
-					// Check for nulls, but don't check for cancelled, since we'd have to activate.
-				} while (index > i && oret == null);
-				// Shrink array
-				if(blocks.length == 1 && index < blocks[0].reqs.length / 4) {
-					changedMe = true;
-					// Shrink array
-					int newSize = Math.max(index * 2, MIN_SIZE);
-					RandomGrabArrayItem[] r = new RandomGrabArrayItem[newSize];
-					System.arraycopy(blocks[0].reqs, 0, r, 0, r.length);
-					blocks[0].reqs = r;
-					if(persistent)
-						container.store(this);
-				} else if(blocks.length > 1 &&
-						(((index + (BLOCK_SIZE/2)) / BLOCK_SIZE) + 1) < 
-						blocks.length) {
-					if(logMINOR)
-						Logger.minor(this, "Shrinking blocks on "+this);
-					Block[] newBlocks = new Block[((index + (BLOCK_SIZE/2)) / BLOCK_SIZE) + 1];
-					System.arraycopy(blocks, 0, newBlocks, 0, newBlocks.length);
-					if(persistent) {
-						container.store(this);
-						for(int x=newBlocks.length;x<blocks.length;x++)
-							container.delete(blocks[x]);
-					}
-					blocks = newBlocks;
-				}
-				if(ret != null) break;
+			if(index == 0) {
+				if(logMINOR) Logger.minor(this, "All null on "+this);
+				return null;
 			}
+			if(index < MAX_EXCLUDED) {
+				return removeRandomExhaustiveSearch(excluding, container, context, now);
+			}
+			RandomGrabArrayItem ret = removeRandomLimited(excluding, container, context, now);
+			if(ret != null)
+				return new RemoveRandomReturn(ret);
+			if(index == 0) {
+				if(logMINOR) Logger.minor(this, "All null on "+this);
+				return null;
+			}
+			return removeRandomExhaustiveSearch(excluding, container, context, now);
 		}
-		if(logMINOR) Logger.minor(this, "Returning "+ret+" of "+index);
-		ret.setParentGrabArray(null, container);
-		if(persistent)
-			container.store(this);
-		return ret;
 	}
 	
+	private RandomGrabArrayItem removeRandomLimited(
+			RandomGrabArrayItemExclusionList excluding,
+			ObjectContainer container, ClientContext context, long now) {
+		int excluded = 0;
+		boolean changedMe = false;
+		int lastActiveBlock = -1;
+		while(true) {
+			int i = context.fastWeakRandom.nextInt(index);
+			int blockNo = i / BLOCK_SIZE;
+			RandomGrabArrayItem ret, oret;
+			if(persistent && blockNo != lastActiveBlock) {
+				if(lastActiveBlock != -1)
+					container.deactivate(blocks[lastActiveBlock], 1);
+				lastActiveBlock = blockNo;
+				container.activate(blocks[blockNo], 1);
+			}
+			ret = blocks[blockNo].reqs[i % BLOCK_SIZE];
+			if(ret == null) {
+				Logger.error(this, "reqs["+i+"] = null");
+				remove(blockNo, i, container);
+				changedMe = true;
+				continue;
+			}
+			if(excluding.excludeSummarily(ret, this, container, persistent, now) > 0) {
+				excluded++;
+				if(excluded > MAX_EXCLUDED) {
+					if(persistent) {
+						if(changedMe)
+							container.store(this);
+						container.deactivate(blocks[blockNo], 1);
+					}
+					return null;
+				}
+				continue;
+			}
+			if(persistent)
+				container.activate(ret, 1);
+			oret = ret;
+			long itemWakeTime = -1;
+			boolean broken = false;
+			broken = persistent && ret.isStorageBroken(container);
+			if(broken) {
+				Logger.error(this, "Storage broken on "+ret);
+				try {
+					ret.removeFrom(container, context);
+				} catch (Throwable t) {
+					// Ignore
+					container.delete(ret);
+				}
+			} else itemWakeTime = ret.getCooldownTime(container, context, now);
+			if(broken || itemWakeTime == -1) {
+				if(logMINOR) Logger.minor(this, "Not returning because cancelled: "+ret);
+				ret = null;
+				// Will be removed in the do{} loop
+				// Tell it that it's been removed first.
+				oret.setParentGrabArray(null, container);
+			}
+			if(ret != null && (itemWakeTime > 0 || excluding.exclude(ret, container, context))) {
+				excluded++;
+				if(persistent)
+					container.deactivate(ret, 1);
+				if(excluded > MAX_EXCLUDED) {
+					if(persistent) {
+						if(changedMe)
+							container.store(this);
+						container.deactivate(blocks[blockNo], 1);
+					}
+					return null;
+				}
+				continue;
+			}
+			if(ret != null) {
+				if(logMINOR) Logger.minor(this, "Returning (cannot remove): "+ret+" of "+index);
+				if(persistent) {
+					if(changedMe)
+						container.store(this);
+					container.deactivate(blocks[blockNo], 1);
+				}
+				return ret;
+			}
+			// Remove an element.
+			do {
+				changedMe = true;
+				remove(blockNo, i, container);
+				if(persistent && oret != null && ret == null) // if ret != null we will return it
+					container.deactivate(oret, 1);
+				oret = blocks[blockNo].reqs[i % BLOCK_SIZE];
+				// Check for nulls, but don't check for cancelled, since we'd have to activate.
+			} while (index > i && oret == null);
+			int newBlockCount;
+			// Shrink array
+			if(blocks.length == 1 && index < blocks[0].reqs.length / 4 && blocks[0].reqs.length > MIN_SIZE) {
+				changedMe = true;
+				// Shrink array
+				int newSize = Math.max(index * 2, MIN_SIZE);
+				RandomGrabArrayItem[] r = new RandomGrabArrayItem[newSize];
+				System.arraycopy(blocks[0].reqs, 0, r, 0, r.length);
+				blocks[0].reqs = r;
+				if(persistent) {
+					container.store(this);
+					container.store(blocks[0]);
+					container.deactivate(blocks[0], 1);
+				}
+			} else if(blocks.length > 1 &&
+					(newBlockCount = (((index + (BLOCK_SIZE/2)) / BLOCK_SIZE) + 1)) < 
+					blocks.length) {
+				if(logMINOR)
+					Logger.minor(this, "Shrinking blocks on "+this);
+				Block[] newBlocks = new Block[newBlockCount];
+				System.arraycopy(blocks, 0, newBlocks, 0, newBlocks.length);
+				Block[] oldBlocks = blocks;
+				blocks = newBlocks;
+				if(persistent) {
+					container.store(this);
+					for(int x=newBlocks.length;x<oldBlocks.length;x++)
+						container.delete(oldBlocks[x]);
+					container.deactivate(oldBlocks[blockNo], 1);
+				}
+			}
+			if(changedMe && persistent)
+				container.store(this);
+			return ret;
+		}
+	}
+
+	private RemoveRandomReturn removeRandomExhaustiveSearch(
+			RandomGrabArrayItemExclusionList excluding,
+			ObjectContainer container, ClientContext context, long now) {
+		if(logMINOR)
+			Logger.minor(this, "Doing exhaustive search and compaction on "+this);
+		boolean changedMe = false;
+		long wakeupTime = Long.MAX_VALUE;
+		RandomGrabArrayItem ret = null;
+		int random = -1;
+		while(true) {
+			if(persistent) container.activate(blocks[0], 1);
+			RandomGrabArrayItem[] reqsReading = blocks[0].reqs;
+			RandomGrabArrayItem[] reqsWriting = blocks[0].reqs;
+			int blockNumReading = 0;
+			int blockNumWriting = 0;
+			int offset = -1;
+			int writeOffset = -1;
+			int exclude = 0;
+			int valid = 0;
+			int validIndex = -1;
+			int target = 0;
+			int chosenIndex = -1;
+			RandomGrabArrayItem chosenItem = null;
+			RandomGrabArrayItem validItem = null;
+			for(int i=0;i<index;i++) {
+				offset++;
+				// Compact the array.
+				RandomGrabArrayItem item;
+				if(offset == BLOCK_SIZE) {
+					offset = 0;
+					if(persistent && changedMe)
+						container.store(blocks[blockNumReading]);
+					if(persistent && blockNumReading != blockNumWriting)
+						container.deactivate(blocks[blockNumReading], 1);
+					blockNumReading++;
+					if(persistent && blockNumReading != blockNumWriting)
+						container.activate(blocks[blockNumReading], 1);
+					reqsReading = blocks[blockNumReading].reqs;
+				}
+				item = reqsReading[offset];
+				if(item == null) {
+					if(logMINOR) Logger.minor(this, "Found null item at offset "+offset+" i="+i+" block = "+blockNumReading+" on "+this);
+					continue;
+				}
+				boolean excludeItem = false;
+				boolean activated = false;
+				long excludeTime = excluding.excludeSummarily(item, this, container, persistent, now);
+				if(excludeTime > 0) {
+					// In cooldown, will be wanted later.
+					excludeItem = true;
+					if(wakeupTime > excludeTime) wakeupTime = excludeTime;
+				} else {
+					if(persistent)
+						container.activate(item, 1);
+					activated = true;
+					boolean broken = persistent && item.isStorageBroken(container);
+					long itemWakeTime = -1;
+					if(broken) {
+						Logger.error(this, "Storage broken on "+item);
+						try {
+							item.removeFrom(container, context);
+						} catch (Throwable t) {
+							// Ignore
+							container.delete(item);
+						}
+					} else itemWakeTime = item.getCooldownTime(container, context, now);
+					if(itemWakeTime == -1 || broken) {
+						if(logMINOR) Logger.minor(this, "Removing "+item+" on "+this);
+						changedMe = true;
+						// We are doing compaction here. We don't need to swap with the end; we write valid ones to the target location.
+						reqsReading[offset] = null;
+						item.setParentGrabArray(null, container);
+						if(persistent)
+							container.deactivate(item, 1);
+						continue;
+					} else if(itemWakeTime > 0) {
+						if(itemWakeTime < wakeupTime) wakeupTime = itemWakeTime;
+						excludeItem = true;
+					}
+					if(!excludeItem)
+						excludeItem = excluding.exclude(item, container, context);
+				}
+				writeOffset++;
+				if(writeOffset == BLOCK_SIZE) {
+					writeOffset = 0;
+					if(persistent && changedMe)
+						container.store(blocks[blockNumWriting]);
+					if(persistent && blockNumReading != blockNumWriting)
+						container.deactivate(blocks[blockNumWriting], 1);
+					blockNumWriting++;
+					if(persistent && blockNumReading != blockNumWriting)
+						container.activate(blocks[blockNumWriting], 1);
+					reqsWriting = blocks[blockNumWriting].reqs;
+				}
+				if(i != target) {
+					changedMe = true;
+					reqsReading[offset] = null;
+					reqsWriting[writeOffset] = item;
+				} // else the request can happily stay where it is
+				target++;
+				if(excludeItem) {
+					exclude++;
+				} else {
+					if(valid == random) { // Picked on previous round
+						chosenIndex = target-1;
+						chosenItem = item;
+					}
+					if(validIndex == -1) {
+						// Take the first valid item
+						validIndex = target-1;
+						validItem = item;
+					}
+					valid++;
+				}
+				if(persistent && activated && item != chosenItem && item != validItem) {
+					if(logMINOR)
+						Logger.minor(this, "Deactivating "+item);
+					container.deactivate(item, 1);
+				}
+			}
+			if(index != target) {
+				changedMe = true;
+				index = target;
+			}
+			// We reach this point if 1) the random number we picked last round is invalid because an item became cancelled or excluded
+			// or 2) we are on the first round anyway.
+			if(chosenItem != null) {
+				if(persistent && validItem != null && validItem != chosenItem)
+					container.deactivate(validItem, 1);
+				ret = chosenItem;
+				if(logMINOR) Logger.minor(this, "Chosen random item "+ret+" out of "+valid+" total "+index);
+				if(persistent && changedMe) {
+					container.store(blocks[blockNumReading]);
+					if(blockNumReading != blockNumWriting)
+						container.store(blocks[blockNumWriting]);
+					container.store(this);
+					container.deactivate(blocks[blockNumReading], 1);
+					if(blockNumReading != blockNumWriting)
+						container.deactivate(blocks[blockNumWriting], 1);
+				}
+				return new RemoveRandomReturn(ret);
+			}
+			if(valid == 0 && exclude == 0) {
+				if(logMINOR) Logger.minor(this, "No valid or excluded items total "+index);
+				return null; // Caller should remove the whole RGA
+			} else if(valid == 0) {
+				if(persistent && changedMe) {
+					container.store(blocks[blockNumReading]);
+					if(blockNumReading != blockNumWriting)
+						container.store(blocks[blockNumWriting]);
+					container.store(this);
+					container.deactivate(blocks[blockNumReading], 1);
+					if(blockNumReading != blockNumWriting)
+						container.deactivate(blocks[blockNumWriting], 1);
+				}
+				if(logMINOR) Logger.minor(this, "No valid items, "+exclude+" excluded items total "+index);
+				context.cooldownTracker.setCachedWakeup(wakeupTime, this, parent, persistent, container);
+				return new RemoveRandomReturn(wakeupTime);
+			} else if(valid == 1) {
+				ret = validItem;
+				if(logMINOR) Logger.minor(this, "No valid or excluded items apart from "+ret+" total "+index);
+				if(persistent && changedMe) {
+					container.store(blocks[blockNumReading]);
+					if(blockNumReading != blockNumWriting)
+						container.store(blocks[blockNumWriting]);
+					container.store(this);
+					container.deactivate(blocks[blockNumReading], 1);
+					if(blockNumReading != blockNumWriting)
+						container.deactivate(blocks[blockNumWriting], 1);
+				}
+				return new RemoveRandomReturn(ret);
+			} else {
+				random = context.fastWeakRandom.nextInt(valid);
+				if(logMINOR) Logger.minor(this, "Looping to choose valid item "+random+" of "+valid+" (excluded "+exclude+")");
+				// Loop
+				if(persistent && blockNumReading != 0) {
+					if(changedMe) container.store(blocks[blockNumReading]);
+					container.deactivate(blocks[blockNumReading], 1);
+				}
+				if(persistent && blockNumWriting != 0 && blockNumWriting != blockNumReading) {
+					if(changedMe) container.store(blocks[blockNumWriting]);
+					container.deactivate(blocks[blockNumWriting], 1);
+				}
+			}
+		}
+	}
+
 	/**
 	 * blockNo is assumed to be already active. The last block is assumed not 
 	 * to be.
@@ -391,9 +495,19 @@ public class RandomGrabArray implements RemoveRandom {
 		}
 	}
 
-	public void remove(RandomGrabArrayItem it, ObjectContainer container) {
+	public void remove(RandomGrabArrayItem it, ObjectContainer container, ClientContext context) {
+		context.cooldownTracker.removeCachedWakeup(it, persistent, container);
 		if(logMINOR)
 			Logger.minor(this, "Removing "+it+" from "+this);
+		if(logMINOR && container != null) {
+			boolean stored = container.ext().isStored(this);
+			boolean active = container.ext().isActive(this);
+			if((!persistent) && (stored || active))
+				Logger.error(this, "persistent="+persistent+" stored="+stored+" active="+active, new Exception("error"));
+			else
+				Logger.minor(this, "persistent="+persistent+" stored="+stored+" active="+active, new Exception("error"));
+		}
+		
 		boolean matched = false;
 		boolean empty = false;
 		synchronized(this) {
@@ -423,7 +537,7 @@ public class RandomGrabArray implements RemoveRandom {
 					for(int j=0;j<block.reqs.length;j++) {
 						if(x >= index) break;
 						x++;
-						if(block.reqs[i] == it) {
+						if(block.reqs[j] == it) {
 							int pullFrom = --index;
 							int idx = pullFrom % BLOCK_SIZE;
 							int endBlock = pullFrom / BLOCK_SIZE;
@@ -457,10 +571,11 @@ public class RandomGrabArray implements RemoveRandom {
 			it.setParentGrabArray(null, container);
 		else
 			Logger.error(this, "Removing item "+it+" from "+this+" but RGA is "+it.getParentGrabArray(), new Exception("debug"));
-		if(!matched) return;
-		if(persistent) {
-			container.store(this);
+		if(!matched) {
+			if(logMINOR) Logger.minor(this, "Not found: "+it+" on "+this);
+			return;
 		}
+		if(persistent) container.store(this);
 		if(empty && parent != null) {
 			boolean active = true;
 			if(persistent) active = container.ext().isActive(parent);
@@ -470,7 +585,19 @@ public class RandomGrabArray implements RemoveRandom {
 		}
 	}
 
-	public synchronized boolean isEmpty() {
+	public synchronized boolean isEmpty(ObjectContainer container) {
+		if(container != null && !persistent) {
+			boolean stored = container.ext().isStored(this);
+			boolean active = container.ext().isActive(this);
+			if(stored && !active) {
+				Logger.error(this, "Not empty because not active on "+this);
+				return false;
+			} else if(!stored) {
+				Logger.error(this, "Not stored yet passed in container on "+this);
+			} else if(stored) {
+				throw new IllegalStateException("Stored but not persistent on "+this);
+			}
+		}
 		return index == 0;
 	}
 	
@@ -533,16 +660,61 @@ public class RandomGrabArray implements RemoveRandom {
 
 	public void removeFrom(ObjectContainer container) {
 		if(blocks != null) {
+			int count = 0;
 			for(Block block : blocks) {
 				container.activate(block, 1);
 				for(RandomGrabArrayItem item : block.reqs) {
 					if(item != null) {
-						Logger.error(this, "VALID ITEM WHILE DELETING BLOCK: "+item+" on "+this);
+						container.activate(item, 1); // For logging
+						if(count >= index)
+							Logger.error(this, "ITEM AT INDEX "+count+" : "+item+" EVEN THOUGH MAX INDEX IS "+index+" on "+this, new Exception("error"));
+						else
+							Logger.error(this, "VALID ITEM WHILE DELETING BLOCK: "+item+" on "+this+" at index "+count+" of "+index, new Exception("error"));
 					}
+					count++;
 				}
 				container.delete(block);
 			}
 		}
 		container.delete(this);
 	}
+
+	// REDFLAG this method does not move cooldown items.
+	// At present it is only called on startup so this is okay.
+	public void moveElementsTo(RandomGrabArray existingGrabber,
+			ObjectContainer container, boolean canCommit) {
+		for(int i=0;i<blocks.length;i++) {
+			Block block = blocks[i];
+			if(persistent) container.activate(block, 1);
+			for(int j=0;j<block.reqs.length;j++) {
+				RandomGrabArrayItem item = block.reqs[j];
+				if(item == null) continue;
+				if(persistent) container.activate(item, 1);
+				item.setParentGrabArray(null, container);
+				existingGrabber.add(item, container, null);
+				if(persistent) container.deactivate(item, 1);
+				block.reqs[j] = null;
+			}
+			if(persistent) {
+				container.store(block);
+				container.deactivate(block, 1);
+				if(canCommit) container.commit();
+			}
+			System.out.println("Moved block in RGA "+this);
+		}
+	}
+
+	public void moveElementsTo(RemoveRandom existingGrabber,
+			ObjectContainer container, boolean canCommit) {
+		if(existingGrabber instanceof RandomGrabArray)
+			moveElementsTo((RandomGrabArray)existingGrabber, container, canCommit);
+		else
+			throw new IllegalArgumentException("Expected RGA but got "+existingGrabber);
+	}
+	
+	public void setParent(RemoveRandomParent newParent, ObjectContainer container) {
+		this.parent = newParent;
+		if(persistent()) container.store(this);
+	}
+	
 }

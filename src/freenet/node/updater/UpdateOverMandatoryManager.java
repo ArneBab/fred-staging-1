@@ -751,7 +751,7 @@ public class UpdateOverMandatoryManager implements RequestClient {
 
 		final long uid = m.getLong(DMT.UID);
 
-		RandomAccessFileWrapper raf;
+		final RandomAccessFileWrapper raf;
 		try {
 			raf = new RandomAccessFileWrapper(data, "r");
 		} catch(FileNotFoundException e) {
@@ -767,6 +767,7 @@ public class UpdateOverMandatoryManager implements RequestClient {
 				Node.PACKET_SIZE, raf, true);
 		} catch(IOException e) {
 			Logger.error(this, "Peer " + source + " asked us for the blob file for the revocation key, we have downloaded it but we can't determine the file size: " + e, e);
+			raf.close();
 			return true;
 		}
 
@@ -775,6 +776,7 @@ public class UpdateOverMandatoryManager implements RequestClient {
 			bt = new BulkTransmitter(prb, source, uid, false, updateManager.ctr);
 		} catch(DisconnectedException e) {
 			Logger.error(this, "Peer " + source + " asked us for the blob file for the revocation key, then disconnected: " + e, e);
+			raf.close();
 			return true;
 		}
 
@@ -785,6 +787,7 @@ public class UpdateOverMandatoryManager implements RequestClient {
 					Logger.error(this, "Failed to send revocation key blob to " + source.userToString() + " : " + bt.getCancelReason());
 				else
 					Logger.normal(this, "Sent revocation key blob to " + source.userToString());
+				raf.close();
 			}
 		};
 
@@ -1155,9 +1158,10 @@ public class UpdateOverMandatoryManager implements RequestClient {
 			}
 		};
 		FileBucket bucket = new FileBucket(blob, true, false, false, false, false);
+		// We are inserting a binary blob so we don't need to worry about CompatibilityMode etc.
 		ClientPutter putter = new ClientPutter(callback, bucket,
 			FreenetURI.EMPTY_CHK_URI, null, updateManager.node.clientCore.makeClient(RequestStarter.INTERACTIVE_PRIORITY_CLASS).getInsertContext(true),
-			RequestStarter.INTERACTIVE_PRIORITY_CLASS, false, false, this, null, null, true, updateManager.node.clientCore.clientContext);
+			RequestStarter.INTERACTIVE_PRIORITY_CLASS, false, false, this, null, null, true, updateManager.node.clientCore.clientContext, null);
 		try {
 			updateManager.node.clientCore.clientContext.start(putter, false);
 		} catch(InsertException e1) {
@@ -1196,7 +1200,7 @@ public class UpdateOverMandatoryManager implements RequestClient {
 
 		final long uid = m.getLong(DMT.UID);
 
-		RandomAccessFileWrapper raf;
+		final RandomAccessFileWrapper raf;
 		try {
 			raf = new RandomAccessFileWrapper(data, "r");
 		} catch(FileNotFoundException e) {
@@ -1212,6 +1216,7 @@ public class UpdateOverMandatoryManager implements RequestClient {
 				Node.PACKET_SIZE, raf, true);
 		} catch(IOException e) {
 			Logger.error(this, "Peer " + source + " asked us for the blob file for the "+name+" jar, we have downloaded it but we can't determine the file size: " + e, e);
+			raf.close();
 			return true;
 		}
 
@@ -1220,6 +1225,7 @@ public class UpdateOverMandatoryManager implements RequestClient {
 			bt = new BulkTransmitter(prb, source, uid, false, updateManager.ctr);
 		} catch(DisconnectedException e) {
 			Logger.error(this, "Peer " + source + " asked us for the blob file for the "+name+" jar, then disconnected: " + e, e);
+			raf.close();
 			return true;
 		}
 
@@ -1230,6 +1236,7 @@ public class UpdateOverMandatoryManager implements RequestClient {
 					Logger.error(this, "Failed to send "+name+" jar blob to " + source.userToString() + " : " + bt.getCancelReason());
 				else
 					Logger.normal(this, "Sent "+name+" jar blob to " + source.userToString());
+				raf.close();
 			}
 		};
 

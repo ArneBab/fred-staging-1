@@ -35,6 +35,7 @@ import freenet.client.filter.UnsafeContentTypeException;
 import freenet.keys.BaseClientKey;
 import freenet.keys.FreenetURI;
 import freenet.keys.InsertableClientSSK;
+import freenet.keys.Key;
 import freenet.node.RequestClient;
 import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
@@ -72,7 +73,7 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 			InsertBlock block =
 				new InsertBlock(data, cm, persistent() ? FreenetURI.EMPTY_CHK_URI.clone() : FreenetURI.EMPTY_CHK_URI);
 			this.origSFI =
-				new SingleFileInserter(this, this, block, false, ctx, false, getCHKOnly, true, null, null, false, null, earlyEncode, false, persistent, 0, 0, null, randomiseSplitfileKeys);
+				new SingleFileInserter(this, this, block, false, ctx, false, getCHKOnly, true, null, null, false, null, earlyEncode, false, persistent, 0, 0, null, cryptoAlgorithm, forceCryptoKey);
 			metadata = null;
 			containerHandle = null;
 		}
@@ -338,6 +339,8 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 			} else {
 				// Resolve now to speed up the insert.
 				try {
+					if(persistent)
+						container.activate(m, Integer.MAX_VALUE);
 					byte[] buf = m.writeToByteArray();
 					if(buf.length > Metadata.MAX_SIZE_IN_MANIFEST)
 						throw new MetadataUnresolvedException(new Metadata[] { m }, "Too big");
@@ -431,6 +434,16 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 			super.addMustSucceedBlocks(blocks, container);
 		}
 
+		@Override
+		public void addRedundantBlocks(int blocks, ObjectContainer container) {
+			if(persistent)
+				container.activate(SimpleManifestPutter.this, 1);
+			SimpleManifestPutter.this.addRedundantBlocks(blocks, container);
+			if(persistent)
+				container.deactivate(SimpleManifestPutter.this, 1);
+			super.addMustSucceedBlocks(blocks, container);
+		}
+		
 		@Override
 		public void notifyClients(ObjectContainer container, ClientContext context) {
 			if(persistent)
@@ -545,6 +558,31 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 
 	}
 
+	// FIXME: DB4O ISSUE: HASHMAP ACTIVATION:
+	
+	// Unfortunately this class uses a lot of HashMap's, and is persistent.
+	// The two things do not play well together!
+	
+	// Activating a HashMap to depth 1 breaks it badly, so that even if it is then activated to a higher depth, it remains empty.
+	// Activating a HashMap to depth 2 loads the elements but does not activate them. In particular, Metadata's used as keys will not have their hashCode loaded so we end up with all of them on the 0th slot.
+	// Activating a HashMap to depth 3 loads it properly, including activating both the keys and values to depth 1.
+	// Of course, the side effect of activating the values to depth 1 may cause problems ...
+
+	// OPTIONS:
+	// 1. Activate to depth 2. Activate the Metadata we are looking for *FIRST*!
+	// Then the Metadata we are looking for will be in the correct slot.
+	// Everything else will be in the 0'th slot, in one long chain, i.e. if there are lots of entries it will be a very inefficient HashMap.
+	
+	// 2. Activate to depth 3.
+	// If there are lots of entries, we have a significant I/O cost for activating *all* of them.
+	// We also have the possibility of a memory/space leak if these are linked from somewhere that assumed they had been deactivated.
+	
+	// Clearly option 1 is superior. However they both suck.
+	// The *correct* solution is to use a HashMap from a primitive type e.g. a String, so we can use depth 2.
+	
+	// Note that this also applies to HashSet's: The entries are the keys, and they are not activated, so we end up with them all in a long chain off bucket 0, except any that are already active.
+	// We don't have any real problems because the caller is generally already active - but it is grossly inefficient.
+	
 	private HashMap<String,Object> putHandlersByName;
 	private HashSet<PutHandler> runningPutHandlers;
 	private HashSet<PutHandler> putHandlersWaitingForMetadata;
@@ -573,19 +611,34 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 	private boolean fetchable;
 	private final boolean earlyEncode;
 	private InsertException error;
-	final boolean randomiseSplitfileKeys;
+	final byte[] forceCryptoKey;
+	final byte cryptoAlgorithm;
 
 	public SimpleManifestPutter(ClientPutCallback cb,
 			HashMap<String, Object> manifestElements, short prioClass, FreenetURI target,
 			String defaultName, InsertContext ctx, boolean getCHKOnly, RequestClient clientContext, boolean earlyEncode, boolean persistent, ObjectContainer container, ClientContext context) {
 		super(prioClass, clientContext);
 		this.defaultName = defaultName;
+		
+		if(defaultName != null) {
+			if(client.persistent())
+				container.activate(manifestElements, Integer.MAX_VALUE);
+			checkDefaultName(manifestElements, defaultName);
+		}
+		
+		this.cryptoAlgorithm = Key.ALGO_AES_PCFB_256_SHA256;
 
 		if(client.persistent())
 			this.targetURI = target.clone();
 		else
 			this.targetURI = target;
-		this.randomiseSplitfileKeys = ClientPutter.randomiseSplitfileKeys(target, ctx, persistent, container);
+		boolean randomiseSplitfileKeys = ClientPutter.randomiseSplitfileKeys(target, ctx, persistent, container);
+		if(randomiseSplitfileKeys) {
+			forceCryptoKey = new byte[32];
+			context.random.nextBytes(forceCryptoKey);
+		} else {
+			forceCryptoKey = null;
+		}
 		this.cb = cb;
 		this.ctx = ctx;
 		this.getCHKOnly = getCHKOnly;
@@ -600,6 +653,26 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 		elementsToPutInArchive = new ArrayList<PutHandler>();
 		makePutHandlers(manifestElements, putHandlersByName, context.getBucketFactory(client.persistent()), client.persistent());
 		checkZips();
+	}
+
+	private void checkDefaultName(HashMap<String, Object> manifestElements,
+			String defaultName2) {
+		int idx;
+		if((idx = defaultName.indexOf('/')) == -1) {
+			Object o = manifestElements.get(defaultName);
+			if(o == null) throw new IllegalArgumentException("Default name \""+defaultName+"\" does not exist");
+			if(o instanceof HashMap) throw new IllegalArgumentException("Default filename \""+defaultName+"\" is a directory?!");
+			// instanceof Bucket is checked in bucketsByNameToManifestEntries
+		} else {
+			String dir = defaultName.substring(0, idx);
+			String subname = defaultName.substring(idx+1);
+			Object o = manifestElements.get(defaultName);
+			if(o == null) throw new IllegalArgumentException("Default name dir \""+dir+"\" does not exist");
+			if(o instanceof HashMap)
+				checkDefaultName((HashMap)o, subname);
+			else
+				throw new IllegalArgumentException("Default name dir \""+dir+"\" is not a directory in \""+defaultName+"\"");
+		}
 	}
 
 	private void checkZips() {
@@ -624,6 +697,10 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 			for (int i = 0; i < running.length; i++) {
 				if(logMINOR) Logger.minor(this, "Starting "+running[i]);
 				running[i].start(container, context);
+				synchronized(this) {
+					// It might have failed to start.
+					if(finished) return;
+				}
 				if(persistent && !container.ext().isActive(this))
 					container.activate(this, 1);
 				if (logMINOR)
@@ -905,7 +982,10 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 		boolean isMetadata = true;
 		boolean insertAsArchiveManifest = false;
 		ARCHIVE_TYPE archiveType = null;
+		byte[] ckey = null;
 		if(!(elementsToPutInArchive.isEmpty())) {
+			// If it's just metadata don't random-encrypt it.
+			ckey = forceCryptoKey;
 			// There is an archive to insert.
 			// We want to include the metadata.
 			// We have the metadata, fortunately enough, because everything has been resolve()d.
@@ -937,14 +1017,16 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 					container.deactivate(baseMetadata, 1);
 				return;
 			}
-		} else
+		} else {
+			if(persistent()) container.activate(targetURI, 5);
 			block = new InsertBlock(bucket, null, persistent() ? targetURI.clone() : targetURI);
+		}
 		SingleFileInserter metadataInserter;
 		try {
 			// Treat it as a splitfile for purposes of determining reinserts.
 			metadataInserter =
-				new SingleFileInserter(this, this, block, isMetadata, ctx, (archiveType == ARCHIVE_TYPE.ZIP) , getCHKOnly, false, baseMetadata, archiveType, true, null, earlyEncode, true, persistent(), 0, 0, null, randomiseSplitfileKeys);
-			if(logMINOR) Logger.minor(this, "Inserting main metadata: "+metadataInserter+" for "+baseMetadata);
+				new SingleFileInserter(this, this, block, isMetadata, ctx, (archiveType == ARCHIVE_TYPE.ZIP) , getCHKOnly, false, baseMetadata, archiveType, true, null, earlyEncode, true, persistent(), 0, 0, null, cryptoAlgorithm, ckey);
+			if(logMINOR) Logger.minor(this, "Inserting main metadata: "+metadataInserter+" for "+baseMetadata+" for "+this);
 			if(persistent()) {
 				container.activate(metadataPuttersByMetadata, 2);
 				container.activate(metadataPuttersUnfetchable, 2);
@@ -1067,8 +1149,8 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 			container.activate(metadataPuttersByMetadata, 2);
 		for(int i=0;i<metas.length;i++) {
 			Metadata m = metas[i];
-			if(persistent()) container.activate(m, 100);
-			if(logMINOR) Logger.minor(this, "Resolving "+m);
+			if(persistent()) container.activate(m, Integer.MAX_VALUE);
+			if(logMINOR) Logger.minor(this, "Resolving "+m+" for "+this);
 			synchronized(this) {
 				if(metadataPuttersByMetadata.containsKey(m)) {
 					if(logMINOR) Logger.minor(this, "Already started insert for "+m+" in resolve() for "+metas.length+" Metadata's");
@@ -1084,8 +1166,9 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 				Bucket b = m.toBucket(context.getBucketFactory(persistent()));
 
 				InsertBlock ib = new InsertBlock(b, null, persistent() ? FreenetURI.EMPTY_CHK_URI.clone() : FreenetURI.EMPTY_CHK_URI);
+				// Don't random-encrypt the metadata.
 				SingleFileInserter metadataInserter =
-					new SingleFileInserter(this, this, ib, true, ctx, false, getCHKOnly, false, m, null, true, null, earlyEncode, false, persistent(), 0, 0, null, randomiseSplitfileKeys);
+					new SingleFileInserter(this, this, ib, true, ctx, false, getCHKOnly, false, m, null, true, null, earlyEncode, false, persistent(), 0, 0, null, cryptoAlgorithm, null);
 				if(logMINOR) Logger.minor(this, "Inserting subsidiary metadata: "+metadataInserter+" for "+m);
 				synchronized(this) {
 					this.metadataPuttersByMetadata.put(m, metadataInserter);
@@ -1121,7 +1204,7 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 				else {
 					ph.clearMetadata(container);
 					if(persistent())
-						container.activate(meta, 100);
+						container.activate(meta, Integer.MAX_VALUE);
 					if(logMINOR)
 						Logger.minor(this, "Putting "+name);
 					namesToByteArrays.put(name, meta);
@@ -1291,15 +1374,15 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 			if(value instanceof PutHandler) {
 				PutHandler handler = (PutHandler) value;
 				container.activate(handler, 1);
-				if(runningPutHandlers.remove(handler))
+				if(runningPutHandlers != null && runningPutHandlers.remove(handler))
 					container.ext().store(runningPutHandlers, 2);
-				if(putHandlersWaitingForMetadata.remove(handler))
+				if(putHandlersWaitingForMetadata != null && putHandlersWaitingForMetadata.remove(handler))
 					container.ext().store(putHandlersWaitingForMetadata, 2);
-				if(waitingForBlockSets.remove(handler))
+				if(waitingForBlockSets != null && waitingForBlockSets.remove(handler))
 					container.ext().store(waitingForBlockSets, 2);
-				if(putHandlersWaitingForFetchable.remove(handler))
+				if(putHandlersWaitingForMetadata != null && putHandlersWaitingForFetchable.remove(handler))
 					container.ext().store(putHandlersWaitingForFetchable, 2);
-				if(elementsToPutInArchive.remove(handler))
+				if(elementsToPutInArchive != null && elementsToPutInArchive.remove(handler))
 					container.ext().store(elementsToPutInArchive, 2);
 				handler.removeFrom(container, context);
 			} else {
@@ -1370,14 +1453,19 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 	}
 
 	public void onSuccess(ClientPutState state, ObjectContainer container, ClientContext context) {
+		Metadata token = (Metadata) state.getToken();
 		if(persistent()) {
+			// See comments at the beginning of the file re HashMap activation.
+			// We MUST activate token first, and we MUST activate the maps to depth 2.
+			// And everything that isn't already active will end up on a long chain off bucket 0, so this isn't terribly efficient!
+			// Fortunately the chances of having a lot of metadata putters are quite low.
+			// This is not necessarily the case for running* ...
+			container.activate(token, 1);
 			container.activate(metadataPuttersByMetadata, 2);
 		}
 		boolean fin = false;
 		ClientPutState oldState = null;
-		Metadata token = (Metadata) state.getToken();
 		synchronized(this) {
-			if(persistent()) container.activate(token, 1);
 			boolean present = metadataPuttersByMetadata.containsKey(token);
 			if(present) {
 				oldState = metadataPuttersByMetadata.remove(token);
@@ -1388,9 +1476,35 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 					if(persistent())
 						container.ext().store(metadataPuttersUnfetchable, 2);
 				}
+			} else {
+				if(logMINOR) Logger.minor(this, "Did not remove metadata putter "+state+" for "+token+" because not present");
 			}
 			if(!metadataPuttersByMetadata.isEmpty()) {
-				if(logMINOR) Logger.minor(this, "Still running metadata putters: "+metadataPuttersByMetadata.size());
+				if(logMINOR) {
+					Logger.minor(this, "Still running metadata putters: "+metadataPuttersByMetadata.size());
+					// FIXME simplify when confident that it works.
+					// We do want to show what's still running though.
+					for(Map.Entry<Metadata,ClientPutState> entry : metadataPuttersByMetadata.entrySet()) {
+						boolean active = true;
+						boolean metaActive = true;
+						ClientPutState s = entry.getValue();
+						Metadata key = entry.getKey();
+						if(persistent()) {
+							active = container.ext().isActive(s);
+							if(!active) container.activate(s, 1);
+							metaActive = container.ext().isActive(key);
+							if(!active) container.activate(metaActive, 1);
+						}
+						Logger.minor(this, "Still waiting for "+s+" for "+key);
+						if(persistent()) Logger.minor(this, "Key id is "+container.ext().getID(key));
+						if(key == token)
+							Logger.error(this, "MATCHED, yet didn't find it earlier?!");
+						if(key.equals(token))
+							Logger.error(this, "MATCHED ON equals(), yet didn't find it earlier and not == ?!");
+						if(!active) container.deactivate(s, 1);
+						if(!metaActive) container.deactivate(key, 1);
+					}
+				}
 			} else {
 				Logger.minor(this, "Inserted manifest successfully on "+this+" : "+state);
 				insertedManifest = true;
@@ -1486,7 +1600,7 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 	public void onTransition(ClientPutState oldState, ClientPutState newState, ObjectContainer container) {
 		Metadata m = (Metadata) oldState.getToken();
 		if(persistent()) {
-			container.activate(m, 100);
+			container.activate(m, Integer.MAX_VALUE);
 			container.activate(metadataPuttersUnfetchable, 2);
 			container.activate(metadataPuttersByMetadata, 2);
 		}
@@ -1517,7 +1631,7 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 		}
 
 		if(persistent()) {
-			container.deactivate(m, 100);
+			container.deactivate(m, 1);
 			container.deactivate(metadataPuttersUnfetchable, 2);
 			container.deactivate(metadataPuttersByMetadata, 2);
 		}
@@ -1746,7 +1860,7 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 	public void onFetchable(ClientPutState state, ObjectContainer container) {
 		Metadata m = (Metadata) state.getToken();
 		if(persistent()) {
-			container.activate(m, 100);
+			container.activate(m, Integer.MAX_VALUE);
 			container.activate(metadataPuttersUnfetchable, 2);
 			container.activate(putHandlersWaitingForFetchable, 2);
 		}

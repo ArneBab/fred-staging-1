@@ -553,10 +553,16 @@ public class NodeStats implements Persistable {
 	static final double DEFAULT_OVERHEAD = 0.7;
 	static final long DEFAULT_ONLY_PERIOD = 60*1000;
 	static final long DEFAULT_TRANSITION_PERIOD = 240*1000;
-	static final double MIN_OVERHEAD = 0.01;
+	/** Relatively high minimum overhead. A low overhead estimate becomes a self-fulfilling
+	 * prophecy, and it takes a long time to shake it off as the averages gradually increase.
+	 * If we accept no requests then everything is overhead! Whereas with a high minimum 
+	 * overhead the worst case is that more stuff succeeds than expected and we have a few 
+	 * timeouts (because output bandwidth liability was assuming a lower overhead than 
+	 * actually happens) - but this should be very rare. */
+	static final double MIN_OVERHEAD = 0.5;
 	
 	/* return reject reason as string if should reject, otherwise return null */
-	public String shouldRejectRequest(boolean canAcceptAnyway, boolean isInsert, boolean isSSK, boolean isLocal, boolean isOfferReply, PeerNode source, boolean hasInStore) {
+	public String shouldRejectRequest(boolean canAcceptAnyway, boolean isInsert, boolean isSSK, boolean isLocal, boolean isOfferReply, PeerNode source, boolean hasInStore, boolean preferInsert) {
 		if(logMINOR) dumpByteCostAverages();
 		
 		int threadCount = getActiveThreadCount();
@@ -574,7 +580,9 @@ public class NodeStats implements Persistable {
 		long uptime = node.getUptime();
 		double sentOverheadPerSecond = (totalOverhead*1000.0) / (uptime);
 		/** The fraction of output bytes which are used for requests */
-		double overheadFraction = ((double)(totalSent - totalOverhead)) / totalSent;
+		// FIXME consider using a shorter average
+		// FIXME what happens when the bwlimit changes?
+		double overheadFraction = ((double)(Math.max(totalSent,((node.getOutputBandwidthLimit() * uptime) / 1000.0)) - totalOverhead)) / totalSent;
 		long timeFirstAnyConnections = peers.timeFirstAnyConnections;
 		long now = System.currentTimeMillis();
 		if(logMINOR) Logger.minor(this, "Output rate: "+(totalSent*1000.0)/uptime+" overhead rate "+sentOverheadPerSecond+" non-overhead fraction "+overheadFraction);
@@ -590,8 +598,15 @@ public class NodeStats implements Persistable {
 				if(logMINOR) Logger.minor(this, "Adjusted overhead fraction: "+overheadFraction);
 			}
 		} else if(overheadFraction < MIN_OVERHEAD) {
+			// If there's been an auto-update, we may have used a vast amount of bandwidth for it.
+			// Also, if things have broken, our overhead might be above our bandwidth limit,
+			// especially on a slow node.
+			
+			// So impose a minimum of 20% of the bandwidth limit.
+			// This will ensure we don't get stuck in any situation where all our bandwidth is overhead,
+			// and we don't accept any requests because of that, so it remains that way...
 			Logger.error(this, "Overhead fraction is "+overheadFraction+" - assuming this is self-inflicted and using default");
-			overheadFraction = DEFAULT_OVERHEAD;
+			overheadFraction = MIN_OVERHEAD;
 		}
 		
 		// If no recent reports, no packets have been sent; correct the average downwards.
@@ -609,7 +624,7 @@ public class NodeStats implements Persistable {
 				}
 			} else if(pingTime > subMaxPingTime) {
 				double x = ((pingTime - subMaxPingTime)) / (maxPingTime - subMaxPingTime);
-				if(hardRandom.nextDouble() < x) {
+				if(randomLessThan(x, preferInsert)) {
 					pInstantRejectIncoming.report(1.0);
 					rejected(">SUB_MAX_PING_TIME", isLocal);
 					return ">SUB_MAX_PING_TIME ("+TimeUtil.formatTime((long)pingTime, 2, true)+ ')';
@@ -627,7 +642,7 @@ public class NodeStats implements Persistable {
 				}
 			} else if(bwlimitDelayTime > SUB_MAX_THROTTLE_DELAY) {
 				double x = ((bwlimitDelayTime - SUB_MAX_THROTTLE_DELAY)) / (MAX_THROTTLE_DELAY - SUB_MAX_THROTTLE_DELAY);
-				if(hardRandom.nextDouble() < x) {
+				if(randomLessThan(x, preferInsert)) {
 					pInstantRejectIncoming.report(1.0);
 					rejected(">SUB_MAX_THROTTLE_DELAY", isLocal);
 					return ">SUB_MAX_THROTTLE_DELAY ("+TimeUtil.formatTime((long)bwlimitDelayTime, 2, true)+ ')';
@@ -660,6 +675,11 @@ public class NodeStats implements Persistable {
 		if(!isLocal) {
 			// If not local, is already locked.
 			// So we need to decrement the relevant value, to counteract this and restore the SSK:CHK balance.
+			
+			// FIXME this is really a hack.
+			// We should track the number of requests of each type we've accepted recently, and if there is not
+			// enough space for 1 of each type, accept according to a target ratio.
+			// This would be 1/1/1/1 initially, but if preferInsert is set, maybe 1/1/2/2 or 1/1/3/3.
 			if(isOfferReply) {
 				if(isSSK) numSSKOfferReplies--;
 				else numCHKOfferReplies--;
@@ -684,6 +704,12 @@ public class NodeStats implements Persistable {
 		if(hasInStore) {
 			limit += 10;
 			if(logMINOR) Logger.minor(this, "Maybe accepting extra request due to it being in datastore (limit now "+limit+"s)...");
+		}
+		
+		if(preferInsert) {
+			// Allow some extra inserts.
+			numRemoteCHKInserts--;
+			numRemoteSSKInserts--;
 		}
 		
 		double bandwidthLiabilityOutput;
@@ -939,6 +965,22 @@ public class NodeStats implements Persistable {
 		return null;
 	}
 	
+	/** @return True if we should reject the request.
+	 * @param x The threshold. We should reject the request unless a random number is greater than this threshold.
+	 * @param preferInsert If true, we allow 3 chances to pass the threshold.
+	 */
+	private boolean randomLessThan(double x, boolean preferInsert) {
+		if(preferInsert) {
+			// Three chances.
+			for(int i=0;i<3;i++)
+				if(hardRandom.nextDouble() >= x) return false;
+			return true;
+		} else {
+			// One chance
+		}
+		return hardRandom.nextDouble() < x;
+	}
+
 	private void rejected(String reason, boolean isLocal) {
 		if(!isLocal) preemptiveRejectReasons.inc(reason);
 		else this.localPreemptiveRejectReasons.inc(reason);

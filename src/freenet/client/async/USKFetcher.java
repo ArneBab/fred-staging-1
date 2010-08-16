@@ -653,6 +653,8 @@ public class USKFetcher implements ClientGetState, USKCallback, HasKeyListener, 
 		uskManager.onFinished(this);
 		SendableGet storeChecker;
 		synchronized(this) {
+			if(cancelled) Logger.error(this, "Already cancelled");
+			if(completed) Logger.error(this, "Already completed");
 			cancelled = true;
 			attempts = runningAttempts.values().toArray(new USKAttempt[runningAttempts.size()]);
 			polling = pollingAttempts.values().toArray(new USKAttempt[pollingAttempts.size()]);
@@ -997,28 +999,23 @@ public class USKFetcher implements ClientGetState, USKCallback, HasKeyListener, 
 		boolean done = false;
 
 		@Override
-		public FetchContext getContext() {
+		public FetchContext getContext(ObjectContainer container) {
 			return ctx;
 		}
 
 		@Override
-		public long getCooldownWakeup(Object token, ObjectContainer container) {
+		public long getCooldownWakeup(Object token, ObjectContainer container, ClientContext context) {
 			return -1;
 		}
 
 		@Override
-		public long getCooldownWakeupByKey(Key key, ObjectContainer container) {
+		public long getCooldownWakeupByKey(Key key, ObjectContainer container, ClientContext context) {
 			return -1;
 		}
 
 		@Override
 		public ClientKey getKey(Object token, ObjectContainer container) {
 			return null;
-		}
-
-		@Override
-		public boolean ignoreStore() {
-			return false;
 		}
 
 		@Override
@@ -1037,7 +1034,7 @@ public class USKFetcher implements ClientGetState, USKCallback, HasKeyListener, 
 		}
 
 		@Override
-		public void resetCooldownTimes(ObjectContainer container) {
+		public void resetCooldownTimes(ObjectContainer container, ClientContext context) {
 			// Ignore
 		}
 
@@ -1121,11 +1118,6 @@ public class USKFetcher implements ClientGetState, USKCallback, HasKeyListener, 
 		}
 
 		@Override
-		public int getRetryCount() {
-			return 0;
-		}
-
-		@Override
 		public boolean isCancelled(ObjectContainer container) {
 			return done;
 		}
@@ -1142,6 +1134,11 @@ public class USKFetcher implements ClientGetState, USKCallback, HasKeyListener, 
 
 		public boolean isEmpty(ObjectContainer container) {
 			return done;
+		}
+
+		public long getCooldownTime(ObjectContainer container,
+				ClientContext context, long now) {
+			return 0;
 		}
 		
 	};

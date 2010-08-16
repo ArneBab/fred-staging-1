@@ -531,7 +531,7 @@ public class ClientGet extends ClientRequest implements ClientGetCallback, Clien
 				CompatibilityMode compat = (CompatibilityMode)msg;
 				if(compatMessage != null) {
 					if(persistenceType == PERSIST_FOREVER) container.activate(compatMessage, 1);
-					compatMessage.merge(compat.min, compat.max);
+					compatMessage.merge(compat.min, compat.max, compat.cryptoKey, compat.dontCompress, compat.definitive);
 					if(persistenceType == PERSIST_FOREVER) container.store(compatMessage);
 				} else {
 					compatMessage = compat;
@@ -743,7 +743,7 @@ public class ClientGet extends ClientRequest implements ClientGetCallback, Clien
 			progress = new SendingToNetworkMessage(identifier, global);
 		} else if(ce instanceof SplitfileCompatibilityModeEvent) {
 			SplitfileCompatibilityModeEvent event = (SplitfileCompatibilityModeEvent)ce;
-			progress = new CompatibilityMode(identifier, global, event.minCompatibilityMode, event.maxCompatibilityMode);
+			progress = new CompatibilityMode(identifier, global, event.minCompatibilityMode, event.maxCompatibilityMode, event.splitfileCryptoKey, event.dontCompress, event.bottomLayer);
 		} else if(ce instanceof ExpectedHashesEvent) {
 			ExpectedHashesEvent event = (ExpectedHashesEvent)ce;
 			progress = new ExpectedHashes(event, identifier, global);
@@ -906,6 +906,15 @@ public class ClientGet extends ClientRequest implements ClientGetCallback, Clien
 		} else
 			return new InsertContext.CompatibilityMode[] { InsertContext.CompatibilityMode.COMPAT_UNKNOWN, InsertContext.CompatibilityMode.COMPAT_UNKNOWN };
 	}
+	
+	public byte[] getOverriddenSplitfileCryptoKey(ObjectContainer container) {
+		if(persistenceType == PERSIST_FOREVER && compatMessage != null)
+			container.activate(compatMessage, 2);
+		if(compatMessage != null) {
+			return compatMessage.cryptoKey;
+		} else
+			return null;
+	}
 
 	@Override
 	public String getFailureReason(boolean longDescription, ObjectContainer container) {
@@ -917,6 +926,15 @@ public class ClientGet extends ClientRequest implements ClientGetCallback, Clien
 		if(longDescription && getFailedMessage.extraDescription != null)
 			s += ": "+getFailedMessage.extraDescription;
 		return s;
+	}
+	
+	public int getFailureReasonCode(ObjectContainer container) {
+		if(getFailedMessage == null)
+			return -1;
+		if(persistenceType == PERSIST_FOREVER)
+			container.activate(getFailedMessage, 5);
+		return getFailedMessage.code;
+		
 	}
 
 	@Override
@@ -964,7 +982,7 @@ public class ClientGet extends ClientRequest implements ClientGetCallback, Clien
 	}
 
 	@Override
-	public boolean restart(ObjectContainer container, ClientContext context) {
+	public boolean restart(boolean filterData, ObjectContainer container, ClientContext context) {
 		if(!canRestart()) return false;
 		FreenetURI redirect;
 		synchronized(this) {
@@ -990,11 +1008,16 @@ public class ClientGet extends ClientRequest implements ClientGetCallback, Clien
 				expectedHashes.removeFrom(container);
 				expectedHashes = null;
 			started = false;
+			if(persistenceType == PERSIST_FOREVER) {
+				container.activate(fctx, 1);
+				container.activate(fctx.filterData, 1);
+			}
+			fctx.filterData = filterData;
 		}
 		if(persistenceType == PERSIST_FOREVER)
 			container.store(this);
 		try {
-			if(getter.restart(redirect, container, context)) {
+			if(getter.restart(redirect, filterData, container, context)) {
 				synchronized(this) {
 					if(redirect != null) {
 						if(persistenceType == PERSIST_FOREVER)
@@ -1019,5 +1042,11 @@ public class ClientGet extends ClientRequest implements ClientGetCallback, Clien
 
 	public void onRemoveEventProducer(ObjectContainer container) {
 		// Do nothing, we called the removeFrom().
+	}
+
+	public boolean filterData(ObjectContainer container) {
+		if(persistenceType == PERSIST_FOREVER)
+			container.activate(fctx, 1);
+		return fctx.filterData;
 	}
 }

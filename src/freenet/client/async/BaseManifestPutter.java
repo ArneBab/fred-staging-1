@@ -25,6 +25,7 @@ import freenet.client.events.SplitfileProgressEvent;
 import freenet.keys.BaseClientKey;
 import freenet.keys.FreenetURI;
 import freenet.keys.InsertableClientSSK;
+import freenet.keys.Key;
 import freenet.node.RequestClient;
 import freenet.support.Logger;
 import freenet.support.api.Bucket;
@@ -50,6 +51,37 @@ import freenet.support.io.NativeThread;
  */
 public abstract class BaseManifestPutter extends BaseClientPutter {
 
+	// FIXME: DB4O ISSUE: HASHMAP ACTIVATION:
+	// REDFLAG MUST BE FIXED BEFORE DEPLOYING THE NEW PUTTERS !!!
+	
+	// Unfortunately this class uses a lot of HashMap's, and is persistent.
+	// The two things do not play well together!
+	
+	// Activating a HashMap to depth 1 breaks it badly, so that even if it is then activated to a higher depth, it remains empty.
+	// Activating a HashMap to depth 2 loads the elements but does not activate them. In particular, Metadata's used as keys will not have their hashCode loaded so we end up with all of them on the 0th slot.
+	// Activating a HashMap to depth 3 loads it properly, including activating both the keys and values to depth 1.
+	// Of course, the side effect of activating the values to depth 1 may cause problems ...
+
+	// OPTIONS:
+	// 1. Activate to depth 2. Activate the Metadata we are looking for *FIRST*!
+	// Then the Metadata we are looking for will be in the correct slot.
+	// Everything else will be in the 0'th slot, in one long chain, i.e. if there are lots of entries it will be a very inefficient HashMap.
+	
+	// 2. Activate to depth 3.
+	// If there are lots of entries, we have a significant I/O cost for activating *all* of them.
+	// We also have the possibility of a memory/space leak if these are linked from somewhere that assumed they had been deactivated.
+	
+	// Clearly option 1 is superior. However they both suck.
+	// The *correct* solution is to use a HashMap from a primitive type e.g. a String, so we can use depth 2.
+	
+	// Note that this also applies to HashSet's: The entries are the keys, and they are not activated, so we end up with them all in a long chain off bucket 0, except any that are already active.
+	// We don't have any real problems because the caller is generally already active - but it is grossly inefficient.
+	
+	// Options for a real fix:
+	// - Assign each PutHandler a Long id, replace Set<X> with Map<Long,X>, and activate to depth 2.
+	// - Use IdentityHashMap instead of HashMap.
+	// - Implement a custom class similar to IdentityHashMap which doesn't activate a bucket unless it needs to and uses db4o ID's.
+	
 	private static volatile boolean logMINOR;
 	private static volatile boolean logDEBUG;
 
@@ -70,7 +102,7 @@ public abstract class BaseManifestPutter extends BaseClientPutter {
 
 		private ArchivePutHandler(BaseManifestPutter bmp, PutHandler parent, String name, HashMap<String, Object> data, FreenetURI insertURI, boolean getCHKOnly) {
 			super(bmp, parent, name, null, containerPutHandlers, null);
-			this.origSFI = new ContainerInserter(this, this, data, (persistent ? insertURI.clone() : insertURI), ctx, false, getCHKOnly, false, null, ARCHIVE_TYPE.TAR, false, earlyEncode, randomiseCryptoKeys);
+			this.origSFI = new ContainerInserter(this, this, data, (persistent ? insertURI.clone() : insertURI), ctx, false, getCHKOnly, false, null, ARCHIVE_TYPE.TAR, false, earlyEncode, forceCryptoKey, cryptoAlgorithm);
 		}
 
 		@Override
@@ -140,7 +172,7 @@ public abstract class BaseManifestPutter extends BaseClientPutter {
 
 		private ContainerPutHandler(BaseManifestPutter bmp, PutHandler parent, String name, HashMap<String, Object> data, FreenetURI insertURI, Object object, boolean getCHKOnly, HashSet<PutHandler> runningMap) {
 			super(bmp, parent, name, null, runningMap, null);
-			this.origSFI = new ContainerInserter(this, this, data, (persistent ? insertURI.clone() : insertURI), ctx, false, getCHKOnly, false, null, ARCHIVE_TYPE.TAR, false, earlyEncode, randomiseCryptoKeys);
+			this.origSFI = new ContainerInserter(this, this, data, (persistent ? insertURI.clone() : insertURI), ctx, false, getCHKOnly, false, null, ARCHIVE_TYPE.TAR, false, earlyEncode, forceCryptoKey, cryptoAlgorithm);
 		}
 
 		@Override
@@ -218,7 +250,7 @@ public abstract class BaseManifestPutter extends BaseClientPutter {
 		private ExternPutHandler(BaseManifestPutter bmp, PutHandler parent, String name, Bucket data, ClientMetadata cm2, boolean getCHKOnly2) {
 			super(bmp, parent, name, cm2, runningPutHandlers, null);
 			InsertBlock block = new InsertBlock(data, cm, persistent() ? FreenetURI.EMPTY_CHK_URI.clone() : FreenetURI.EMPTY_CHK_URI);
-			this.origSFI = new SingleFileInserter(this, this, block, false, ctx, false, getCHKOnly2, true, null, null, false, null, earlyEncode, false, persistent(), 0, 0, null, randomiseCryptoKeys);
+			this.origSFI = new SingleFileInserter(this, this, block, false, ctx, false, getCHKOnly2, true, null, null, false, null, earlyEncode, false, persistent(), 0, 0, null, cryptoAlgorithm, forceCryptoKey);
 		}
 
 		@Override
@@ -331,11 +363,13 @@ public abstract class BaseManifestPutter extends BaseClientPutter {
 	// these MPH are usually created on demand, so they are outside (main)constructor →needs db4o update
 	private final class MetaPutHandler extends PutHandler {
 
+		// Metadata is not put with a cryptokey. It is derived from other stuff that is already encrypted with random keys.
+		
 		// final metadata
 		private MetaPutHandler(BaseManifestPutter smp, PutHandler parent, InsertBlock insertBlock, boolean getCHKOnly, ObjectContainer container) {
 			super(smp, parent, null, null, null, container);
 			// Treat as splitfile for purposes of determining number of reinserts.
-			this.origSFI = new SingleFileInserter(this, this, insertBlock, true, ctx, false, getCHKOnly, false, null, null, true, null, earlyEncode, true, persistent(), 0, 0, null, randomiseCryptoKeys);
+			this.origSFI = new SingleFileInserter(this, this, insertBlock, true, ctx, false, getCHKOnly, false, null, null, true, null, earlyEncode, true, persistent(), 0, 0, null, cryptoAlgorithm, null);
 			if(logMINOR) Logger.minor(this, "Inserting root metadata: "+origSFI);
 		}
 
@@ -346,7 +380,7 @@ public abstract class BaseManifestPutter extends BaseClientPutter {
 			metadata = toResolve;
 			// Treat as splitfile for purposes of determining number of reinserts.
 			InsertBlock ib = new InsertBlock(b, null, persistent() ? FreenetURI.EMPTY_CHK_URI.clone() : FreenetURI.EMPTY_CHK_URI);
-			this.origSFI = new SingleFileInserter(this, this, ib, true, ctx, false, getCHKOnly, false, toResolve, null, true, null, earlyEncode, true, persistent(), 0, 0, null, randomiseCryptoKeys);
+			this.origSFI = new SingleFileInserter(this, this, ib, true, ctx, false, getCHKOnly, false, toResolve, null, true, null, earlyEncode, true, persistent(), 0, 0, null, cryptoAlgorithm, null);
 			if(logMINOR) Logger.minor(this, "Inserting subsidiary metadata: "+origSFI+" for "+toResolve);
 		}
 
@@ -974,7 +1008,8 @@ public abstract class BaseManifestPutter extends BaseClientPutter {
 	private boolean hasResolvedBase; // if this is true, the final block is ready for insert
 	private boolean fetchable;
 	private final boolean earlyEncode;
-	final boolean randomiseCryptoKeys;
+	final byte[] forceCryptoKey;
+	final byte cryptoAlgorithm;
 
 	public BaseManifestPutter(ClientPutCallback cb,
 			HashMap<String, Object> manifestElements, short prioClass, FreenetURI target, String defaultName,
@@ -988,7 +1023,13 @@ public abstract class BaseManifestPutter extends BaseClientPutter {
 		this.ctx = ctx;
 		this.getCHKOnly = getCHKOnly2;
 		this.earlyEncode = earlyEncode;
-		this.randomiseCryptoKeys = randomiseCryptoKeys;
+		if(randomiseCryptoKeys) {
+			forceCryptoKey = new byte[32];
+			context.random.nextBytes(forceCryptoKey);
+		} else {
+			forceCryptoKey = null;
+		}
+		this.cryptoAlgorithm = Key.ALGO_AES_PCFB_256_SHA256;
 		runningPutHandlers = new HashSet<PutHandler>();
 		putHandlersWaitingForMetadata = new HashSet<PutHandler>();
 		putHandlersWaitingForFetchable = new HashSet<PutHandler>();

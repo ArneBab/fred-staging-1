@@ -70,7 +70,7 @@ final public class FileUtil {
 			if(name.indexOf("mac") >= 0)
 				return OperatingSystem.MacOS;
 			
-			if(name.indexOf("unix") >= 0 || name.indexOf("linux") >= 0)
+			if(name.indexOf("unix") >= 0 || name.indexOf("linux") >= 0 || name.indexOf("freebsd") >= 0)
 				return OperatingSystem.Unix;
 			
 			Logger.error(FileUtil.class, "Unknown operating system:" + name);
@@ -487,7 +487,7 @@ final public class FileUtil {
 		if(size > 0) {
 			RandomAccessFile raf = null;
 			try {
-				System.err.println("Securely deleting "+file+" which is of length "+size+" bytes...");
+				System.out.println("Securely deleting "+file+" which is of length "+size+" bytes...");
 				raf = new RandomAccessFile(file, "rw");
 				raf.seek(0);
 				long count;

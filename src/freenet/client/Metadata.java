@@ -24,10 +24,13 @@ import com.db4o.ObjectContainer;
 
 import freenet.client.ArchiveManager.ARCHIVE_TYPE;
 import freenet.client.async.BaseManifestPutter;
+import freenet.client.async.SplitFileFetcherSegment;
+import freenet.client.async.SplitFileSegmentKeys;
 import freenet.keys.BaseClientKey;
 import freenet.keys.ClientCHK;
 import freenet.keys.FreenetURI;
 import freenet.client.ArchiveManager.ARCHIVE_TYPE;
+import freenet.client.InsertContext.CompatibilityMode;
 import freenet.crypt.HashResult;
 import freenet.crypt.HashType;
 import freenet.crypt.SHA256;
@@ -54,6 +57,7 @@ public class Metadata implements Cloneable {
 
 	public static final short SPLITFILE_PARAMS_SIMPLE_SEGMENT = 0;
 	public static final short SPLITFILE_PARAMS_SEGMENT_DEDUCT_BLOCKS = 1;
+	public static final short SPLITFILE_PARAMS_CROSS_SEGMENT = 2;
 	
 	// URI at which this Metadata has been/will be inserted.
 	FreenetURI resolvedURI;
@@ -141,6 +145,7 @@ public class Metadata implements Cloneable {
 
 	/** Splitfile parameters */
 	byte[] splitfileParams;
+	/** This includes cross-check blocks. */
 	int splitfileBlocks;
 	int splitfileCheckBlocks;
 	ClientCHK[] splitfileDataKeys;
@@ -152,6 +157,15 @@ public class Metadata implements Cloneable {
 	private boolean specifySplitfileKey;
 	/** As opposed to hashes of the final content. */
 	byte[] hashThisLayerOnly;
+	
+	int blocksPerSegment;
+	int checkBlocksPerSegment;
+	int segmentCount;
+	int deductBlocksFromSegments;
+	int crossCheckBlocks;
+	SplitFileSegmentKeys[] segments;
+	CompatibilityMode minCompatMode = CompatibilityMode.COMPAT_UNKNOWN;
+	CompatibilityMode maxCompatMode = CompatibilityMode.COMPAT_UNKNOWN;
 
 	// Manifests
 	/** Manifest entries by name */
@@ -162,21 +176,52 @@ public class Metadata implements Cloneable {
 	String targetName;
 
 	ClientMetadata clientMetadata;
-	private final HashResult[] hashes;
+	private HashResult[] hashes;
 	
 	
 	public final long topSize;
 	public final long topCompressedSize;
 	public final int topBlocksRequired;
 	public final int topBlocksTotal;
+	public final boolean topDontCompress;
+	public final short topCompatibilityMode;
 
 	@Override
 	public Object clone() {
 		try {
-			return super.clone();
+			Metadata meta = (Metadata) super.clone();
+			meta.finishClone(this);
+			return meta;
 		} catch (CloneNotSupportedException e) {
 			throw new Error("Yes it is!");
 		}
+	}
+	
+	/** Deep copy those fields that need to be deep copied after clone() */
+	private void finishClone(Metadata orig) {
+		if(orig.segments != null) {
+			segments = new SplitFileSegmentKeys[orig.segments.length];
+			for(int i=0;i<segments.length;i++) {
+				segments[i] = orig.segments[i].clone();
+			}
+		}
+		if(hashes != null) {
+			hashes = new HashResult[orig.hashes.length];
+			for(int i=0;i<hashes.length;i++)
+				hashes[i] = orig.hashes[i].clone();
+		}
+		if(manifestEntries != null) {
+			manifestEntries = new HashMap<String, Metadata>(orig.manifestEntries);
+			for(Map.Entry<String, Metadata> entry : manifestEntries.entrySet()) {
+				entry.setValue((Metadata)entry.getValue().clone());
+			}
+		}
+		if(resolvedURI != null)
+			resolvedURI = resolvedURI.clone();
+		if(simpleRedirectKey != null)
+			simpleRedirectKey = simpleRedirectKey.clone();
+		if(clientMetadata != null)
+			clientMetadata = clientMetadata.clone();
 	}
 
 	/** Parse a block of bytes into a Metadata structure.
@@ -272,11 +317,15 @@ public class Metadata implements Cloneable {
 			topCompressedSize = dis.readLong();
 			topBlocksRequired = dis.readInt();
 			topBlocksTotal = dis.readInt();
+			topDontCompress = dis.readBoolean();
+			topCompatibilityMode = dis.readShort();
 		} else {
 			topSize = 0;
 			topCompressedSize = 0;
 			topBlocksRequired = 0;
 			topBlocksTotal = 0;
+			topDontCompress = false;
+			topCompatibilityMode = (short)InsertContext.CompatibilityMode.COMPAT_UNKNOWN.ordinal();
 		}
 
 		if(documentType == ARCHIVE_MANIFEST) {
@@ -400,30 +449,154 @@ public class Metadata implements Cloneable {
 				throw new MetadataParseException("Invalid number of check blocks: "+splitfileCheckBlocks);
 			if(splitfileCheckBlocks > MAX_SPLITFILE_BLOCKS)
 				throw new MetadataParseException("Too many splitfile check-blocks (soft limit to prevent memory DoS): "+splitfileCheckBlocks);
+			
+			// PARSE SPLITFILE PARAMETERS
+			
+			
+			crossCheckBlocks = 0;
+			
+			if(splitfileAlgorithm == Metadata.SPLITFILE_NONREDUNDANT) {
+				// Don't need to do much - just fetch everything and piece it together.
+				blocksPerSegment = -1;
+				checkBlocksPerSegment = -1;
+				segmentCount = 1;
+				deductBlocksFromSegments = 0;
+				if(splitfileCheckBlocks > 0) {
+					Logger.error(this, "Splitfile type is SPLITFILE_NONREDUNDANT yet "+splitfileCheckBlocks+" check blocks found!! : "+this);
+					throw new MetadataParseException("Splitfile type is non-redundant yet have "+splitfileCheckBlocks+" check blocks");
+				}
+			} else if(splitfileAlgorithm == Metadata.SPLITFILE_ONION_STANDARD) {
+				byte[] params = splitfileParams();
+				int checkBlocks;
+				if(getParsedVersion() == 0) {
+					if((params == null) || (params.length < 8))
+						throw new MetadataParseException("No splitfile params");
+					blocksPerSegment = Fields.bytesToInt(params, 0);
+					checkBlocks = Fields.bytesToInt(params, 4);
+					deductBlocksFromSegments = 0;
+					int countDataBlocks = splitfileBlocks;
+					int countCheckBlocks = splitfileCheckBlocks;
+					if(countDataBlocks == countCheckBlocks) {
+						// No extra check blocks, so before 1251.
+						if(blocksPerSegment == 128) {
+							// Is the last segment small enough that we can't have used even splitting?
+							int segs = (int)Math.ceil(((double)countDataBlocks) / 128);
+							int segSize = (int)Math.ceil(((double)countDataBlocks) / ((double)segs));
+							if(segSize == 128) {
+								// Could be either
+								minCompatMode = CompatibilityMode.COMPAT_1250_EXACT;
+								maxCompatMode = CompatibilityMode.COMPAT_1250;
+							} else {
+								minCompatMode = maxCompatMode = CompatibilityMode.COMPAT_1250_EXACT;
+							}
+						} else {
+							minCompatMode = maxCompatMode = CompatibilityMode.COMPAT_1250;
+						}
+					} else {
+						if(checkBlocks == 64) {
+							// Very old 128/64 redundancy.
+							minCompatMode = maxCompatMode = CompatibilityMode.COMPAT_UNKNOWN;
+						} else {
+							// Extra block per segment in 1251.
+							minCompatMode = maxCompatMode = CompatibilityMode.COMPAT_1251;
+						}
+					}
+				} else {
+					minCompatMode = maxCompatMode = CompatibilityMode.COMPAT_1255;
+					if(params.length < 10)
+						throw new MetadataParseException("Splitfile parameters too short for version 1");
+					short paramsType = Fields.bytesToShort(params, 0);
+					if(paramsType == Metadata.SPLITFILE_PARAMS_SIMPLE_SEGMENT || paramsType == Metadata.SPLITFILE_PARAMS_SEGMENT_DEDUCT_BLOCKS || paramsType == Metadata.SPLITFILE_PARAMS_CROSS_SEGMENT) {
+						blocksPerSegment = Fields.bytesToInt(params, 2);
+						checkBlocks = Fields.bytesToInt(params, 6);
+					} else
+						throw new MetadataParseException("Unknown splitfile params type "+paramsType);
+					if(paramsType == Metadata.SPLITFILE_PARAMS_SEGMENT_DEDUCT_BLOCKS || paramsType == Metadata.SPLITFILE_PARAMS_CROSS_SEGMENT) {
+						deductBlocksFromSegments = Fields.bytesToInt(params, 10);
+						if(paramsType == Metadata.SPLITFILE_PARAMS_CROSS_SEGMENT) {
+							crossCheckBlocks = Fields.bytesToInt(params, 14);
+						}
+					} else
+						deductBlocksFromSegments = 0;
+				}
+				
+				if(topCompatibilityMode != 0) {
+					// If we have top compatibility mode, then we can give a definitive answer immediately, with the splitfile key, with dontcompress, etc etc.
+					if(minCompatMode == CompatibilityMode.COMPAT_UNKNOWN ||
+							!(minCompatMode.ordinal() > topCompatibilityMode || maxCompatMode.ordinal() < topCompatibilityMode)) {
+						minCompatMode = maxCompatMode = CompatibilityMode.values()[topCompatibilityMode];
+					} else
+						throw new MetadataParseException("Top compatibility mode is incompatible with detected compatibility mode");
+				}
 
-			splitfileDataKeys = new ClientCHK[splitfileBlocks];
-			splitfileCheckKeys = new ClientCHK[splitfileCheckBlocks];
-			if(splitfileSingleCryptoKey == null) {
-				for(int i=0;i<splitfileDataKeys.length;i++)
-					if((splitfileDataKeys[i] = readCHK(dis)) == null)
-						throw new MetadataParseException("Null data key "+i);
-				for(int i=0;i<splitfileCheckKeys.length;i++)
-					if((splitfileCheckKeys[i] = readCHK(dis)) == null)
-						throw new MetadataParseException("Null check key: "+i);
+				// FIXME remove this eventually. Will break compat with a few files inserted between 1135 and 1136.
+				// Work around a bug around build 1135.
+				// We were splitting as (128,255), but we were then setting the checkBlocksPerSegment to 64.
+				// Detect this.
+				if(checkBlocks == 64 && blocksPerSegment == 128 &&
+						splitfileCheckBlocks == splitfileBlocks - (splitfileBlocks / 128)) {
+					Logger.normal(this, "Activating 1135 wrong check blocks per segment workaround for "+this);
+					checkBlocks = 127;
+				}
+				checkBlocksPerSegment = checkBlocks;
+
+				segmentCount = (splitfileBlocks / (blocksPerSegment + crossCheckBlocks)) +
+					(splitfileBlocks % (blocksPerSegment + crossCheckBlocks) == 0 ? 0 : 1);
+					
+				// Onion, 128/192.
+				// Will be segmented.
+			} else throw new MetadataParseException("Unknown splitfile format: "+splitfileAlgorithm);
+			
+			segments = new SplitFileSegmentKeys[segmentCount];
+			
+			if(segmentCount == 1) {
+				// splitfile* will be overwritten, this is bad
+				// so copy them
+				segments[0] = new SplitFileSegmentKeys(splitfileBlocks, splitfileCheckBlocks, splitfileSingleCryptoKey, splitfileSingleCryptoAlgorithm);
 			} else {
-				for(int i=0;i<splitfileDataKeys.length;i++) {
-					byte[] rkey = new byte[32];
-					dis.readFully(rkey);
-					splitfileDataKeys[i] = new ClientCHK(rkey, splitfileSingleCryptoKey, false, splitfileSingleCryptoAlgorithm, (short)-1);
+				int dataBlocksPtr = 0;
+				int checkBlocksPtr = 0;
+				for(int i=0;i<segments.length;i++) {
+					// Create a segment. Give it its keys.
+					int copyDataBlocks = blocksPerSegment + crossCheckBlocks;
+					int copyCheckBlocks = checkBlocksPerSegment;
+					if(i == segments.length - 1) {
+						// Always accept the remainder as the last segment, but do basic sanity checking.
+						// In practice this can be affected by various things: 1) On old splitfiles before full even 
+						// segment splitting with deductBlocksFromSegments (i.e. pre-1255), the last segment could be
+						// significantly smaller than the rest; 2) On 1251-1253, with partial even segment splitting,
+						// up to 131 data blocks per segment, cutting the check blocks if necessary, and with an extra
+						// check block if possible, the last segment could have *more* check blocks than the rest. 
+						copyDataBlocks = splitfileBlocks - dataBlocksPtr;
+						copyCheckBlocks = splitfileCheckBlocks - checkBlocksPtr;
+						if(copyCheckBlocks <= 0 || copyDataBlocks <= 0)
+							throw new MetadataParseException("Last segment has bogus block count: total data blocks "+splitfileBlocks+" total check blocks "+splitfileCheckBlocks+" segment size "+blocksPerSegment+" data "+checkBlocksPerSegment+" check "+crossCheckBlocks+" cross check blocks, deduct "+deductBlocksFromSegments+", segments "+segments.length);
+					} else if(segments.length - i <= deductBlocksFromSegments) {
+						// Deduct one data block from each of the last deductBlocksFromSegments segments.
+						// This ensures no segment is more than 1 block larger than any other.
+						// We do not shrink the check blocks.
+						copyDataBlocks--;
+					}
+					segments[i] = new SplitFileSegmentKeys(copyDataBlocks, copyCheckBlocks, splitfileSingleCryptoKey, splitfileSingleCryptoAlgorithm);
+					if(logMINOR) Logger.minor(this, "REQUESTING: Segment "+i+" of "+segments.length+" : "+copyDataBlocks+" data blocks "+copyCheckBlocks+" check blocks");
+					dataBlocksPtr += copyDataBlocks;
+					checkBlocksPtr += copyCheckBlocks;
 				}
-				for(int i=0;i<splitfileCheckKeys.length;i++) {
-					byte[] rkey = new byte[32];
-					dis.readFully(rkey);
-					splitfileCheckKeys[i] = new ClientCHK(rkey, splitfileSingleCryptoKey, false, splitfileSingleCryptoAlgorithm, (short)-1);
-				}
+				if(dataBlocksPtr != splitfileBlocks)
+					throw new MetadataParseException("Unable to allocate all data blocks to segments - buggy or malicious inserter");
+				if(checkBlocksPtr != splitfileCheckBlocks)
+					throw new MetadataParseException("Unable to allocate all check blocks to segments - buggy or malicious inserter");
 			}
+			
+			for(int i=0;i<segmentCount;i++) {
+				segments[i].readKeys(dis, false);
+			}
+			for(int i=0;i<segmentCount;i++) {
+				segments[i].readKeys(dis, true);
+			}
+		
 		}
-
+			
 		if(documentType == SIMPLE_MANIFEST) {
 			int manifestEntryCount = dis.readInt();
 			if(manifestEntryCount < 0)
@@ -477,6 +650,15 @@ public class Metadata implements Cloneable {
 		}
 	}
 	
+	private static final byte[] CROSS_SEGMENT_SEED;
+	static {
+		try {
+			CROSS_SEGMENT_SEED = "CROSS_SEGMENT_SEED".getBytes("UTF-8");
+		} catch (UnsupportedEncodingException e) {
+			throw new Error(e);
+		}
+	}
+	
 	public static byte[] getCryptoKey(HashResult[] hashes) {
 		if(hashes == null || hashes.length == 0 || !HashResult.contains(hashes, HashType.SHA256))
 			throw new IllegalArgumentException("No hashes in getCryptoKey - need hashes to generate splitfile key!");
@@ -495,6 +677,27 @@ public class Metadata implements Cloneable {
 		return buf;
 	}
 
+	public static byte[] getCrossSegmentSeed(HashResult[] hashes, byte[] hashThisLayerOnly) {
+		byte[] hash = hashThisLayerOnly;
+		if(hash == null) {
+			if(hashes == null || hashes.length == 0 || !HashResult.contains(hashes, HashType.SHA256))
+				throw new IllegalArgumentException("No hashes in getCryptoKey - need hashes to generate splitfile key!");
+			hash = HashResult.get(hashes, HashType.SHA256);
+		}
+		return getCrossSegmentSeed(hash);
+	}
+	
+	public static byte[] getCrossSegmentSeed(byte[] hash) {
+		// This is exactly the same algorithm used by e.g. JFK for generating multiple session keys from a single generated value.
+		// The only difference is we use a constant of more than one byte's length here, to avoid having to keep a registry.
+		MessageDigest md = SHA256.getMessageDigest();
+		md.update(hash);
+		md.update(CROSS_SEGMENT_SEED);
+		byte[] buf = md.digest();
+		SHA256.returnMessageDigest(md);
+		return buf;
+	}
+
 	/**
 	 * Create an empty Metadata object
 	 */
@@ -506,6 +709,8 @@ public class Metadata implements Cloneable {
 		topCompressedSize = 0;
 		topBlocksRequired = 0;
 		topBlocksTotal = 0;
+		topDontCompress = false;
+		topCompatibilityMode = 0;
 	}
 
 	/**
@@ -638,6 +843,8 @@ public class Metadata implements Cloneable {
 		topCompressedSize = 0;
 		topBlocksRequired = 0;
 		topBlocksTotal = 0;
+		topDontCompress = false;
+		topCompatibilityMode = 0;
 	}
 
 	/**
@@ -665,6 +872,8 @@ public class Metadata implements Cloneable {
 		topCompressedSize = 0;
 		topBlocksRequired = 0;
 		topBlocksTotal = 0;
+		topDontCompress = false;
+		topCompatibilityMode = 0;
 	}
 
 	/**
@@ -685,10 +894,12 @@ public class Metadata implements Cloneable {
 		topCompressedSize = 0;
 		topBlocksRequired = 0;
 		topBlocksTotal = 0;
+		topDontCompress = false;
+		topCompatibilityMode = 0;
 	}
 
 	public Metadata(byte docType, ARCHIVE_TYPE archiveType, COMPRESSOR_TYPE compressionCodec, FreenetURI uri, ClientMetadata cm) {
-		this(docType, archiveType, compressionCodec, uri, cm, 0, 0, 0, 0, null);
+		this(docType, archiveType, compressionCodec, uri, cm, 0, 0, 0, 0, false, (short)0, null);
 	}
 	
 	/**
@@ -697,7 +908,7 @@ public class Metadata implements Cloneable {
 	 * @param uri The URI pointed to.
 	 * @param cm The client metadata, if any.
 	 */
-	public Metadata(byte docType, ARCHIVE_TYPE archiveType, COMPRESSOR_TYPE compressionCodec, FreenetURI uri, ClientMetadata cm, long origDataLength, long origCompressedDataLength, int reqBlocks, int totalBlocks, HashResult[] hashes) {
+	public Metadata(byte docType, ARCHIVE_TYPE archiveType, COMPRESSOR_TYPE compressionCodec, FreenetURI uri, ClientMetadata cm, long origDataLength, long origCompressedDataLength, int reqBlocks, int totalBlocks, boolean topDontCompress, short topCompatibilityMode, HashResult[] hashes) {
 		hashCode = super.hashCode();
 		if(hashes != null && hashes.length == 0) {
 			throw new IllegalArgumentException();
@@ -725,18 +936,67 @@ public class Metadata implements Cloneable {
 			this.topCompressedSize = origCompressedDataLength;
 			this.topBlocksRequired = reqBlocks;
 			this.topBlocksTotal = totalBlocks;
+			this.topDontCompress = topDontCompress;
+			this.topCompatibilityMode = topCompatibilityMode;
 			parsedVersion = 1;
 		} else {
 			this.topSize = 0;
 			this.topCompressedSize = 0;
 			this.topBlocksRequired = 0;
 			this.topBlocksTotal = 0;
+			this.topDontCompress = false;
+			this.topCompatibilityMode = 0;
 			parsedVersion = 0;
 		}
 	}
 
+	/**
+	 * Create metadata for a splitfile.
+	 * @param algo The splitfile FEC algorithm.
+	 * @param dataURIs The data URIs, including cross-check blocks for each segment.
+	 * @param checkURIs The check URIs.
+	 * @param segmentSize The number of data blocks in a typical segment. Does not include cross-check blocks.
+	 * @param checkSegmentSize The number of check blocks in a typical segment. Does not include cross-check blocks.
+	 * @param deductBlocksFromSegments If this is set, the last few segments will lose a data block, so that all
+	 * the segments are the same size to within 1 block. In older splitfiles, the last segment could be 
+	 * significantly smaller, and this impacted on retrievability.
+	 * @param cm The client metadata i.e. MIME type. 
+	 * @param dataLength The size of the data that this specific splitfile encodes (as opposed to the final data), 
+	 * after compression if necessary.
+	 * @param archiveType The archive type, if the splitfile is a container.
+	 * @param compressionCodec The compression codec used to compress the data.
+	 * @param decompressedLength The length of this specific splitfile's data after it has been decompressed.
+	 * @param isMetadata If true, the splitfile is multi-level metadata i.e. it encodes a bucket full of metadata.
+	 * This usually happens for really big splitfiles, which can be a pyramid of one block with metadata for a 
+	 * splitfile full of metadata, that metadata then encodes another splitfile full of metadata, etc. Hence we 
+	 * can support very large files.
+	 * @param hashes Various hashes of <b>the final data</b>. There should always be at least an SHA256 hash, 
+	 * unless we are inserting with an old compatibility mode.
+	 * @param hashThisLayerOnly Hash of the data in this layer (before compression). Separate from hashes of the 
+	 * final data. Not currently verified. 
+	 * @param origDataSize The size of the final/original data.
+	 * @param origCompressedDataSize The size of the final/original data after it was compressed.
+	 * @param requiredBlocks The number of blocks required on fetch to reconstruct the final data. Hence as soon
+	 * as we have the top splitfile metadata (i.e. hopefully in the top block), we can show an accurate progress
+	 * bar.
+	 * @param totalBlocks The total number of blocks inserted during the whole insert for the final/original data.
+	 * @param topDontCompress Whether dontCompress was enabled. This allows us to figure out reinsert settings 
+	 * more quickly.
+	 * @param topCompatibilityMode The compatibility mode applying to the insert. This allows us to figure out
+	 * reinsert settings more quickly.
+	 * @param splitfileCryptoAlgorithm The block level crypto algorithm for all the blocks in the splitfile.
+	 * @param splitfileCryptoKey The single encryption key used by all blocks in the splitfile. Older splitfiles
+	 * don't have this so have to specify the full keys; newer splitfiles just specify the 32 byte routing key
+	 * for each data or check key. 
+	 * @param specifySplitfileKey If false, the splitfile crypto key has been automatically computed from the 
+	 * final or this-layer data hash. If true, it has been specified explicitly, either because it is randomly
+	 * generated (this significantly improves security against mobile attacker source tracing and is the default
+	 * for splitfiles under SSKs), or because a file is being reinserted. 
+	 * @param crossSegmentBlocks The number of cross-check blocks. If this is specified, we are using 
+	 * cross-segment redundancy. This greatly improves reliability on files over 80MB, see bug #3370.
+	 */
 	public Metadata(short algo, ClientCHK[] dataURIs, ClientCHK[] checkURIs, int segmentSize, int checkSegmentSize, int deductBlocksFromSegments,
-			ClientMetadata cm, long dataLength, ARCHIVE_TYPE archiveType, COMPRESSOR_TYPE compressionCodec, long decompressedLength, boolean isMetadata, HashResult[] hashes, byte[] hashThisLayerOnly, long origDataSize, long origCompressedDataSize, int requiredBlocks, int totalBlocks, byte splitfileCryptoAlgorithm, byte[] splitfileCryptoKey, boolean specifySplitfileKey) {
+			ClientMetadata cm, long dataLength, ARCHIVE_TYPE archiveType, COMPRESSOR_TYPE compressionCodec, long decompressedLength, boolean isMetadata, HashResult[] hashes, byte[] hashThisLayerOnly, long origDataSize, long origCompressedDataSize, int requiredBlocks, int totalBlocks, boolean topDontCompress, short topCompatibilityMode, byte splitfileCryptoAlgorithm, byte[] splitfileCryptoKey, boolean specifySplitfileKey, int crossSegmentBlocks) {
 		hashCode = super.hashCode();
 		this.hashes = hashes;
 		this.hashThisLayerOnly = hashThisLayerOnly;
@@ -771,7 +1031,9 @@ public class Metadata implements Cloneable {
 		topCompressedSize = origCompressedDataSize;
 		topBlocksRequired = requiredBlocks;
 		topBlocksTotal = totalBlocks;
-		if(topSize != 0 || topCompressedSize != 0 || topBlocksRequired != 0 || topBlocksTotal != 0 || hashes != null)
+		this.topDontCompress = topDontCompress;
+		this.topCompatibilityMode = topCompatibilityMode;
+		if(topSize != 0 || topCompressedSize != 0 || topBlocksRequired != 0 || topBlocksTotal != 0 || hashes != null || topCompatibilityMode != 0)
 			parsedVersion = 1;
 		if(deductBlocksFromSegments != 0 || splitfileCryptoKey != null)
 			parsedVersion = 1;
@@ -779,10 +1041,25 @@ public class Metadata implements Cloneable {
 			splitfileParams = Fields.intsToBytes(new int[] { segmentSize, checkSegmentSize } );
 		} else {
 			boolean deductBlocks = (deductBlocksFromSegments != 0);
-			splitfileParams = new byte[deductBlocks ? 14 : 10];
-			byte[] b = Fields.shortToBytes(deductBlocks ? SPLITFILE_PARAMS_SEGMENT_DEDUCT_BLOCKS : SPLITFILE_PARAMS_SIMPLE_SEGMENT);
+			short mode;
+			int len = 10;
+			if(crossSegmentBlocks == 0) {
+				if(deductBlocks) {
+					mode = SPLITFILE_PARAMS_SEGMENT_DEDUCT_BLOCKS;
+					len += 4;
+				} else {
+					mode = SPLITFILE_PARAMS_SIMPLE_SEGMENT;
+				}
+			} else {
+				mode = SPLITFILE_PARAMS_CROSS_SEGMENT;
+				len += 8;
+			}
+			splitfileParams = new byte[len];
+			byte[] b = Fields.shortToBytes(mode);
 			System.arraycopy(b, 0, splitfileParams, 0, 2);
-			if(deductBlocks)
+			if(mode == SPLITFILE_PARAMS_CROSS_SEGMENT)
+				b = Fields.intsToBytes(new int[] { segmentSize, checkSegmentSize, deductBlocksFromSegments, crossSegmentBlocks } );
+			else if(mode == SPLITFILE_PARAMS_SEGMENT_DEDUCT_BLOCKS)
 				b = Fields.intsToBytes(new int[] { segmentSize, checkSegmentSize, deductBlocksFromSegments } );
 			else
 				b = Fields.intsToBytes(new int[] { segmentSize, checkSegmentSize } );
@@ -1083,11 +1360,13 @@ public class Metadata implements Cloneable {
 			}
 		}
 		
-		if(topBlocksRequired != 0 || topBlocksTotal != 0 || topSize != 0 || topCompressedSize != 0) {
+		if(topBlocksRequired != 0 || topBlocksTotal != 0 || topSize != 0 || topCompressedSize != 0 || topCompatibilityMode != 0) {
 			dos.writeLong(topSize);
 			dos.writeLong(topCompressedSize);
 			dos.writeInt(topBlocksRequired);
 			dos.writeInt(topBlocksTotal);
+			dos.writeBoolean(topDontCompress);
+			dos.writeShort(topCompatibilityMode);
 		}
 
 		if(documentType == ARCHIVE_MANIFEST) {
@@ -1328,12 +1607,17 @@ public class Metadata implements Cloneable {
 			container.activate(clientMetadata, 1);
 			clientMetadata.removeFrom(container);
 		}
+		if(segments != null) {
+			for(int i=0;i<segments.length;i++)
+				segments[i].removeFrom(container);
+		}
 		container.delete(this);
 	}
 
 	public void clearSplitfileKeys() {
 		splitfileDataKeys = null;
 		splitfileCheckKeys = null;
+		segments = null;
 	}
 
 	public int countDocuments() {
@@ -1452,6 +1736,78 @@ public class Metadata implements Cloneable {
 
 	public HashResult[] getHashes() {
 		return hashes;
+	}
+
+	/** If there is a custom (not computed from hashes) splitfile key, return it.
+	 * Else return null. */
+	public byte[] getCustomSplitfileKey() {
+		if(specifySplitfileKey)
+			return splitfileSingleCryptoKey;
+		return null;
+	}
+	
+	public byte[] getSplitfileCryptoKey() {
+		return splitfileSingleCryptoKey;
+	}
+
+	public byte[] getHashThisLayerOnly() {
+		return hashThisLayerOnly;
+	}
+
+	public byte getSplitfileCryptoAlgorithm() {
+		return splitfileSingleCryptoAlgorithm;
+	}
+
+	public CompatibilityMode getTopCompatibilityMode() {
+		return InsertContext.CompatibilityMode.values()[this.topCompatibilityMode];
+	}
+
+	public boolean getTopDontCompress() {
+		return topDontCompress;
+	}
+
+	public short getTopCompatibilityCode() {
+		return topCompatibilityMode;
+	}
+
+	public CompatibilityMode getMinCompatMode() {
+		return minCompatMode;
+	}
+
+	public CompatibilityMode getMaxCompatMode() {
+		return maxCompatMode;
+	}
+
+	public int getCrossCheckBlocks() {
+		return crossCheckBlocks;
+	}
+
+	public int getCheckBlocksPerSegment() {
+		return checkBlocksPerSegment;
+	}
+
+	public int getDataBlocksPerSegment() {
+		return blocksPerSegment;
+	}
+
+	public int getSegmentCount() {
+		return segmentCount;
+	}
+
+	public SplitFileSegmentKeys[] grabSegmentKeys(ObjectContainer container) throws FetchException {
+		synchronized(this) {
+			if(segments == null && splitfileDataKeys != null && splitfileCheckKeys != null)
+				throw new FetchException(FetchException.INTERNAL_ERROR, "Please restart the download, need to re-parse metadata due to internal changes");
+			SplitFileSegmentKeys[] segs = segments;
+			segments = null;
+			if(container != null && container.ext().isStored(this))
+				container.store(this);
+			return segs;
+		}
+	}
+
+	public int getDeductBlocksFromSegments() {
+		return deductBlocksFromSegments;
 	}
 
 }

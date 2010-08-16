@@ -1,9 +1,13 @@
 package freenet.node.fcp;
 
+import java.util.Arrays;
+
 import com.db4o.ObjectContainer;
 
 import freenet.client.InsertContext;
 import freenet.node.Node;
+import freenet.support.HexUtil;
+import freenet.support.Logger;
 import freenet.support.SimpleFieldSet;
 
 public class CompatibilityMode extends FCPMessage {
@@ -12,17 +16,33 @@ public class CompatibilityMode extends FCPMessage {
 	long min;
 	long max;
 	final boolean global;
+	byte[] cryptoKey;
+	boolean dontCompress;
+	boolean definitive;
 	
-	CompatibilityMode(String id, boolean global, long min, long max) {
+	CompatibilityMode(String id, boolean global, long min, long max, byte[] cryptoKey, boolean dontCompress, boolean definitive) {
 		this.identifier = id;
 		this.global = global;
 		this.min = min;
 		this.max = max;
+		this.cryptoKey = cryptoKey;
+		this.dontCompress = dontCompress;
+		this.definitive = definitive;
 	}
 	
-	void merge(long min, long max) {
-		if(min > this.min) this.min = min;
-		if(max < this.max || this.max == InsertContext.CompatibilityMode.COMPAT_UNKNOWN.ordinal()) this.max = max;
+	void merge(long min, long max, byte[] cryptoKey, boolean dontCompress, boolean definitive) {
+		if(definitive) definitive = true;
+		if(!dontCompress) this.dontCompress = true;
+		if(min > this.min && !definitive) this.min = min;
+		if((!definitive) && max < this.max || this.max == InsertContext.CompatibilityMode.COMPAT_UNKNOWN.ordinal()) this.max = max;
+		if(this.cryptoKey == null && !definitive) {
+			this.cryptoKey = cryptoKey;
+		} else if(this.cryptoKey == null && cryptoKey != null && definitive) {
+			Logger.error(this, "Setting crypto key after bottom/definitive layer!");
+		} else if(!Arrays.equals(this.cryptoKey, cryptoKey)) {
+			Logger.error(this, "Two different crypto keys!");
+			this.cryptoKey = null;
+		}
 	}
 	
 	@Override
@@ -34,6 +54,10 @@ public class CompatibilityMode extends FCPMessage {
 		fs.put("Max.Number", max);
 		fs.putOverwrite("Identifier", identifier);
 		fs.put("Global", global);
+		if(cryptoKey != null)
+			fs.putOverwrite("SplitfileCryptoKey", HexUtil.bytesToHex(cryptoKey));
+		fs.put("DontCompress", dontCompress);
+		fs.put("Definitive", definitive);
 		return fs;
 	}
 	

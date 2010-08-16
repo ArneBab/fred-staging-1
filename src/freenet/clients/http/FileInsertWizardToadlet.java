@@ -21,11 +21,25 @@ public class FileInsertWizardToadlet extends Toadlet implements LinkEnabledCallb
 
 	final NodeClientCore core;
 	
+	// IMHO there isn't much point synchronizing these.
+	private boolean rememberedLastTime;
+	private boolean wasCanonicalLastTime;
+	
 	static final String PATH = "/insertfile/";
 	
 	@Override
 	public String path() {
 		return PATH;
+	}
+	
+	public void reportCanonicalInsert() {
+		rememberedLastTime = true;
+		wasCanonicalLastTime = true;
+	}
+	
+	public void reportRandomInsert() {
+		rememberedLastTime = true;
+		wasCanonicalLastTime = false;
 	}
 	
 	public void handleMethodGET(URI uri, final HTTPRequest request, final ToadletContext ctx) 
@@ -73,13 +87,13 @@ public class FileInsertWizardToadlet extends Toadlet implements LinkEnabledCallb
 		NETWORK_THREAT_LEVEL seclevel = core.node.securityLevels.getNetworkThreatLevel();
 		HTMLNode insertForm = ctx.addFormChild(insertContent, QueueToadlet.PATH_UPLOADS, "queueInsertForm");
 		HTMLNode input = insertForm.addChild("input", new String[] { "type", "name", "value" }, new String[] { "radio", "keytype", "CHK@" });
-		if(seclevel == NETWORK_THREAT_LEVEL.LOW)
+		if((!rememberedLastTime && seclevel == NETWORK_THREAT_LEVEL.LOW) || (rememberedLastTime && wasCanonicalLastTime && seclevel != NETWORK_THREAT_LEVEL.MAXIMUM))
 			input.addAttribute("checked", "checked");
 		insertForm.addChild("b", l10n("insertCanonicalTitle"));
 		insertForm.addChild("#", ": "+l10n("insertCanonical"));
 		insertForm.addChild("br");
 		input = insertForm.addChild("input", new String[] { "type", "name", "value" }, new String[] { "radio", "keytype", "SSK@" });
-		if(seclevel == NETWORK_THREAT_LEVEL.MAXIMUM)
+		if(seclevel == NETWORK_THREAT_LEVEL.MAXIMUM || (rememberedLastTime && !wasCanonicalLastTime))
 			input.addAttribute("checked", "checked");
 		insertForm.addChild("b", l10n("insertRandomTitle"));
 		insertForm.addChild("#", ": "+l10n("insertRandom"));
@@ -110,10 +124,12 @@ public class FileInsertWizardToadlet extends Toadlet implements LinkEnabledCallb
 			for(CompatibilityMode mode : InsertContext.CompatibilityMode.values()) {
 				if(mode == CompatibilityMode.COMPAT_UNKNOWN) continue;
 				// FIXME l10n???
-				HTMLNode option = select.addChild("option", "value", mode.name(), mode.detail);
+				HTMLNode option = select.addChild("option", "value", mode.name(), NodeL10n.getBase().getString("InsertContext.CompatibilityMode."+mode.name()));
 				if(mode == CompatibilityMode.COMPAT_CURRENT)
 					option.addAttribute("selected", "");
 			}
+			insertForm.addChild("#", l10n("splitfileCryptoKeyLabel")+": ");
+			insertForm.addChild("input", new String[] { "type", "name", "maxlength" }, new String[] { "text", "overrideSplitfileKey", "64" });
 		}
 		insertForm.addChild("#", NodeL10n.getBase().getString("QueueToadlet.insertFileLabel") + ": ");
 		insertForm.addChild("input", new String[] { "type", "name", "value" }, new String[] { "file", "filename", "" });
