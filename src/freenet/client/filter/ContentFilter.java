@@ -158,7 +158,7 @@ public class ContentFilter {
 	 *             If data is invalid (e.g. corrupted file) and the filter have no way to recover.
 	 */
 	public static FilterStatus filter(InputStream input, OutputStream output, String typeName, URI baseURI, FoundURICallback cb, TagReplacerCallback trc , String maybeCharset) throws UnsafeContentTypeException, IOException {
-		return filter(input, output, typeName, maybeCharset, new GenericReadFilterCallback(baseURI, cb,trc));
+		return filter(input, output, true, typeName, maybeCharset, new GenericReadFilterCallback(baseURI, cb,trc));
 	}
 
 	/**
@@ -168,6 +168,7 @@ public class ContentFilter {
 	 *            Source stream to read data from
 	 * @param output
 	 *            Stream to write filtered data to
+	 * @param readFilter TODO
 	 * @param typeName
 	 *            MIME type for input data
 	 * @param maybeCharset 
@@ -180,7 +181,7 @@ public class ContentFilter {
 	 * @throws IllegalStateException
 	 *             If data is invalid (e.g. corrupted file) and the filter have no way to recover.
 	 */
-	public static FilterStatus filter(InputStream input, OutputStream output, String typeName, String maybeCharset, FilterCallback filterCallback) throws UnsafeContentTypeException, IOException {
+	public static FilterStatus filter(InputStream input, OutputStream output, boolean readFilter, String typeName, String maybeCharset, FilterCallback filterCallback) throws UnsafeContentTypeException, IOException {
 		if(Logger.shouldLog(LogLevel.MINOR, ContentFilter.class)) Logger.minor(ContentFilter.class, "Filtering data of type"+typeName);
 		String type = typeName;
 		String options = "";
@@ -215,31 +216,31 @@ public class ContentFilter {
 				}
 			}
 		}
-		
+
 		// Now look for a MIMEType handler
-		
 		MIMEType handler = getMIMEType(type);
-		
 		if(handler == null)
 			throw new UnknownContentTypeException(typeName);
 		else {
-			// Run the read filter if there is one.
-			if(handler.readFilter != null) {
-				if(handler.takesACharset && ((charset == null) || (charset.length() == 0))) {
-					int bufferSize = handler.charsetExtractor.getCharsetBufferSize();
-					input.mark(bufferSize);
-					byte[] charsetBuffer = new byte[bufferSize];
-					int bytesRead, totalRead = 0;
-					while(true) {
-						bytesRead = input.read(charsetBuffer, totalRead, bufferSize-totalRead);
-						if(bytesRead == -1 || bytesRead == 0) break;
-						totalRead += bytesRead;
-					}
-					input.reset();
-					charset = detectCharset(charsetBuffer, totalRead, handler, maybeCharset);
+			//Detect the charset
+			if(handler.takesACharset && ((charset == null) || (charset.length() == 0))) {
+				int bufferSize = handler.charsetExtractor.getCharsetBufferSize();
+				input.mark(bufferSize);
+				byte[] charsetBuffer = new byte[bufferSize];
+				int bytesRead, totalRead = 0;
+				while(true) {
+					bytesRead = input.read(charsetBuffer, totalRead, bufferSize-totalRead);
+					if(bytesRead == -1 || bytesRead == 0) break;
+					totalRead += bytesRead;
 				}
+				input.reset();
+				charset = detectCharset(charsetBuffer, totalRead, handler, maybeCharset);
+			}
+			// Run the appropriate filter, if one exists.
+			if((readFilter && handler.readFilter != null) || (!readFilter && handler.writeFilter != null)) {
 				try {
-					handler.readFilter.readFilter(input, output, charset, otherParams, filterCallback);
+					if(readFilter) handler.readFilter.readFilter(input, output, charset, otherParams, filterCallback);
+					else handler.readFilter.readFilter(input, output, charset, otherParams, filterCallback);
 				}
 				catch(EOFException e) {
 					throw new DataFilterException(l10n("EOFMessage"), l10n("EOFMessage"), l10n("EOFDescription"));
@@ -251,13 +252,18 @@ public class ContentFilter {
 				output.flush();
 				return new FilterStatus(charset, typeName);
 			}
-			
-			if(handler.safeToRead) {
+
+			if(readFilter) {
+				if(handler.safeToRead) {
+					FileUtil.copy(input, output, -1);
+					output.flush();
+					return new FilterStatus(charset, typeName);
+				}
+			} else if(handler.safeToWrite) {
 				FileUtil.copy(input, output, -1);
 				output.flush();
 				return new FilterStatus(charset, typeName);
 			}
-			
 			handler.throwUnsafeContentTypeException();
 		}
 		return null;

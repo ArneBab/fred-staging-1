@@ -185,7 +185,7 @@ public class ClientPutter extends BaseClientPutter implements PutCompletionCallb
 							try {
 								input = data.getInputStream();
 								output = filteredData.getOutputStream();
-								ContentFilter.filter(input, output, mimeType, null, new InsertFilterCallback());
+								ContentFilter.filter(input, output, false, mimeType, null, new InsertFilterCallback());
 								data.free();
 								data = filteredData;
 								input.close();

@@ -765,7 +765,7 @@ public class SimpleManifestPutter extends BaseClientPutter implements PutComplet
 						filteredData = bf.makeBucket(-1);
 						input = data.getInputStream();
 						output = filteredData.getOutputStream();
-						ContentFilter.filter(input, output, mimeType, null, new InsertFilterCallback());
+						ContentFilter.filter(input, output, false, mimeType, null, new InsertFilterCallback());
 						input.close();
 						output.close();
 						data.free();
