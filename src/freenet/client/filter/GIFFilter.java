@@ -52,4 +52,11 @@ public class GIFFilter implements ContentDataFilter {
 			message += " - (" + shortReason + ')';
 		throw new DataFilterException(shortReason, shortReason, message);
 	}
+
+	public void writeFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
+	        FilterCallback cb) throws DataFilterException, IOException {
+		output.write(input.read());
+		return;
+	}
+
 }

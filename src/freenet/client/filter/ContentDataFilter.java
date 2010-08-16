@@ -15,4 +15,7 @@ public interface ContentDataFilter {
 	
 	public void readFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
 		FilterCallback cb) throws DataFilterException, IOException;
+
+	public void writeFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
+		FilterCallback cb) throws DataFilterException, IOException;
 }
