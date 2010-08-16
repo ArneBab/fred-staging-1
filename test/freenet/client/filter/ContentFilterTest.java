@@ -3,6 +3,7 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.client.filter;
 
+import java.io.ByteArrayInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
@@ -22,6 +23,7 @@ import freenet.l10n.NodeL10n;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
 import freenet.support.io.ArrayBucket;
+import freenet.support.io.Closer;
 
 /**
  * A simple meta-test to track regressions of the content-filter
@@ -190,6 +192,8 @@ public class ContentFilterTest extends TestCase {
 		byte[] utf16bom = new byte[] { (byte)0xFE, (byte)0xFF };
 		byte[] bufUTF16 = alt.getBytes("UTF-16");
 		byte[] total = new byte[buf.length+utf16bom.length+bufUTF16.length];
+		InputStream input = null;
+		OutputStream output = null;
 		System.arraycopy(utf16bom, 0, total, 0, utf16bom.length);
 		System.arraycopy(buf, 0, total, utf16bom.length, buf.length);
 		System.arraycopy(bufUTF16, 0, total, utf16bom.length+buf.length, bufUTF16.length);
@@ -214,10 +218,14 @@ public class ContentFilterTest extends TestCase {
 		}
 		try {
 			ArrayBucket out = new ArrayBucket();
-			FilterStatus fo = ContentFilter.filter(new ArrayBucket(total).getInputStream(), out.getOutputStream(), true, "text/html", null, null);
+			input = new ByteArrayInputStream(total);
+			output = out.getOutputStream();
+			FilterStatus fo = ContentFilter.filter(input, output, true, "text/html", null, null);
 			fos = new FileOutputStream("output.filtered");
 			fos.write(out.toByteArray());
 			fos.close();
+			input.close();
+			output.close();
 			failed = true;
 			assertFalse("Filter accepted dangerous UTF8 text with BOM as UTF16! (ContentFilter) - Detected charset: "+fo.charset, true);
 		} catch (DataFilterException e) {
@@ -227,6 +235,9 @@ public class ContentFilterTest extends TestCase {
 				e.getCause().printStackTrace();
 			}
 			// Ok.
+		} finally {
+			Closer.close(input);
+			Closer.close(output);
 		}
 		
 		if(failed) {
