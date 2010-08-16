@@ -20,6 +20,7 @@ import freenet.client.events.SendingToNetworkEvent;
 import freenet.client.events.SplitfileProgressEvent;
 import freenet.client.filter.ContentFilter;
 import freenet.client.filter.InsertFilterCallback;
+import freenet.client.filter.ContentFilter.FilterStatus;
 import freenet.keys.BaseClientKey;
 import freenet.keys.FreenetURI;
 import freenet.keys.Key;
@@ -171,7 +172,6 @@ public class ClientPutter extends BaseClientPutter implements PutCompletionCallb
 					if(!binaryBlob) {
 						ClientMetadata meta = cm;
 						if(meta != null) meta = persistent() ? meta.clone() : meta;
-						Bucket filteredData = context.getBucketFactory(persistent()).makeBucket(-1);
 						String mimeType;
 						if((meta==null || meta.getMIMEType() == DefaultMIMETypes.DEFAULT_MIME_TYPE) && targetFilename != null) {
 							mimeType = DefaultMIMETypes.guessMIMEType(targetFilename, false);
@@ -179,13 +179,15 @@ public class ClientPutter extends BaseClientPutter implements PutCompletionCallb
 						else {
 							mimeType = cm.getMIMEType();
 						}
-						InputStream input = null;
-						OutputStream output = null;
 						if(ctx.filterData) {
+							Bucket filteredData = context.getBucketFactory(persistent()).makeBucket(-1);
+							InputStream input = null;
+							OutputStream output = null;
 							try {
 								input = data.getInputStream();
 								output = filteredData.getOutputStream();
-								ContentFilter.filter(input, output, false, mimeType, null, new InsertFilterCallback());
+								FilterStatus status = ContentFilter.filter(input, output, false, mimeType, null, new InsertFilterCallback());
+								mimeType = status.mimeType;
 								data.free();
 								data = filteredData;
 								input.close();
@@ -195,6 +197,7 @@ public class ClientPutter extends BaseClientPutter implements PutCompletionCallb
 								Closer.close(output);
 							}
 						}
+						meta = new ClientMetadata(mimeType);
 						currentState =
 							new SingleFileInserter(this, this, new InsertBlock(data, meta, persistent() ? targetURI.clone() : targetURI), isMetadata, ctx, 
 									false, getCHKOnly, false, null, null, false, targetFilename, earlyEncode, false, persistent(), 0, 0, null, Key.ALGO_AES_PCFB_256_SHA256, cryptoKey);
