@@ -173,7 +173,7 @@ public class ClientPutter extends BaseClientPutter implements PutCompletionCallb
 						if(meta != null) meta = persistent() ? meta.clone() : meta;
 						Bucket filteredData = context.getBucketFactory(persistent()).makeBucket(-1);
 						String mimeType;
-						if(meta==null || meta.getMIMEType() == DefaultMIMETypes.DEFAULT_MIME_TYPE) {
+						if((meta==null || meta.getMIMEType() == DefaultMIMETypes.DEFAULT_MIME_TYPE) && targetFilename != null) {
 							mimeType = DefaultMIMETypes.guessMIMEType(targetFilename, false);
 						}
 						else {
