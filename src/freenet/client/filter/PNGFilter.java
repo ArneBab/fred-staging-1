@@ -25,6 +25,7 @@ import freenet.support.LoggerHook.InvalidThresholdException;
 import freenet.support.api.Bucket;
 import freenet.support.io.Closer;
 import freenet.support.io.FileBucket;
+import freenet.support.io.FileUtil;
 
 /**
  * Content filter for PNG's. Only allows valid chunks (valid CRC, known chunk type).
@@ -266,9 +267,9 @@ public class PNGFilter implements ContentDataFilter {
 	}
 
 	public void writeFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
-	        FilterCallback cb) throws DataFilterException, IOException {
-		// TODO Auto-generated method stub
-		return;
+			FilterCallback cb) throws DataFilterException, IOException {
+		FileUtil.copy(input, output, -1);
+		output.flush();
 	}
 
 	public static void main(String arg[]) {

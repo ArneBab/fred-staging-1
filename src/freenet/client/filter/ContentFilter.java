@@ -55,7 +55,7 @@ public class ContentFilter {
 		
 		// JPEG - has a filter
 		register(new MIMEType("image/jpeg", "jpeg", new String[0], new String[] { "jpg" },
-				true, false, new JPEGFilter(true, true), null, false, false, false, false, false, false,
+				true, false, new JPEGFilter(true, true), new JPEGFilter(true, true), false, false, false, false, false, false,
 				l10n("imageJpegReadAdvice"),
 				l10n("imageJpegWriteAdvice"), false, null, null, false));
 		

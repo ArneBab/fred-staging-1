@@ -40,6 +40,7 @@ import freenet.support.Logger;
 import freenet.support.URLDecoder;
 import freenet.support.URLEncodedFormatException;
 import freenet.support.Logger.LogLevel;
+import freenet.support.io.FileUtil;
 import freenet.support.io.NullWriter;
 
 public class HTMLFilter implements ContentDataFilter, CharsetExtractor {
@@ -81,7 +82,8 @@ public class HTMLFilter implements ContentDataFilter, CharsetExtractor {
 	
 	public void writeFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
 			FilterCallback cb) throws DataFilterException, IOException {
-		throw new UnsupportedOperationException();
+		FileUtil.copy(input, output, -1);
+		output.flush();
 	}
 	
 	public String getCharset(byte[] input, int length, String parseCharset) throws DataFilterException, IOException {

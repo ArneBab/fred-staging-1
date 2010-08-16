@@ -20,6 +20,7 @@ import freenet.support.HexUtil;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
 import freenet.support.io.Closer;
+import freenet.support.io.FileUtil;
 import freenet.support.io.NullWriter;
 
 public class CSSReadFilter implements ContentDataFilter, CharsetExtractor {
@@ -54,8 +55,9 @@ public class CSSReadFilter implements ContentDataFilter, CharsetExtractor {
 	}
 
 	public void writeFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
-	        FilterCallback cb) throws DataFilterException, IOException {
-		throw new UnsupportedOperationException();
+			FilterCallback cb) throws DataFilterException, IOException {
+		FileUtil.copy(input, output, -1);
+		output.flush();
 	}
 
 	public String getCharset(byte [] input, int length, String charset) throws DataFilterException, IOException {

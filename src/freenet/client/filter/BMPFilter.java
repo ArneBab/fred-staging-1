@@ -173,7 +173,8 @@ public class BMPFilter implements ContentDataFilter {
 
 	public void writeFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
 			FilterCallback cb) throws DataFilterException, IOException {
-		return;
+		FileUtil.copy(input, output, -1);
+		output.flush();
 	}
 
 }

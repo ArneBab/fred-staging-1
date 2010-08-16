@@ -17,6 +17,7 @@ import freenet.l10n.NodeL10n;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
 import freenet.support.io.CountedInputStream;
+import freenet.support.io.FileUtil;
 
 /**
  * Content filter for JPEG's.
@@ -58,12 +59,12 @@ public class JPEGFilter implements ContentDataFilter {
 
 	public void readFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
 			FilterCallback cb) throws DataFilterException, IOException {
-		readFilter(input, output, charset, otherParams, cb, deleteComments, deleteExif);
+		filter(input, output, charset, otherParams, cb, deleteComments, deleteExif, true);
 		output.flush();
 	}
 
-	public void readFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
-			FilterCallback cb, boolean deleteComments, boolean deleteExif)
+	public void filter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
+			FilterCallback cb, boolean deleteComments, boolean deleteExif, boolean invalidIfUnsupported)
 	throws DataFilterException, IOException {
 		boolean logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
 		CountedInputStream cis = new CountedInputStream(input);
@@ -235,7 +236,7 @@ public class JPEGFilter implements ContentDataFilter {
 				finished = true;
 				if(logMINOR)
 					Logger.minor(this, "End of image");
-			} else {
+			} else if(invalidIfUnsupported) {
 				boolean valid = false;
 				// We used to support only DB C4 C0, because some website said they were
 				// sufficient for decoding a JPEG. Unfortunately they are not, JPEG is a 
@@ -403,7 +404,8 @@ public class JPEGFilter implements ContentDataFilter {
 
 	public void writeFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
 			FilterCallback cb) throws DataFilterException, IOException {
-		return;
+		filter(input, output, charset, otherParams, cb, deleteComments, deleteExif, false);
+		output.flush();
 	}
 
 }

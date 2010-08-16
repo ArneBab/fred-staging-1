@@ -54,9 +54,9 @@ public class GIFFilter implements ContentDataFilter {
 	}
 
 	public void writeFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
-	        FilterCallback cb) throws DataFilterException, IOException {
-		output.write(input.read());
-		return;
+			FilterCallback cb) throws DataFilterException, IOException {
+		FileUtil.copy(input, output, -1);
+		output.flush();
 	}
 
 }
