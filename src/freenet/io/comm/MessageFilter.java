@@ -308,7 +308,7 @@ public final class MessageFilter {
 
 
 					public int getPriority() {
-						return ((SlowAsyncMessageFilterCallback)cb).priority();
+						return ((SlowAsyncMessageFilterCallback)cb).getPriority();
 					}
 					
     			});
@@ -341,7 +341,7 @@ public final class MessageFilter {
 
 
 					public int getPriority() {
-						return ((SlowAsyncMessageFilterCallback)cb).priority();
+						return ((SlowAsyncMessageFilterCallback)cb).getPriority();
 					}
 					
     			});
@@ -377,7 +377,7 @@ public final class MessageFilter {
 					}
 
 					public int getPriority() {
-						return ((SlowAsyncMessageFilterCallback)cb).priority();
+						return ((SlowAsyncMessageFilterCallback)cb).getPriority();
 					}
 					
 				}, "Slow callback for "+cb);
@@ -406,7 +406,7 @@ public final class MessageFilter {
 					}
 
 					public int getPriority() {
-						return ((SlowAsyncMessageFilterCallback)cb).priority();
+						return ((SlowAsyncMessageFilterCallback)cb).getPriority();
 					}
 					
 				});
