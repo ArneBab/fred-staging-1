@@ -214,6 +214,12 @@ public class BlockReceiver implements AsyncMessageFilterCallback {
 			if (missing.size() > 50) {
 				Logger.normal(this, "Sending large missingPacketNotification due to packet receiver timeout after "+RECEIPT_TIMEOUT+"ms");
 			}
+			try {
+				waitNotification();
+			} catch (DisconnectedException e) {
+				onDisconnect(null);
+				return;
+			}
 		}
 
 		public void onDisconnect(PeerContext ctx) {
