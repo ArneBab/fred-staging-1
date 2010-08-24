@@ -219,7 +219,7 @@ public class RequestHandler implements PrioRunnable, ByteCounter, RequestSender.
 
 			PartiallyReceivedBlock prb = rs.getPRB();
 			bt =
-				new BlockTransmitter(node.usm, source, uid, prb, this);
+				new BlockTransmitter(node.usm, node.getTicker(), source, uid, prb, this);
 			node.addTransferringRequestHandler(uid);
 			bt.sendAsync(node.executor);
 		} catch(NotConnectedException e) {
@@ -467,7 +467,7 @@ public class RequestHandler implements PrioRunnable, ByteCounter, RequestSender.
 			PartiallyReceivedBlock prb =
 				new PartiallyReceivedBlock(Node.PACKETS_IN_BLOCK, Node.PACKET_SIZE, block.getRawData());
 			BlockTransmitter bt =
-				new BlockTransmitter(node.usm, source, uid, prb, this);
+				new BlockTransmitter(node.usm, node.getTicker(), source, uid, prb, this);
 			node.addTransferringRequestHandler(uid);
 			source.sendAsync(df, null, this);
 			if(bt.send(node.executor)) {
