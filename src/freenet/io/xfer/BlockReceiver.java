@@ -165,8 +165,10 @@ public class BlockReceiver implements AsyncMessageFilterCallback {
 						Logger.normal(this, "Excessive packet loss : "+mn);
 					}
 				}
-				if(m1.getSpec().equals(DMT.allSent))
-					onTimeout();
+			}
+			if(m1.getSpec().equals(DMT.allSent)) {
+				onTimeout();
+				return;
 			}
 		}
 
