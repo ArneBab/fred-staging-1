@@ -98,60 +98,66 @@ public class BlockTransmitter {
 		
 			public void run() {
 				while (!_sendComplete) {
-					int packetNo;
-					try {
-						synchronized(_senderThread) {
-							while (_unsent.size() == 0) {
-								if(_sendComplete) return;
-								_senderThread.wait(10*1000);
-							}
-							packetNo = _unsent.removeFirst();
+					if(!innerRun()) return;
+				}
+			}
+
+			/** @return True unless we are finished. */
+			private boolean innerRun() {
+				int packetNo;
+				try {
+					synchronized(_senderThread) {
+						while (_unsent.size() == 0) {
+							if(_sendComplete) return false;
+							_senderThread.wait(10*1000);
 						}
-					} catch (InterruptedException e) {
-						Logger.error(this, "_senderThread interrupted");
-						continue;
+						packetNo = _unsent.removeFirst();
 					}
-					int totalPackets;
-					try {
-						_destination.sendThrottledMessage(DMT.createPacketTransmit(_uid, packetNo, _sentPackets, _prb.getPacket(packetNo)), _prb._packetSize, _ctr, SEND_TIMEOUT, false, null);
-						totalPackets=_prb.getNumPackets();
-					} catch (PeerRestartedException e) {
-						Logger.normal(this, "Terminating send due to peer restart: "+e);
-						synchronized(_senderThread) {
-							_sendComplete = true;
-						}
-						return;
-					} catch (NotConnectedException e) {
-						Logger.normal(this, "Terminating send: "+e);
-						//the send() thread should notice...
-						return;
-					} catch (AbortedException e) {
-						Logger.normal(this, "Terminating send due to abort: "+e);
-						//the send() thread should notice...
-						return;
-					} catch (WaitedTooLongException e) {
-						Logger.normal(this, "Waited too long to send packet, aborting");
-						synchronized(_senderThread) {
-							_sendComplete = true;
-						}
-						return;
-					} catch (SyncSendWaitedTooLongException e) {
-						// Impossible
-						Logger.error(this, "Impossible: Caught "+e, e);
-						return;
+				} catch (InterruptedException e) {
+					Logger.error(this, "_senderThread interrupted");
+					return true;
+				}
+				int totalPackets;
+				try {
+					_destination.sendThrottledMessage(DMT.createPacketTransmit(_uid, packetNo, _sentPackets, _prb.getPacket(packetNo)), _prb._packetSize, _ctr, SEND_TIMEOUT, false, null);
+					totalPackets=_prb.getNumPackets();
+				} catch (PeerRestartedException e) {
+					Logger.normal(this, "Terminating send due to peer restart: "+e);
+					synchronized(_senderThread) {
+						_sendComplete = true;
 					}
-					synchronized (_senderThread) {
-						_sentPackets.setBit(packetNo, true);
-						if(_unsent.size() == 0 && getNumSent() == totalPackets) {
-							//No unsent packets, no unreceived packets
-							sendAllSentNotification();
-							timeAllSent = System.currentTimeMillis();
-							if(logMINOR)
-								Logger.minor(this, "Sent all blocks, none unsent");
-							_senderThread.notifyAll();
-						}
+					return false;
+				} catch (NotConnectedException e) {
+					Logger.normal(this, "Terminating send: "+e);
+					//the send() thread should notice...
+					return false;
+				} catch (AbortedException e) {
+					Logger.normal(this, "Terminating send due to abort: "+e);
+					//the send() thread should notice...
+					return false;
+				} catch (WaitedTooLongException e) {
+					Logger.normal(this, "Waited too long to send packet, aborting");
+					synchronized(_senderThread) {
+						_sendComplete = true;
+					}
+					return false;
+				} catch (SyncSendWaitedTooLongException e) {
+					// Impossible
+					Logger.error(this, "Impossible: Caught "+e, e);
+					return false;
+				}
+				synchronized (_senderThread) {
+					_sentPackets.setBit(packetNo, true);
+					if(_unsent.size() == 0 && getNumSent() == totalPackets) {
+						//No unsent packets, no unreceived packets
+						sendAllSentNotification();
+						timeAllSent = System.currentTimeMillis();
+						if(logMINOR)
+							Logger.minor(this, "Sent all blocks, none unsent");
+						_senderThread.notifyAll();
 					}
 				}
+				return true;
 			}
 
 			public int getPriority() {
