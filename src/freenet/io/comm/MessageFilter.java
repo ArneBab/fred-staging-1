@@ -50,6 +50,7 @@ public final class MessageFilter {
     private Message _message;
     private long _oldBootID;
     private AsyncMessageFilterCallback _callback;
+    private ByteCounter _ctr;
     private boolean _setTimeout = false;
 
     private MessageFilter() {
@@ -170,8 +171,9 @@ public final class MessageFilter {
 		return this;
 	}
 
-	public MessageFilter setAsyncCallback(AsyncMessageFilterCallback cb) {
+	public MessageFilter setAsyncCallback(AsyncMessageFilterCallback cb, ByteCounter ctr) {
 		_callback = cb;
+		_ctr = ctr;
 		return this;
 	}
 	
@@ -292,8 +294,10 @@ public final class MessageFilter {
     		_droppedConnection = ctx;
     		notifyAll();
     	}
-    	if(_callback != null)
+    	if(_callback != null) {
     		_callback.onDisconnect(ctx);
+    		_ctr = null;
+    	}
     }
 
     /**
@@ -306,8 +310,10 @@ public final class MessageFilter {
     		_droppedConnection = ctx;
     		notifyAll();
     	}
-    	if(_callback != null)
+    	if(_callback != null) {
     		_callback.onRestarted(ctx);
+    		_ctr = null;
+    	}
     }
 
     /**
@@ -317,15 +323,19 @@ public final class MessageFilter {
 	public void onMatched() {
 		Message msg;
 		AsyncMessageFilterCallback cb;
+		ByteCounter ctr;
 		synchronized(this) {
 			msg = _message;
 			cb = _callback;
+			ctr = _ctr;
 			// Clear matched before calling callback in case we are re-added.
 			if(_callback != null)
 				clearMatched();
 		}
 		if(cb != null) {
 			cb.onMatched(msg);
+			if(ctr != null)
+				ctr.receivedBytes(msg._receivedByteCount);
 		}
 	}
 

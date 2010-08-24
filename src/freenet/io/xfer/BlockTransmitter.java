@@ -434,7 +434,7 @@ public class BlockTransmitter {
 		MessageFilter mfAllReceived = MessageFilter.create().setType(DMT.allReceived).setField(DMT.UID, _uid).setTimeout(SEND_TIMEOUT).setSource(_destination);
 		MessageFilter mfSendAborted = MessageFilter.create().setType(DMT.sendAborted).setField(DMT.UID, _uid).setTimeout(SEND_TIMEOUT).setSource(_destination);
 		MessageFilter mf = mfMissingPacketNotification.or(mfAllReceived.or(mfSendAborted));
-		_usm.addAsyncFilter(mf, notificationWaiter); // FIXME use _ctr for byte counting!
+		_usm.addAsyncFilter(mf, notificationWaiter, _ctr); // FIXME use _ctr for byte counting!
 	}
 
 	private static MedianMeanRunningAverage avgTimeTaken = new MedianMeanRunningAverage();
