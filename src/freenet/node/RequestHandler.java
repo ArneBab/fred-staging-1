@@ -221,7 +221,7 @@ public class RequestHandler implements PrioRunnable, ByteCounter, RequestSender.
 			bt =
 				new BlockTransmitter(node.usm, node.getTicker(), source, uid, prb, this);
 			node.addTransferringRequestHandler(uid);
-			bt.sendAsync(node.executor);
+			bt.sendAsync();
 		} catch(NotConnectedException e) {
 			synchronized(this) {
 				disconnected = true;

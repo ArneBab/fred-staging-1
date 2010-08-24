@@ -20,6 +20,7 @@ package freenet.io.xfer;
 
 import java.util.LinkedList;
 
+import freenet.io.comm.AsyncMessageFilterCallback;
 import freenet.io.comm.ByteCounter;
 import freenet.io.comm.DMT;
 import freenet.io.comm.DisconnectedException;
@@ -214,12 +215,36 @@ public class BlockTransmitter {
 		}
 	}
 	
-	public boolean send() {
-		long startTime = System.currentTimeMillis();
-		PartiallyReceivedBlock.PacketReceivedListener myListener=null;
+	public interface BlockTransmitterCompletion {
 		
-		try {
-			synchronized(_prb) {
+		public void blockTransferFinished(boolean success);
+		
+	}
+	
+	public class NullBlockTransmitterCompletion implements BlockTransmitterCompletion {
+
+		public void blockTransferFinished(boolean success) {
+			// Ignore
+		}
+		
+	}
+	
+	private final NullBlockTransmitterCompletion nullCompletion = new NullBlockTransmitterCompletion();
+	
+	private PartiallyReceivedBlock.PacketReceivedListener myListener = null;
+	
+	private AsyncMessageFilterCallback notificationWaiter;
+		
+	public void sendAsync() {
+		sendAsync(nullCompletion);
+	}
+	
+	public void sendAsync(final BlockTransmitterCompletion callback) {
+
+		final long startTime = System.currentTimeMillis();
+		
+		synchronized(_prb) {
+			try {
 				_unsent = _prb.addListener(myListener = new PartiallyReceivedBlock.PacketReceivedListener() {;
 
 					public void packetReceived(int packetNo) {
@@ -234,58 +259,68 @@ public class BlockTransmitter {
 					public void receiveAborted(int reason, String description) {
 					}
 				});
-			}
-			_senderThread.schedule(0);
-			
-			while (true) {
-				synchronized(_senderThread) {
-					if(_sendComplete) return false;
-				}
-				Message msg;
+			} catch (AbortedException e) {
+				Logger.normal(this, "AbortedException in BlockTransfer.send():"+e);
 				try {
-					MessageFilter mfMissingPacketNotification = MessageFilter.create().setType(DMT.missingPacketNotification).setField(DMT.UID, _uid).setTimeout(SEND_TIMEOUT).setSource(_destination);
-					MessageFilter mfAllReceived = MessageFilter.create().setType(DMT.allReceived).setField(DMT.UID, _uid).setTimeout(SEND_TIMEOUT).setSource(_destination);
-					MessageFilter mfSendAborted = MessageFilter.create().setType(DMT.sendAborted).setField(DMT.UID, _uid).setTimeout(SEND_TIMEOUT).setSource(_destination);
-					msg = _usm.waitFor(mfMissingPacketNotification.or(mfAllReceived.or(mfSendAborted)), _ctr);
-					if(logMINOR) Logger.minor(this, "Got "+msg);
-				} catch (DisconnectedException e) {
-					throttle.maybeDisconnected();
-					Logger.normal(this, "Terminating send "+_uid+" to "+_destination+" from "+_destination.getSocketHandler()+" because node disconnected while waiting");
-					//They disconnected, can't send an abort to them then can we?
-					return false;
+					String desc=_prb.getAbortDescription();
+					if (desc.indexOf("Upstream")<0)
+						desc="Upstream transfer failed: "+desc;
+					sendAborted(_prb.getAbortReason(), desc);
+				} catch (NotConnectedException gone) {
+					//ignore
+				}
+				callback.blockTransferFinished(false);
+				return;
+			}
+		}
+		_senderThread.schedule(0);
+		
+		notificationWaiter = new AsyncMessageFilterCallback() {
+
+			private boolean completed = false;
+			
+			public void onMatched(Message msg) {
+				boolean complete = false;
+				synchronized(_senderThread) {
+					complete = _sendComplete;
+				}
+				if(complete) {
+					complete(false);
+					return;
 				}
 				if(logMINOR) Logger.minor(this, "Got "+msg);
-				if (msg == null) {
-					long now = System.currentTimeMillis();
-					//SEND_TIMEOUT (one minute) after all packets have been transmitted, terminate the send.
-					if((timeAllSent > 0) && ((now - timeAllSent) > SEND_TIMEOUT) &&
-							(getNumSent() == _prb.getNumPackets())) {
-						String timeString=TimeUtil.formatTime((now - timeAllSent), 2, true);
-						Logger.error(this, "Terminating send "+_uid+" to "+_destination+" from "+_destination.getSocketHandler()+" as we haven't heard from receiver in "+timeString+ '.');
-						sendAborted(RetrievalException.RECEIVER_DIED, "Haven't heard from you (receiver) in "+timeString);
-						return false;
-					} else {
-						if(logMINOR) Logger.minor(this, "Ignoring timeout: timeAllSent="+timeAllSent+" ("+(System.currentTimeMillis() - timeAllSent)+"), getNumSent="+getNumSent()+ '/' +_prb.getNumPackets());
-						continue;
-					}
-				} else if (msg.getSpec().equals(DMT.missingPacketNotification)) {
+				if (msg.getSpec().equals(DMT.missingPacketNotification)) {
 					LinkedList<Integer> missing = (LinkedList<Integer>) msg.getObject(DMT.MISSING);
 					for (int packetNo :missing) {
-						if (_prb.isReceived(packetNo)) {
-							synchronized(_senderThread) {
-								if (_unsent.contains(packetNo)) {
-									Logger.minor(this, "already to transmit packet #"+packetNo);
-								} else {
-								_unsent.addFirst(packetNo);
-								timeAllSent=-1;
-								_sentPackets.setBit(packetNo, false);
-								_senderThread.schedule(0);
+						try {
+							if (_prb.isReceived(packetNo)) {
+								synchronized(_senderThread) {
+									if (_unsent.contains(packetNo)) {
+										Logger.minor(this, "already to transmit packet #"+packetNo);
+									} else {
+									_unsent.addFirst(packetNo);
+									timeAllSent=-1;
+									_sentPackets.setBit(packetNo, false);
+									_senderThread.schedule(0);
+									}
 								}
+							} else {
+								// To be expected if the transfer is slow, since we send missingPacketNotification on a timeout.
+								if(logMINOR)
+									Logger.minor(this, "receiver requested block #"+packetNo+" which is not received");
 							}
-						} else {
-							// To be expected if the transfer is slow, since we send missingPacketNotification on a timeout.
-							if(logMINOR)
-								Logger.minor(this, "receiver requested block #"+packetNo+" which is not received");
+						} catch (AbortedException e) {
+							Logger.normal(this, "AbortedException in BlockTransfer.send():"+e);
+							try {
+								String desc=_prb.getAbortDescription();
+								if (desc.indexOf("Upstream")<0)
+									desc="Upstream transfer failed: "+desc;
+								sendAborted(_prb.getAbortReason(), desc);
+							} catch (NotConnectedException gone) {
+								//ignore
+							}
+							complete(false);
+							return;
 						}
 					}
 				} else if (msg.getSpec().equals(DMT.allReceived)) {
@@ -297,43 +332,144 @@ public class BlockTransmitter {
 							Logger.minor(this, "Block send took "+transferTime+" : "+avgTimeTaken);
 						}
 					}
-					
-					return true;
+					complete(true);
+					return;
 				} else if (msg.getSpec().equals(DMT.sendAborted)) {
 					// Overloaded: receiver no longer wants the data
 					// Do NOT abort PRB, it's none of its business.
 					// And especially, we don't want a downstream node to 
 					// be able to abort our sends to all the others!
 					//They aborted, don't need to send an aborted back :)
-					return false;
+					complete(false);
+					return;
 				} else {
 					Logger.error(this, "Transmitter received unknown message type: "+msg.getSpec().getName());
 				}
+				try {
+					waitNotification();
+				} catch (DisconnectedException e) {
+					onDisconnect(null);
+				}
 			}
-		} catch (NotConnectedException e) {
-			//most likely from sending an abort()
-			Logger.normal(this, "NotConnectedException in BlockTransfer.send():"+e);
-			return false;
-		} catch (AbortedException e) {
-			Logger.normal(this, "AbortedException in BlockTransfer.send():"+e);
-			try {
-				String desc=_prb.getAbortDescription();
-				if (desc.indexOf("Upstream")<0)
-					desc="Upstream transfer failed: "+desc;
-				sendAborted(_prb.getAbortReason(), desc);
-			} catch (NotConnectedException gone) {
-				//ignore
+
+			public boolean shouldTimeout() {
+				return false;
 			}
-			return false;
-		} finally {
-			//Terminate the sender thread, if we are not listening for control packets, don't be sending any data
+
+			public void onTimeout() {
+				long now = System.currentTimeMillis();
+				//SEND_TIMEOUT (one minute) after all packets have been transmitted, terminate the send.
+				try {
+					if((timeAllSent > 0) && ((now - timeAllSent) > SEND_TIMEOUT) &&
+							(getNumSent() == _prb.getNumPackets())) {
+						String timeString=TimeUtil.formatTime((now - timeAllSent), 2, true);
+						Logger.error(this, "Terminating send "+_uid+" to "+_destination+" from "+_destination.getSocketHandler()+" as we haven't heard from receiver in "+timeString+ '.');
+						sendAborted(RetrievalException.RECEIVER_DIED, "Haven't heard from you (receiver) in "+timeString);
+						complete(false);
+					} else {
+						if(logMINOR) Logger.minor(this, "Ignoring timeout: timeAllSent="+timeAllSent+" ("+(System.currentTimeMillis() - timeAllSent)+"), getNumSent="+getNumSent()+ '/' +_prb.getNumPackets());
+						try {
+							waitNotification();
+						} catch (DisconnectedException e) {
+							onDisconnect(null);
+						}
+					}
+				} catch (AbortedException e) {
+					Logger.normal(this, "AbortedException in BlockTransfer.send():"+e);
+					try {
+						String desc=_prb.getAbortDescription();
+						if (desc.indexOf("Upstream")<0)
+							desc="Upstream transfer failed: "+desc;
+						sendAborted(_prb.getAbortReason(), desc);
+					} catch (NotConnectedException gone) {
+						//ignore
+					}
+					complete(false);
+				} catch (NotConnectedException e) {
+					onDisconnect(null);
+				}
+			}
+
+			public void onDisconnect(PeerContext ctx) {
+				//most likely from sending an abort()
+				Logger.normal(this, "Not connected waiting for response in sender "+this);
+				complete(false);
+			}
+
+			public void onRestarted(PeerContext ctx) {
+				//most likely from sending an abort()
+				Logger.normal(this, "Sender restarted waiting for response in sender "+this);
+				complete(false);
+			}
+
+			private void complete(boolean b) {
+				synchronized(this) {
+					if(completed) return;
+					completed = true;
+				}
+				synchronized(_senderThread) {
+					_sendComplete = true;
+					_senderThread.notifyAll();
+				}
+				if (myListener!=null)
+					_prb.removeListener(myListener);
+				callback.blockTransferFinished(b);
+			}
+			
+		};
+		
+		try {
+			waitNotification();
+		} catch (DisconnectedException e) {
 			synchronized(_senderThread) {
 				_sendComplete = true;
 				_senderThread.notifyAll();
 			}
-			if (myListener!=null)
-				_prb.removeListener(myListener);
+			callback.blockTransferFinished(false);
 		}
+		
+	}
+	
+	protected void waitNotification() throws DisconnectedException {
+		MessageFilter mfMissingPacketNotification = MessageFilter.create().setType(DMT.missingPacketNotification).setField(DMT.UID, _uid).setTimeout(SEND_TIMEOUT).setSource(_destination);
+		MessageFilter mfAllReceived = MessageFilter.create().setType(DMT.allReceived).setField(DMT.UID, _uid).setTimeout(SEND_TIMEOUT).setSource(_destination);
+		MessageFilter mfSendAborted = MessageFilter.create().setType(DMT.sendAborted).setField(DMT.UID, _uid).setTimeout(SEND_TIMEOUT).setSource(_destination);
+		MessageFilter mf = mfMissingPacketNotification.or(mfAllReceived.or(mfSendAborted));
+		_usm.addAsyncFilter(mf, notificationWaiter); // FIXME use _ctr for byte counting!
+	}
+
+	private class BlockTransmitterCompletionWaiter implements BlockTransmitterCompletion {
+
+		boolean finished;
+		boolean success;
+		
+		public void blockTransferFinished(boolean success) {
+			synchronized(this) {
+				finished = true;
+				this.success = success;
+				notifyAll();
+			}
+		}
+		
+		public boolean waitSuccess() {
+			synchronized(this) {
+				while(true) {
+					if(finished) return success;
+					try {
+						wait();
+					} catch (InterruptedException e) {
+						// Ignore
+					}
+				}
+			}
+		}
+		
+	}
+	
+	public boolean send() {
+		BlockTransmitterCompletionWaiter waiter = new BlockTransmitterCompletionWaiter();
+		sendAsync(waiter);
+		return waiter.waitSuccess();
 	}
 
 	private static MedianMeanRunningAverage avgTimeTaken = new MedianMeanRunningAverage();
@@ -346,28 +482,6 @@ public class BlockTransmitter {
 			}
 		}
 		return ret;
-	}
-
-	/**
-	 * Send the data, off-thread.
-	 */
-	public void sendAsync(final Executor executor) {
-		executor.execute(new PrioRunnable() {
-			public void run() {
-						 try {
-						    asyncExitStatus=send();
-						 } finally {
-						    synchronized (BlockTransmitter.this) {
-						       asyncExitStatusSet=true;
-						       BlockTransmitter.this.notifyAll();
-						    }
-						 }
-					}
-
-			public int getPriority() {
-				return NativeThread.HIGH_PRIORITY;
-			} },
-			"BlockTransmitter:sendAsync() for "+this);
 	}
 
 	public boolean getAsyncExitStatus() {
