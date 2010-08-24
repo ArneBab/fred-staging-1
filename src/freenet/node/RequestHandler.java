@@ -221,7 +221,18 @@ public class RequestHandler implements PrioRunnable, ByteCounter, RequestSender.
 			bt =
 				new BlockTransmitter(node.usm, node.getTicker(), source, uid, prb, this);
 			node.addTransferringRequestHandler(uid);
-			bt.sendAsync();
+			bt.sendAsync(new BlockTransmitterCompletion() {
+
+				public void blockTransferFinished(boolean success) {
+					synchronized(RequestHandler.this) {
+						transferCompleted = true;
+						transferSuccess = success;
+						if(!waitingForTransferSuccess) return;
+					}
+					transferFinished(success);
+				}
+				
+			});
 		} catch(NotConnectedException e) {
 			synchronized(this) {
 				disconnected = true;
@@ -231,6 +242,31 @@ public class RequestHandler implements PrioRunnable, ByteCounter, RequestSender.
 		}
 	}
 	
+	/** Has the transfer completed? */
+	boolean transferCompleted;
+	/** Did it succeed? */
+	boolean transferSuccess;
+	/** Are we waiting for the transfer to complete? */
+	boolean waitingForTransferSuccess;
+	
+	protected void transferFinished(boolean success) {
+		if(success) {
+			status = rs.getStatus();
+			// Successful CHK transfer, maybe path fold
+			try {
+				finishOpennetChecked();
+			} catch (NotConnectedException e) {
+				// Not a big deal as the transfer succeeded.
+			}
+		} else {
+			finalTransferFailed = true;
+			status = rs.getStatus();
+			//for byte logging, since the block is the 'terminal' message.
+			applyByteCounts();
+			unregisterRequestHandlerWithNode();
+		}
+	}
+
 	public void onAbortDownstreamTransfers(int reason, String desc) {
 		if(bt == null) {
 			Logger.error(this, "No downstream transfer to abort! on "+this);
@@ -247,34 +283,17 @@ public class RequestHandler implements PrioRunnable, ByteCounter, RequestSender.
 	}
 
 	private void waitAndFinishCHKTransferOffThread() {
-		node.executor.execute(new Runnable() {
-
-			public void run() {
-				try {
-					waitAndFinishCHKTransfer();
-				} catch(NotConnectedException e) {
-					//for byte logging, since the block is the 'terminal' message.
-					applyByteCounts();
-					unregisterRequestHandlerWithNode();
-				}
+		boolean transferredSuccessfully;
+		synchronized(RequestHandler.this) {
+			if(waitingForTransferSuccess) {
+				Logger.error(this, "waitAndFinishCHKTransferOffThread called twice on "+this);
+				return;
 			}
-		}, "Finish CHK transfer for " + key + " for " + this);
-	}
-
-	private void waitAndFinishCHKTransfer() throws NotConnectedException {
-		if(logMINOR)
-			Logger.minor(this, "Waiting for CHK transfer to finish");
-		if(bt.getAsyncExitStatus()) {
-			status = rs.getStatus();
-			// Successful CHK transfer, maybe path fold
-			finishOpennetChecked();
-		} else {
-			finalTransferFailed = true;
-			status = rs.getStatus();
-			//for byte logging, since the block is the 'terminal' message.
-			applyByteCounts();
-			unregisterRequestHandlerWithNode();
+			waitingForTransferSuccess = true;
+			if(!transferCompleted) return; // Wait
+			transferredSuccessfully = transferSuccess;
 		}
+		transferFinished(transferredSuccessfully);
 	}
 
 	public void onRequestSenderFinished(int status) {

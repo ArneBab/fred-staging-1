@@ -77,8 +77,6 @@ public class BlockTransmitter {
 	private long timeAllSent = -1;
 	final ByteCounter _ctr;
 	final int PACKET_SIZE;
-	private boolean asyncExitStatus;
-	private boolean asyncExitStatusSet;
 	private final Ticker _ticker;
 	
 	class MyRunnable implements PrioRunnable {
@@ -115,7 +113,7 @@ public class BlockTransmitter {
 		
 		public void schedule(long delay) {
 			if(_sendComplete) return;
-			_ticker.queueTimedJob(this, "BlockTransmitter block sender for "+_uid, delay, false, false);
+			_ticker.queueTimedJob(this, "BlockTransmitter block sender for "+_uid+" to "+_destination, delay, false, false);
 		}
 
 		/** @return True . */
@@ -452,22 +450,6 @@ public class BlockTransmitter {
 			}
 		}
 		return ret;
-	}
-
-	public boolean getAsyncExitStatus() {
-    	long deadline = System.currentTimeMillis() + 60*60*1000;
-		synchronized (this) {
-			while (!asyncExitStatusSet) {
-				try {
-	            	long now = System.currentTimeMillis();
-	            	if(now >= deadline) throw new IllegalStateException("Waited more than 1 hour for transfer completion!");
-	                wait(deadline - now);
-				} catch (InterruptedException e) {
-					//ignore
-				}
-			}
-		}
-		return asyncExitStatus;
 	}
 
 	public PeerContext getDestination() {
