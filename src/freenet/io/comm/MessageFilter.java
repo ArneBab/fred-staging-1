@@ -23,6 +23,8 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 
+import freenet.node.PrioRunnable;
+import freenet.support.Executor;
 import freenet.support.Logger;
 
 /**
@@ -289,13 +291,30 @@ public final class MessageFilter {
      * Caller must verify _matchesDroppedConnection and _source.
      * @param ctx
      */
-    public void onDroppedConnection(PeerContext ctx) {
+    public void onDroppedConnection(final PeerContext ctx, Executor executor) {
+    	final AsyncMessageFilterCallback cb;
     	synchronized(this) {
+    		cb = _callback;
     		_droppedConnection = ctx;
     		notifyAll();
     	}
-    	if(_callback != null) {
-    		_callback.onDisconnect(ctx);
+    	if(cb != null) {
+    		if(cb instanceof SlowAsyncMessageFilterCallback) {
+    			executor.execute(new PrioRunnable() {
+
+					public void run() {
+						cb.onDisconnect(ctx);
+					}
+
+
+					public int getPriority() {
+						return ((SlowAsyncMessageFilterCallback)cb).priority();
+					}
+					
+    			});
+    		} else {
+    			cb.onDisconnect(ctx);
+    		}
     		_ctr = null;
     	}
     }
@@ -305,13 +324,30 @@ public final class MessageFilter {
      * Caller must verify _matchesDroppedConnection and _source.
      * @param ctx
      */
-    public void onRestartedConnection(PeerContext ctx) {
+    public void onRestartedConnection(final PeerContext ctx, Executor executor) {
+    	final AsyncMessageFilterCallback cb;
     	synchronized(this) {
     		_droppedConnection = ctx;
+    		cb = _callback;
     		notifyAll();
     	}
-    	if(_callback != null) {
-    		_callback.onRestarted(ctx);
+    	if(cb != null) {
+    		if(cb instanceof SlowAsyncMessageFilterCallback) {
+    			executor.execute(new PrioRunnable() {
+
+					public void run() {
+						cb.onRestarted(ctx);
+					}
+
+
+					public int getPriority() {
+						return ((SlowAsyncMessageFilterCallback)cb).priority();
+					}
+					
+    			});
+    		} else {
+    			cb.onRestarted(ctx);
+    		}
     		_ctr = null;
     	}
     }
@@ -320,9 +356,9 @@ public final class MessageFilter {
      * Notify waiters that we have been matched.
      * Hopefully no locks will be held at this point by the caller.
      */
-	public void onMatched() {
-		Message msg;
-		AsyncMessageFilterCallback cb;
+	public void onMatched(Executor executor) {
+		final Message msg;
+		final AsyncMessageFilterCallback cb;
 		ByteCounter ctr;
 		synchronized(this) {
 			msg = _message;
@@ -333,7 +369,20 @@ public final class MessageFilter {
 				clearMatched();
 		}
 		if(cb != null) {
-			cb.onMatched(msg);
+			if(cb instanceof SlowAsyncMessageFilterCallback)
+				executor.execute(new PrioRunnable() {
+
+					public void run() {
+						cb.onMatched(msg);
+					}
+
+					public int getPriority() {
+						return ((SlowAsyncMessageFilterCallback)cb).priority();
+					}
+					
+				}, "Slow callback for "+cb);
+			else
+				cb.onMatched(msg);
 			if(ctr != null)
 				ctr.receivedBytes(msg._receivedByteCount);
 		}
@@ -342,12 +391,28 @@ public final class MessageFilter {
 	/**
 	 * Notify waiters that we have timed out.
 	 */
-	public void onTimedOut() {
+	public void onTimedOut(Executor executor) {
+		final AsyncMessageFilterCallback cb;
 		synchronized(this) {
 			notifyAll();
+			cb = _callback;
 		}
-		if(_callback != null)
-			_callback.onTimeout();
+		if(cb != null) {
+			if(cb instanceof SlowAsyncMessageFilterCallback) {
+				executor.execute(new PrioRunnable() {
+
+					public void run() {
+						cb.onTimeout();
+					}
+
+					public int getPriority() {
+						return ((SlowAsyncMessageFilterCallback)cb).priority();
+					}
+					
+				});
+			} else
+				_callback.onTimeout();
+		}
 	}
 
 	/**
