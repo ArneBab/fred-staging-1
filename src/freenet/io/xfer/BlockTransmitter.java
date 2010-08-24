@@ -35,7 +35,6 @@ import freenet.node.PrioRunnable;
 import freenet.node.SyncSendWaitedTooLongException;
 import freenet.node.Ticker;
 import freenet.support.BitArray;
-import freenet.support.Executor;
 import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.TimeUtil;
@@ -436,40 +435,6 @@ public class BlockTransmitter {
 		MessageFilter mfSendAborted = MessageFilter.create().setType(DMT.sendAborted).setField(DMT.UID, _uid).setTimeout(SEND_TIMEOUT).setSource(_destination);
 		MessageFilter mf = mfMissingPacketNotification.or(mfAllReceived.or(mfSendAborted));
 		_usm.addAsyncFilter(mf, notificationWaiter); // FIXME use _ctr for byte counting!
-	}
-
-	private class BlockTransmitterCompletionWaiter implements BlockTransmitterCompletion {
-
-		boolean finished;
-		boolean success;
-		
-		public void blockTransferFinished(boolean success) {
-			synchronized(this) {
-				finished = true;
-				this.success = success;
-				notifyAll();
-			}
-		}
-		
-		public boolean waitSuccess() {
-			synchronized(this) {
-				while(true) {
-					if(finished) return success;
-					try {
-						wait();
-					} catch (InterruptedException e) {
-						// Ignore
-					}
-				}
-			}
-		}
-		
-	}
-	
-	public boolean send() {
-		BlockTransmitterCompletionWaiter waiter = new BlockTransmitterCompletionWaiter();
-		sendAsync(waiter);
-		return waiter.waitSuccess();
 	}
 
 	private static MedianMeanRunningAverage avgTimeTaken = new MedianMeanRunningAverage();
