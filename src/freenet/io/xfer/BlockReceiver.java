@@ -207,7 +207,10 @@ public class BlockReceiver implements AsyncMessageFilterCallback {
 
 		private void complete(RetrievalException retrievalException) {
 			synchronized(this) {
-				if(completed) return;
+				if(completed) {
+					if(logMINOR) Logger.minor(this, "Already completed");
+					return;
+				}
 				completed = true;
 			}
 			_prb.abort(retrievalException.getReason(), retrievalException.toString());
@@ -216,7 +219,10 @@ public class BlockReceiver implements AsyncMessageFilterCallback {
 
 		private void complete(byte[] ret) {
 			synchronized(this) {
-				if(completed) return;
+				if(completed) {
+					if(logMINOR) Logger.minor(this, "Already completed");
+					return;
+				}
 				completed = true;
 			}
 			callback.blockReceived(ret);
