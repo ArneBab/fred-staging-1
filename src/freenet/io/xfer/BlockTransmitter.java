@@ -235,7 +235,7 @@ public class BlockTransmitter {
 					}
 				});
 			}
-			executor.execute(_senderThread, toString());
+			_senderThread.schedule(0);
 			
 			while (true) {
 				synchronized(_senderThread) {
