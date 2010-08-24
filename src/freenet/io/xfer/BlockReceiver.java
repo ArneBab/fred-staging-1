@@ -233,14 +233,18 @@ public class BlockReceiver implements AsyncMessageFilterCallback {
 		}
 
 		public void onTimeout() {
-			if (consecutiveMissingPacketReports >= MAX_CONSECUTIVE_MISSING_PACKET_REPORTS) {
-				_prb.abort(RetrievalException.SENDER_DIED, "Sender unresponsive to resend requests");
-				complete(new RetrievalException(RetrievalException.SENDER_DIED,
-						"Sender unresponsive to resend requests"));
-				return;
+			synchronized(this) {
+				if(completed) return;
 			}
 			LinkedList<Integer> missing = new LinkedList<Integer>();
 			try {
+				if(_prb.allReceived()) return;
+				if (consecutiveMissingPacketReports >= MAX_CONSECUTIVE_MISSING_PACKET_REPORTS) {
+					_prb.abort(RetrievalException.SENDER_DIED, "Sender unresponsive to resend requests");
+					complete(new RetrievalException(RetrievalException.SENDER_DIED,
+							"Sender unresponsive to resend requests"));
+					return;
+				}
 				for (int x = 0; x < _prb.getNumPackets(); x++) {
 					if (!_prb.isReceived(x)) {
 						missing.add(x);
