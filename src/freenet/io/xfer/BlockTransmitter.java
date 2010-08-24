@@ -31,6 +31,7 @@ import freenet.io.comm.NotConnectedException;
 import freenet.io.comm.PeerContext;
 import freenet.io.comm.PeerRestartedException;
 import freenet.io.comm.RetrievalException;
+import freenet.io.comm.SlowAsyncMessageFilterCallback;
 import freenet.node.PrioRunnable;
 import freenet.node.SyncSendWaitedTooLongException;
 import freenet.node.Ticker;
@@ -274,7 +275,7 @@ public class BlockTransmitter {
 		}
 		_senderThread.schedule(0);
 		
-		notificationWaiter = new AsyncMessageFilterCallback() {
+		notificationWaiter = new SlowAsyncMessageFilterCallback() {
 
 			private boolean completed = false;
 			
@@ -413,6 +414,10 @@ public class BlockTransmitter {
 				if (myListener!=null)
 					_prb.removeListener(myListener);
 				callback.blockTransferFinished(b);
+			}
+
+			public int getPriority() {
+				return NativeThread.NORM_PRIORITY;
 			}
 			
 		};
