@@ -46,14 +46,24 @@ import freenet.support.math.MedianMeanRunningAverage;
  * minutes) between received blocks, but there is no means (no DMT message) to tell a 
  * sender that we are no longer interested in this block. This is actually an important
  * security feature. If we had implemented a receiveAborted message, then either:
+ * 
  * a) Receive cancels propagate: Attackers can probe for data and then cancel the 
  * transfer, enabling censorship attacks i.e. find out where it is without propagating it, 
  * and then take action against that location. IMHO this is not as strong as it sounds 
  * because on darknet it is worthless and on opennet you are relying on path folding to 
- * get the next hop, which only happens after a successful transfer anyway.
+ * get the next hop, which only happens after a successful transfer anyway. The other 
+ * issue is inserts, e.g. accept an insert and then return RNF, and then send a cancel, 
+ * a naive implementation of receive propagation would cancel the whole fabric including
+ * all the transfers to other nodes. Finally, there is still a bandwidth multiplier even
+ * if cancels propagate, because nodes closer to the traffic source will have transferred
+ * more blocks, unless cancels are ignored by all but the origin node (which is bad for 
+ * security as it gives us a timing).
  * OR
  * b) Receive cancels don't propagate: Attackers can start transfers downstream and then
- * cancel the receive on their side, making for a nice little DoS attack.
+ * cancel the receive on their side, making for a nice little DoS attack. However this is
+ * limited by load limiting - the victim still has the transfers running, so it won't 
+ * accept any more, so the attacker needs to e.g. constantly connect to new nodes (e.g. 
+ * via announcement) to make much of an impact.
  * 
  * FIXME RECONSIDER! Given that we don't do path folding until after a successful 
  * transfer we probably should allow receive cancels and let them propagate. This might
@@ -65,6 +75,9 @@ import freenet.support.math.MedianMeanRunningAverage;
  * immediately, and is propagated, downstream will have moved several blocks. Better to 
  * have explicit support for bundles and have them not start transferring at all until we
  * have decided we have enough data and we really want it all?
+ * 
+ * FIXME Unfortunately the above is not true. sendAborted is used in *both* directions.
+ * We don't cancel the prb, but we do stop sending in BlockTransmitter if we receive one.
  * 
  * @author ian
  */
