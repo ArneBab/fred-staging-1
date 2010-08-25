@@ -150,7 +150,7 @@ public class BlockReceiver implements AsyncMessageFilterCallback {
 					}
 				} catch (AbortedException e) {
 					// We didn't cause it?!
-					Logger.error(this, "Caught in receive - probably a bug as receive sets it: "+e);
+					Logger.error(this, "Caught in receive - probably a bug as receive sets it: "+e, e);
 					complete(new RetrievalException(RetrievalException.UNKNOWN, "Aborted?"));
 					return;
 				}
@@ -192,7 +192,7 @@ public class BlockReceiver implements AsyncMessageFilterCallback {
 				}
 			} catch (AbortedException e1) {
 				// We didn't cause it?!
-				Logger.error(this, "Caught in receive - probably a bug as receive sets it: "+e1);
+				Logger.error(this, "Caught in receive - probably a bug as receive sets it: "+e1, e1);
 				complete(new RetrievalException(RetrievalException.UNKNOWN, "Aborted?"));
 			} catch (NotConnectedException e1) {
 				complete(new RetrievalException(RetrievalException.SENDER_DISCONNECTED));
@@ -252,7 +252,7 @@ public class BlockReceiver implements AsyncMessageFilterCallback {
 				}
 			} catch (AbortedException e) {
 				// We didn't cause it?!
-				Logger.error(this, "Caught in receive - probably a bug as receive sets it: "+e);
+				Logger.error(this, "Caught in receive - probably a bug as receive sets it: "+e, e);
 				complete(new RetrievalException(RetrievalException.UNKNOWN, "Aborted?"));
 				return;
 			}
