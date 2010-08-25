@@ -78,6 +78,10 @@ import freenet.support.math.MedianMeanRunningAverage;
  * 
  * FIXME Unfortunately the above is not true. sendAborted is used in *both* directions.
  * We don't cancel the prb, but we do stop sending in BlockTransmitter if we receive one.
+ * But it still doesn't work even as intended: RequestSender.killTurtle() calls prb.abort,
+ * but BlockReceiver assumes it is always responsible for aborts, so doesn't do anything
+ * with that information. So when we cancel a turtle, we don't send a sendAborted, we just
+ * log a "Caught in receive - probably a bug as receive sets it".
  * 
  * @author ian
  */
