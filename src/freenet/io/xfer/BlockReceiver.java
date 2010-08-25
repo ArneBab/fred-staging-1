@@ -41,6 +41,31 @@ import freenet.support.io.NativeThread;
 import freenet.support.math.MedianMeanRunningAverage;
 
 /**
+ * IMPORTANT: Incoming block transfers cannot be cancelled. They can timeout, if there is
+ * more than RECEIPT_TIMEOUT * MAX_CONSECUTIVE_MISSING_PACKET_REPORTS (currently 2 
+ * minutes) between received blocks, but there is no means (no DMT message) to tell a 
+ * sender that we are no longer interested in this block. This is actually an important
+ * security feature. If we had implemented a receiveAborted message, then either:
+ * a) Receive cancels propagate: Attackers can probe for data and then cancel the 
+ * transfer, enabling censorship attacks i.e. find out where it is without propagating it, 
+ * and then take action against that location. IMHO this is not as strong as it sounds 
+ * because on darknet it is worthless and on opennet you are relying on path folding to 
+ * get the next hop, which only happens after a successful transfer anyway.
+ * OR
+ * b) Receive cancels don't propagate: Attackers can start transfers downstream and then
+ * cancel the receive on their side, making for a nice little DoS attack.
+ * 
+ * FIXME RECONSIDER! Given that we don't do path folding until after a successful 
+ * transfer we probably should allow receive cancels and let them propagate. This might
+ * allow a lesser DoS by just repeatedly requesting keys that a particular node has and
+ * then cancelling, but on the other hand we could punish nodes if they start and then
+ * cancel too many times. And there might be some interesting applications e.g. find all
+ * the blocks in a file and only transfer if we have enough to reconstruct. On the other
+ * hand, even here we have a bandwidth amplifier effect - if a receive cancel takes effect 
+ * immediately, and is propagated, downstream will have moved several blocks. Better to 
+ * have explicit support for bundles and have them not start transferring at all until we
+ * have decided we have enough data and we really want it all?
+ * 
  * @author ian
  */
 public class BlockReceiver implements AsyncMessageFilterCallback {

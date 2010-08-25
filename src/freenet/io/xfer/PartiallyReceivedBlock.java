@@ -156,6 +156,7 @@ public class PartiallyReceivedBlock {
 		_packetReceivedListeners.remove(listener);
 	}
 
+	/** IMPORTANT: Incoming transfers cannot be cancelled! See comments at top of BlockReceiver! */
 	public synchronized void abort(int reason, String description) {
 		if(_aborted) return;
 		Logger.normal(this, "Aborting PRB: "+reason+" : "+description, new Exception("debug"));
