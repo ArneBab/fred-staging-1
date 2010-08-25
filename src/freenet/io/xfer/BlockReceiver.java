@@ -109,14 +109,6 @@ public class BlockReceiver implements AsyncMessageFilterCallback {
 //		_doTooLong = doTooLong;
 	}
 
-	public void sendAborted(int reason, String desc) throws NotConnectedException {
-		synchronized(this) {
-			if(sentAborted) return;
-			sentAborted = true;
-		}
-		_usm.send(_sender, DMT.createSendAborted(_uid, reason, desc), _ctr);
-	}
-	
 	public interface BlockReceiverCompletion {
 		
 		public void blockReceived(byte[] buf);
@@ -234,23 +226,14 @@ public class BlockReceiver implements AsyncMessageFilterCallback {
 		}
 
 		private void complete(RetrievalException retrievalException) {
-			boolean receivedAbort;
 			synchronized(this) {
 				if(completed) {
 					if(logMINOR) Logger.minor(this, "Already completed");
 					return;
 				}
 				completed = true;
-				receivedAbort = senderAborted;
 			}
 			_prb.abort(retrievalException.getReason(), retrievalException.toString());
-			if(receivedAbort) {
-				try {
-					sendAborted(retrievalException.getReason(), retrievalException.getMessage());
-				} catch (NotConnectedException e) {
-					// Ignore at this point.
-				}
-			}
 			callback.blockReceiveFailed(retrievalException);
 		}
 

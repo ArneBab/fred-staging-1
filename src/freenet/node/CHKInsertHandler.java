@@ -142,7 +142,8 @@ public class CHKInsertHandler implements PrioRunnable, ByteCounter {
         		prb = new PartiallyReceivedBlock(Node.PACKETS_IN_BLOCK, Node.PACKET_SIZE);
         		br = new BlockReceiver(node.usm, source, uid, prb, this, node.getTicker(), false);
         		prb.abort(RetrievalException.NO_DATAINSERT, "No DataInsert");
-        		br.sendAborted(RetrievalException.NO_DATAINSERT, "No DataInsert");
+        		// FIXME reorganise protocol so we send an Accepted after DataInsert, and don't start the transfer until receiving the Accepted.
+        		//br.sendAborted(RetrievalException.NO_DATAINSERT, "No DataInsert");
         		return;
         	} catch (NotConnectedException e) {
         		if(logMINOR) Logger.minor(this, "Lost connection to source");

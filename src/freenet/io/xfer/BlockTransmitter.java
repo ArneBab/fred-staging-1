@@ -48,6 +48,10 @@ import freenet.support.math.MedianMeanRunningAverage;
  *
  * Given a PartiallyReceivedBlock retransmit to another node (to be received by BlockReceiver).
  * Since a PRB can be concurrently transmitted to many peers NOWHERE in this class is prb.abort() to be called.
+ * 
+ * Transmits can be cancelled, we will send a sendAborted. However, the receiver cannot 
+ * cancel an incoming block transfer, because that would allow bad things. See the comments
+ * on BlockReceiver.
  */
 public class BlockTransmitter {
 
@@ -332,14 +336,6 @@ public class BlockTransmitter {
 					}
 					complete(true);
 					return;
-				} else if (msg.getSpec().equals(DMT.sendAborted)) {
-					// Overloaded: receiver no longer wants the data
-					// Do NOT abort PRB, it's none of its business.
-					// And especially, we don't want a downstream node to 
-					// be able to abort our sends to all the others!
-					//They aborted, don't need to send an aborted back :)
-					complete(false);
-					return;
 				} else {
 					Logger.error(this, "Transmitter received unknown message type: "+msg.getSpec().getName());
 				}
@@ -435,8 +431,7 @@ public class BlockTransmitter {
 	protected void waitNotification() throws DisconnectedException {
 		MessageFilter mfMissingPacketNotification = MessageFilter.create().setType(DMT.missingPacketNotification).setField(DMT.UID, _uid).setTimeout(SEND_TIMEOUT).setSource(_destination);
 		MessageFilter mfAllReceived = MessageFilter.create().setType(DMT.allReceived).setField(DMT.UID, _uid).setTimeout(SEND_TIMEOUT).setSource(_destination);
-		MessageFilter mfSendAborted = MessageFilter.create().setType(DMT.sendAborted).setField(DMT.UID, _uid).setTimeout(SEND_TIMEOUT).setSource(_destination);
-		MessageFilter mf = mfMissingPacketNotification.or(mfAllReceived.or(mfSendAborted));
+		MessageFilter mf = mfMissingPacketNotification.or(mfAllReceived);
 		_usm.addAsyncFilter(mf, notificationWaiter, _ctr); // FIXME use _ctr for byte counting!
 	}
 
