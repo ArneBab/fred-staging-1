@@ -45,7 +45,7 @@ import freenet.support.math.MedianMeanRunningAverage;
  * more than RECEIPT_TIMEOUT * MAX_CONSECUTIVE_MISSING_PACKET_REPORTS (currently 2 
  * minutes) between received blocks, but there is no means (no DMT message) to tell a 
  * sender that we are no longer interested in this block. This is actually an important
- * security feature. If we had implemented a receiveAborted message, then either:
+ * security feature. If we had implemented receive initiated transfer aborts, then either:
  * 
  * a) Receive cancels propagate: Attackers can probe for data and then cancel the 
  * transfer, enabling censorship attacks i.e. find out where it is without propagating it, 
@@ -57,34 +57,14 @@ import freenet.support.math.MedianMeanRunningAverage;
  * all the transfers to other nodes. Finally, there is still a bandwidth multiplier even
  * if cancels propagate, because nodes closer to the traffic source will have transferred
  * more blocks, unless cancels are ignored by all but the origin node (which is bad for 
- * security as it gives us a timing).
+ * security as it gives a timing to the data sender).
  * OR
  * b) Receive cancels don't propagate: Attackers can start transfers downstream and then
- * cancel the receive on their side, making for a nice little DoS attack. However this is
+ * cancel the receive on their side, making for a nice little DoS attack. This is
  * limited by load limiting - the victim still has the transfers running, so it won't 
  * accept any more, so the attacker needs to e.g. constantly connect to new nodes (e.g. 
- * via announcement) to make much of an impact.
- * 
- * FIXME RECONSIDER! Given that we don't do path folding until after a successful 
- * transfer we probably should allow receive cancels and let them propagate. This might
- * allow a lesser DoS by just repeatedly requesting keys that a particular node has and
- * then cancelling, but on the other hand we could punish nodes if they start and then
- * cancel too many times. And there might be some interesting applications e.g. find all
- * the blocks in a file and only transfer if we have enough to reconstruct. On the other
- * hand, even here we have a bandwidth amplifier effect - if a receive cancel takes effect 
- * immediately, and is propagated, downstream will have moved several blocks. Better to 
- * have explicit support for bundles and have them not start transferring at all until we
- * have decided we have enough data and we really want it all?
- * 
- * FIXME Unfortunately the above is not true. sendAborted is used in *both* directions.
- * We don't cancel the prb, but we do stop sending in BlockTransmitter if we receive one.
- * But it still doesn't work even as intended: RequestSender.killTurtle() calls prb.abort,
- * but BlockReceiver assumes it is always responsible for aborts, so doesn't do anything
- * with that information. So when we cancel a turtle, we don't send a sendAborted, we just
- * log a "Caught in receive - probably a bug as receive sets it".
- * 
- * Hmmm... the old code, before the threadless refactoring, *did* send a sendAborted in 
- * the finally block.
+ * via announcement) to make much of an impact. However, load limiting right now doesn't
+ * give much DoS protection, and won't until we have fair sharing between peers. :|
  * 
  * @author ian
  */
