@@ -83,6 +83,9 @@ import freenet.support.math.MedianMeanRunningAverage;
  * with that information. So when we cancel a turtle, we don't send a sendAborted, we just
  * log a "Caught in receive - probably a bug as receive sets it".
  * 
+ * Hmmm... the old code, before the threadless refactoring, *did* send a sendAborted in 
+ * the finally block.
+ * 
  * @author ian
  */
 public class BlockReceiver implements AsyncMessageFilterCallback {
