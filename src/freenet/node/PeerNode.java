@@ -4333,20 +4333,17 @@ public abstract class PeerNode implements PeerContext, USKRetrieverCallback {
 
 	private HashMap<Key,RequestSender> turtlingTransfers = new HashMap<Key,RequestSender>();
 
-	public boolean registerTurtleTransfer(RequestSender sender) {
+	public void registerTurtleTransfer(RequestSender sender) {
 		Key key = sender.key;
 		synchronized(turtlingTransfers) {
 			if(turtlingTransfers.size() >= MAX_TURTLES_PER_PEER) {
-				Logger.warning(this, "Too many turtles for peer");
-				return false;
+				Logger.warning(this, "Many turtles for peer for "+this+" : "+turtlingTransfers.size());
 			}
 			if(turtlingTransfers.containsKey(key)) {
-				Logger.error(this, "Already fetching key from peer");
-				return false;
+				Logger.error(this, "Already fetching key from peer: "+this+" : "+sender.key+" for "+sender);
 			}
 			turtlingTransfers.put(key, sender);
 			Logger.normal(this, "Turtles for "+getPeer()+" : "+turtlingTransfers.size());
-			return true;
 		}
 	}
 
@@ -4359,7 +4356,7 @@ public abstract class PeerNode implements PeerContext, USKRetrieverCallback {
 			}
 			RequestSender oldSender = turtlingTransfers.remove(key);
 			if(oldSender != sender) {
-				Logger.error(this, "Removing turtle transfer "+sender+" for "+key+" from "+this+" : WRONG SENDER: "+oldSender);
+				Logger.warning(this, "Removing turtle transfer "+sender+" for "+key+" from "+this+" : WRONG SENDER: "+oldSender);
 				turtlingTransfers.put(key, oldSender);
 				return;
 			}

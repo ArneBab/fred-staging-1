@@ -1524,11 +1524,6 @@ public final class RequestSender implements PrioRunnable, ByteCounter {
 		return transferringFrom;
 	}
 
-	public void killTurtle() {
-		prb.abort(RetrievalException.TURTLE_KILLED, "Too many turtles / already have turtles for this key");
-		node.failureTable.onFinalFailure(key, transferringFrom(), htl, origHTL, FailureTable.REJECT_TIME, source);
-	}
-
 	public boolean abortedDownstreamTransfers() {
 		return sentAbortDownstreamTransfers;
 	}
