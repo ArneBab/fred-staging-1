@@ -278,6 +278,7 @@ public class AnnounceSender implements PrioRunnable, ByteCounter {
 				if(msg.getSpec() == DMT.FNPOpennetAnnounceCompleted) {
 					// Send the completion on immediately. We don't want to accumulate 30 seconds per hop!
 					complete();
+					//"complete" should always be the last message, but we might grab it out-of-order from our queue.
 					mfAnnounceReply.setTimeout(END_TIMEOUT).setTimeoutRelativeToCreation(true);
 					mfNotWanted.setTimeout(END_TIMEOUT).setTimeoutRelativeToCreation(true);
 					mfAnnounceReply.clearOr();
@@ -453,6 +454,7 @@ public class AnnounceSender implements PrioRunnable, ByteCounter {
 	}
 
 	private void complete() {
+		addRefIfWanted();
 		Message msg = DMT.createFNPOpennetAnnounceCompleted(uid);
 		if(source != null) {
 			try {
@@ -474,12 +476,19 @@ public class AnnounceSender implements PrioRunnable, ByteCounter {
 		if(noderefBuf == null) {
 			return false;
 		}
-		SimpleFieldSet fs = om.validateNoderef(noderefBuf, 0, noderefLength, source, false);
+		fs = om.validateNoderef(noderefBuf, 0, noderefLength, source, false);
 		if(fs == null) {
 			om.rejectRef(uid, source, DMT.NODEREF_REJECTED_INVALID, this);
 			return false;
 		}
+		return true;
+	}
+
+	private SimpleFieldSet fs;
+
+	private boolean addRefIfWanted() {
 		// If we want it, add it and send it.
+		if (fs==null ) return;
 		try {
 			if(om.addNewOpennetNode(fs, ConnectionType.ANNOUNCE) != null) {
 				sendOurRef(source, om.crypto.myCompressedFullRef());
