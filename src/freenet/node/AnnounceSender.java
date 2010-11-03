@@ -37,6 +37,7 @@ public class AnnounceSender implements PrioRunnable, ByteCounter {
 	static final int ACCEPTED_TIMEOUT = 10000;
 	static final int ANNOUNCE_TIMEOUT = 240000; // longer than a regular request as have to transfer noderefs hop by hop etc
 	static final int END_TIMEOUT = 30000; // After received the completion message, wait 30 seconds for any late reordered replies
+	static final int MAX_ANNOUNCE_REPLIES = 6; //per-announcement. must be less than MAX_HTL to have any effect; maybe 3-6 is good?
 
 	private final PeerNode source;
 	private final long uid;
@@ -278,6 +279,7 @@ public class AnnounceSender implements PrioRunnable, ByteCounter {
 				if(msg.getSpec() == DMT.FNPOpennetAnnounceCompleted) {
 					// Send the completion on immediately. We don't want to accumulate 30 seconds per hop!
 					complete();
+					//"complete" should always be the last message, but we might grab it out-of-order from our queue.
 					mfAnnounceReply.setTimeout(END_TIMEOUT).setTimeoutRelativeToCreation(true);
 					mfNotWanted.setTimeout(END_TIMEOUT).setTimeoutRelativeToCreation(true);
 					mfAnnounceReply.clearOr();
@@ -338,6 +340,7 @@ public class AnnounceSender implements PrioRunnable, ByteCounter {
 						cb.nodeNotWanted();
 					if(source != null) {
 						try {
+							///@bug: the only thing that "not wanted" messages ultimately do is trigger logging messages.
 							sendNotWanted();
 						} catch (NotConnectedException e) {
 							Logger.warning(this, "Lost connection to source (announce not wanted)");
@@ -453,6 +456,7 @@ public class AnnounceSender implements PrioRunnable, ByteCounter {
 	}
 
 	private void complete() {
+		addRefIfWanted();
 		Message msg = DMT.createFNPOpennetAnnounceCompleted(uid);
 		if(source != null) {
 			try {
@@ -474,13 +478,25 @@ public class AnnounceSender implements PrioRunnable, ByteCounter {
 		if(noderefBuf == null) {
 			return false;
 		}
-		SimpleFieldSet fs = om.validateNoderef(noderefBuf, 0, noderefLength, source, false);
+		fs = om.validateNoderef(noderefBuf, 0, noderefLength, source, false);
 		if(fs == null) {
 			om.rejectRef(uid, source, DMT.NODEREF_REJECTED_INVALID, this);
 			return false;
 		}
-		// If we want it, add it and send it.
+		return true;
+	}
+
+	//The fieldSet of the upstream noderef
+	private SimpleFieldSet fs;
+
+	private boolean addRefIfWanted() {
+		// If we want it, add it and send our own ref back upstream.
+		if (fs==null) return false;
 		try {
+			if(forwardedRefs>=MAX_ANNOUNCE_REPLIES) {
+				if(logMINOR)
+					Logger.minor(this, "Origin already has enough replies");
+			} else
 			if(om.addNewOpennetNode(fs, ConnectionType.ANNOUNCE) != null) {
 				sendOurRef(source, om.crypto.myCompressedFullRef());
 			} else {
