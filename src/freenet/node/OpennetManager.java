@@ -521,6 +521,7 @@ public class OpennetManager {
 	private synchronized boolean enforcePerTypeGracePeriodLimits(int maxPeers, ConnectionType type, boolean addingPeer) {
 		if(type == null) {
 			if(logMINOR) Logger.minor(this, "No type set, not enforcing per type limits");
+			return false;
 		}
 
 		// We do NOT want to have all our peers in grace periods!
