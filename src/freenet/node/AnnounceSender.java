@@ -488,7 +488,7 @@ public class AnnounceSender implements PrioRunnable, ByteCounter {
 
 	private boolean addRefIfWanted() {
 		// If we want it, add it and send it.
-		if (fs==null ) return;
+		if (fs==null) return false;
 		try {
 			if(om.addNewOpennetNode(fs, ConnectionType.ANNOUNCE) != null) {
 				sendOurRef(source, om.crypto.myCompressedFullRef());
