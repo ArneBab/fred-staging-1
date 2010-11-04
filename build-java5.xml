@@ -179,7 +179,7 @@
 
 	<!-- ================================================== -->
 
-	<target name="dist" depends="compile,unit" description="generate the distribution" >
+	<target name="dist" depends="compile" description="generate the distribution" >
 		<!-- Create the distribution directory -->
 		<jar jarfile="${lib}/freenet-cvs-snapshot.jar" basedir="${build}">
 			<manifest>
