@@ -77,6 +77,10 @@ public class Announcer {
 		logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
 	}
 
+	public boolean isRunning() {
+		return (runningAnnouncements!=0);
+	}
+
 	protected void start() {
 		if(!node.isOpennetEnabled()) return;
 		int darkPeers = node.peers.getDarknetPeers().length;

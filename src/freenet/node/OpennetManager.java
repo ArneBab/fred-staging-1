@@ -400,6 +400,15 @@ public class OpennetManager {
 					timeLastOffered = System.currentTimeMillis();
 				notMany = true;
 				// Don't check timeLastAddedOldOpennetPeer, since we want it anyway. But do update it.
+			} else {
+				//list is full (or over-limit)
+				if (connectionType == ConnectionType.ANNOUNCE) {
+					//don't let announcements (that we create) clobber good peers
+					//e.g. if we start an announcement and get 12 responses, dont "start over" with a bunch of fresh peers
+					if (announcer.isRunning()) {
+						return false;
+					}
+				}
 			}
 			// Old opennet peers should only replace free slots / disconnected droppable nodes.
 			// We can make offers regardless of timeLastOffered provided they are disconnected droppable peers.
