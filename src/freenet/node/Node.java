@@ -653,6 +653,8 @@ public class Node implements TimeSkewDetectorCallback {
 	 * probabilistic decrement at the edges of the HTLs. */
 	boolean disableProbabilisticHTLs;
 
+	boolean isSimulatorNode=false;
+
 	/** HashSet of currently running request UIDs */
 	private final HashMap<Long,UIDTag> runningUIDs;
 	private final HashMap<Long,RequestTag> runningCHKGetUIDs;
@@ -5501,6 +5503,10 @@ public class Node implements TimeSkewDetectorCallback {
 	 */
 	public boolean wantAnonAuth() {
 		return opennet != null && acceptSeedConnections;
+	}
+
+	public void setAcceptSeedConnections(boolean acceptSeedConnections) {
+		this.acceptSeedConnections=acceptSeedConnections;
 	}
 
 	public boolean opennetDefinitelyPortForwarded() {

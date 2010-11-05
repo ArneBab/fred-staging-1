@@ -325,7 +325,7 @@ public class NodeStarter implements WrapperListener {
 		File baseDir = new File(testName);
 		File portDir = new File(baseDir, Integer.toString(port));
 		if((!portDir.mkdir()) && ((!portDir.exists()) || (!portDir.isDirectory()))) {
-			System.err.println("Cannot create directory for test");
+			System.err.println("Cannot create directory for test: "+portDir);
 			System.exit(NodeInitException.EXIT_TEST_ERROR);
 		}
 
@@ -392,6 +392,7 @@ public class NodeStarter implements WrapperListener {
 		PersistentConfig config = new PersistentConfig(configFS);
 
 		Node node = new Node(config, random, random, null, null, executor);
+		node.isSimulatorNode=true;
 
 		//All testing environments connect the nodes as they want, even if the old setup is restored, it is not desired.
 		node.peers.removeAllPeers();

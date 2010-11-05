@@ -57,6 +57,13 @@ public class NodeIPPortDetector {
 	 * (for that port/NodeCrypto) list of IP addresses (still without port numbers).
 	 */
 	FreenetInetAddress[] detectPrimaryIPAddress() {
+		if (node.isSimulatorNode) {
+			try {
+				return new FreenetInetAddress[] {new FreenetInetAddress("127.0.0.1", false)};
+			} catch (java.net.UnknownHostException e) {
+				e.printStackTrace();
+			}
+		}
 		FreenetInetAddress addr = crypto.getBindTo();
 		if(addr.isRealInternetAddress(false, true, false)) {
 			// Binding to a real internet address => don't want us to use the others, most likely
@@ -92,7 +99,7 @@ public class NodeIPPortDetector {
 				Peer p = peerList[i].getRemoteDetectedPeer();
 				if((p == null) || p.isNull()) continue;
 				// DNSRequester doesn't deal with our own node
-				if(!IPUtil.isValidAddress(p.getAddress(true), false)) continue;
+				if(!IPUtil.isValidAddress(p.getAddress(true), node.isSimulatorNode)) continue;
 				if(logMINOR)
 					Logger.minor(this, "Peer "+peerList[i].getPeer()+" thinks we are "+p);
 				if(countsByPeer.containsKey(p)) {

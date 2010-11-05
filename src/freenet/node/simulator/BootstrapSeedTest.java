@@ -16,6 +16,10 @@ import freenet.support.Logger.LogLevel;
 import freenet.support.LoggerHook.InvalidThresholdException;
 import freenet.support.io.FileUtil;
 
+/**
+ * A simulator to see if the current build can successfully bootstrap onto the live network using the
+ * live seednodes file.
+ */
 public class BootstrapSeedTest {
 
 	public static int EXIT_NO_SEEDNODES = 257;

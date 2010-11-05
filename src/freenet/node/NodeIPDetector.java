@@ -119,7 +119,7 @@ public class NodeIPDetector {
 			// If the IP is overridden and the override is valid, the override has to be the first element.
 			// overrideIPAddress will be null if the override is invalid
 			addresses.add(overrideIPAddress);
-			if(overrideIPAddress.isRealInternetAddress(false, true, false))
+			if(overrideIPAddress.isRealInternetAddress(false, true, node.isSimulatorNode))
 				addedValidIP = true;
 		}
 		
