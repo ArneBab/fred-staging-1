@@ -4726,12 +4726,12 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 		return messageQueue;
 	}
 
-	public void handleReceivedPacket(byte[] buf, int offset, int length, long now) {
-		boolean result = packetFormat.handleReceivedPacket(buf, offset, length, now);
+	public void handleReceivedPacket(byte[] buf, int offset, int length, long now, Peer replyTo) {
+		boolean result = packetFormat.handleReceivedPacket(buf, offset, length, now, replyTo);
 
 		// Assume it is connection setup or rekeying
 		if(!result) {
-			crypto.packetMangler.process(buf, offset, length, getPeer(), now);
+			crypto.packetMangler.process(buf, offset, length, replyTo, now);
 		}
 	}
 
@@ -4793,5 +4793,25 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 	// FIXME move this to PacketFormat eventually.
 	public Random paddingGen() {
 		return paddingGen;
+	}
+
+	public boolean matchesPeerAndPort(Peer peer) {
+		if(detectedPeer != null && detectedPeer.equals(peer)) return true;
+		if(nominalPeer != null) { // FIXME condition necessary???
+			for(Peer p : nominalPeer) {
+				if(p != null && p.equals(peer)) return true;
+			}
+		}
+		return false;
+	}
+
+	public boolean matchesIP(FreenetInetAddress addr) {
+		if(detectedPeer != null && detectedPeer.getFreenetAddress().equals(addr)) return true;
+		if(nominalPeer != null) { // FIXME condition necessary???
+			for(Peer p : nominalPeer) {
+				if(p != null && p.getFreenetAddress().equals(addr)) return true;
+			}
+		}
+		return false;
 	}
 }

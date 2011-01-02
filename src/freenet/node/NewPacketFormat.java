@@ -14,6 +14,7 @@ import freenet.crypt.BlockCipher;
 import freenet.crypt.HMAC;
 import freenet.crypt.PCFBMode;
 import freenet.io.comm.DMT;
+import freenet.io.comm.Peer;
 import freenet.io.comm.Peer.LocalAddressException;
 import freenet.node.NewPacketFormatKeyContext.AddedAcks;
 import freenet.support.LogThresholdCallback;
@@ -87,7 +88,7 @@ public class NewPacketFormat implements PacketFormat {
 			hmacLength = HMAC_LENGTH_OLD;
 	}
 
-	public boolean handleReceivedPacket(byte[] buf, int offset, int length, long now) {
+	public boolean handleReceivedPacket(byte[] buf, int offset, int length, long now, Peer replyTo) {
 		NPFPacket packet = null;
 		SessionKey s = null;
 		for(int i = 0; i < 3; i++) {
@@ -201,14 +202,9 @@ public class NewPacketFormat implements PacketFormat {
 			if((recvBuffer.messageLength != -1) && recvMap.contains(0, recvBuffer.messageLength - 1)) {
 				receiveBuffers.remove(fragment.messageID);
 				receiveMaps.remove(fragment.messageID);
-				fullyReceived.add(recvBuffer.buffer);
-
-				synchronized(bufferUsageLock) {
-					usedBuffer -= recvBuffer.messageLength;
-					if(logDEBUG) Logger.debug(this, "Removed " + recvBuffer.messageLength + " from buffer. Total is now " + usedBuffer);
-				}
 
 				synchronized(receivedMessages) {
+					if(receivedMessages.contains(fragment.messageID, fragment.messageID)) continue;
 					receivedMessages.add(fragment.messageID, fragment.messageID);
 
 					int oldWindow = messageWindowPtrReceived;
@@ -225,6 +221,13 @@ public class NewPacketFormat implements PacketFormat {
 					}
 				}
 
+				synchronized(bufferUsageLock) {
+					usedBuffer -= recvBuffer.messageLength;
+					if(logDEBUG) Logger.debug(this, "Removed " + recvBuffer.messageLength + " from buffer. Total is now " + usedBuffer);
+				}
+
+				fullyReceived.add(recvBuffer.buffer);
+				
 				if(logMINOR) Logger.minor(this, "Message id " + fragment.messageID + ": Completed");
 			} else {
 				if(logDEBUG) Logger.debug(this, "Message id " + fragment.messageID + ": " + recvMap);
