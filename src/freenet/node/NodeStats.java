@@ -244,6 +244,8 @@ public class NodeStats implements Persistable {
 	/** PeerManagerUserAlert stats update interval (milliseconds) */
 	private static final long peerManagerUserAlertStatsUpdateInterval = 1000;  // 1 second
 
+	final Hashtable<String, TrivialRunningAverage> avgBackoffTimes;
+
 	// Database stats
 	final Hashtable<String, TrivialRunningAverage> avgDatabaseJobExecutionTimes;
 	public final DecayingKeyspaceAverage avgClientCacheCHKLocation;
@@ -516,6 +518,7 @@ public class NodeStats implements Persistable {
 
 		hourlyStats = new HourlyStats(node);
 
+		avgBackoffTimes = new Hashtable<String, TrivialRunningAverage>();
 		avgDatabaseJobExecutionTimes = new Hashtable<String, TrivialRunningAverage>();
 	}
 
@@ -2539,6 +2542,21 @@ public class NodeStats implements Persistable {
 		avg.report(executionTimeMiliSeconds);
 	}
 
+	public void reportBackoff(String backoffType, long backoffTimeMiliSeconds) {
+		TrivialRunningAverage avg;
+
+		synchronized (avgBackoffTimes) {
+			avg = avgBackoffTimes.get(backoffType);
+
+			if (avg == null) {
+				avg = new TrivialRunningAverage();
+				avgBackoffTimes.put(backoffType, avg);
+			}
+		}
+
+		avg.report(backoffTimeMiliSeconds);
+	}
+
 	/**
 	 * View of stats for CHK Store
 	 *
@@ -2784,20 +2802,20 @@ public class NodeStats implements Persistable {
 	}
 
 
-	public static class DatabaseJobStats implements Comparable<DatabaseJobStats> {
-		public final String jobType;
+	public static class TimedStats implements Comparable<TimedStats> {
+		public final String keyStr;
 		public final long count;
 		public final long avgTime;
 		public final long totalTime;
 
-		public DatabaseJobStats(String myJobType, long myCount, long myAvgTime, long myTotalTime) {
-			jobType = myJobType;
+		public TimedStats(String myKeyStr, long myCount, long myAvgTime, long myTotalTime) {
+			keyStr = myKeyStr;
 			count = myCount;
 			avgTime = myAvgTime;
 			totalTime = myTotalTime;
 		}
 
-		public int compareTo(DatabaseJobStats o) {
+		public int compareTo(TimedStats o) {
 			if(avgTime < o.avgTime)
 				return 1;
 			else if(avgTime == o.avgTime)
@@ -2807,14 +2825,29 @@ public class NodeStats implements Persistable {
 		}
 	}
 
-	public DatabaseJobStats[] getDatabaseJobExecutionStatistics() {
-		DatabaseJobStats[] entries = new DatabaseJobStats[avgDatabaseJobExecutionTimes.size()];
+	public TimedStats[] getBackoffStatistics() {
+		TimedStats[] entries = new TimedStats[avgBackoffTimes.size()];
+		int i = 0;
+
+		synchronized (avgBackoffTimes) {
+			for (Map.Entry<String, TrivialRunningAverage> entry : avgBackoffTimes.entrySet()) {
+				TrivialRunningAverage avg = entry.getValue();
+				entries[i++] = new TimedStats(entry.getKey(), avg.countReports(), (long) avg.currentValue(), (long) avg.totalValue());
+			}
+		}
+
+		Arrays.sort(entries);
+		return entries;
+	}
+
+	public TimedStats[] getDatabaseJobExecutionStatistics() {
+		TimedStats[] entries = new TimedStats[avgDatabaseJobExecutionTimes.size()];
 		int i = 0;
 
 		synchronized(avgDatabaseJobExecutionTimes) {
 			for(Map.Entry<String, TrivialRunningAverage> entry : avgDatabaseJobExecutionTimes.entrySet()) {
 				TrivialRunningAverage avg = entry.getValue();
-				entries[i++] = new DatabaseJobStats(entry.getKey(), avg.countReports(), (long)avg.currentValue(), (long)avg.totalValue());
+				entries[i++] = new TimedStats(entry.getKey(), avg.countReports(), (long) avg.currentValue(), (long) avg.totalValue());
 			}
 		}
 

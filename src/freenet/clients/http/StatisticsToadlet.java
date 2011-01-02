@@ -264,19 +264,42 @@ public class StatisticsToadlet extends Toadlet {
 
 			// Peer routing backoff reason box
 			HTMLNode backoffReasonInfobox = nextTableCell.addChild("div", "class", "infobox");
-			backoffReasonInfobox.addChild("div", "class", "infobox-header", "Peer backoff reasons");
+			backoffReasonInfobox.addChild("div", "class", "infobox-header", "Peer Backoff");
 			HTMLNode backoffReasonContent = backoffReasonInfobox.addChild("div", "class", "infobox-content");
+
+			HTMLNode curBackoffReasonInfobox = backoffReasonContent.addChild("div", "class", "infobox");
+			curBackoffReasonInfobox.addChild("div", "class", "infobox-header", "Current backoff reasons");
+			HTMLNode curBackoffReasonContent = curBackoffReasonInfobox.addChild("div", "class", "infobox-content");
+
 			String [] routingBackoffReasons = peers.getPeerNodeRoutingBackoffReasons();
 			if(routingBackoffReasons.length == 0) {
-				backoffReasonContent.addChild("#", "Good, your node is not backed off from any peers!");
+				curBackoffReasonContent.addChild("#", "Good, your node is not backed off from any peers!");
 			} else {
-				HTMLNode reasonList = backoffReasonContent.addChild("ul");
+				HTMLNode reasonList = curBackoffReasonContent.addChild("ul");
 				for(int i=0;i<routingBackoffReasons.length;i++) {
 					int reasonCount = peers.getPeerNodeRoutingBackoffReasonSize(routingBackoffReasons[i]);
 					if(reasonCount > 0) {
 						reasonList.addChild("li", routingBackoffReasons[i] + '\u00a0' + reasonCount);
 					}
 				}
+			}
+
+			// Per backoff-type count and avg backoff lengths
+
+			HTMLNode backoffStatisticsTable = backoffReasonInfobox.addChild("table", "border", "0");
+			HTMLNode row = backoffStatisticsTable.addChild("tr");
+			row.addChild("th", l10n("backoffReason"));
+			row.addChild("th", l10n("count"));
+			row.addChild("th", l10n("avgTime"));
+			row.addChild("th", l10n("totalTime"));
+
+
+			for(NodeStats.TimedStats entry : stats.getBackoffStatistics()) {
+				row = backoffStatisticsTable.addChild("tr");
+				row.addChild("td", entry.keyStr);
+				row.addChild("td", Long.toString(entry.count));
+				row.addChild("td", TimeUtil.formatTime(entry.avgTime, 2, true));
+				row.addChild("td", TimeUtil.formatTime(entry.totalTime, 2, true));
 			}
 
 			//Swap statistics box
@@ -512,9 +535,9 @@ public class StatisticsToadlet extends Toadlet {
 		row.addChild("th", l10n("totalTime"));
 		
 		
-		for(NodeStats.DatabaseJobStats entry : stats.getDatabaseJobExecutionStatistics()) {
+		for(NodeStats.TimedStats entry : stats.getDatabaseJobExecutionStatistics()) {
 			row = executionTimeStatisticsTable.addChild("tr");
-			row.addChild("td", entry.jobType);
+			row.addChild("td", entry.keyStr);
 			row.addChild("td", Long.toString(entry.count));
 			row.addChild("td", TimeUtil.formatTime(entry.avgTime, 2, true));
 			row.addChild("td", TimeUtil.formatTime(entry.totalTime, 2, true));
