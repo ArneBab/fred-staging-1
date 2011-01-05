@@ -609,6 +609,16 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 							Logger.error(this, "Invalid hostname or IP Address syntax error while parsing peer reference in local peers list: " + physical[i]);
 						System.err.println("Invalid hostname or IP Address syntax error while parsing peer reference: " + physical[i]);
 						continue;
+					} catch (PeerParseException e) {
+						if(fromLocal)
+							Logger.error(this, "Invalid hostname or IP Address syntax error while parsing peer reference in local peers list: " + physical[i]);
+						System.err.println("Invalid hostname or IP Address syntax error while parsing peer reference: " + physical[i]);
+						continue;
+					} catch (UnknownHostException e) {
+						if(fromLocal)
+							Logger.error(this, "Invalid hostname or IP Address syntax error while parsing peer reference in local peers list: " + physical[i]);
+						System.err.println("Invalid hostname or IP Address syntax error while parsing peer reference: " + physical[i]);
+						continue;
 					}
 					if(!nominalPeer.contains(p))
 						nominalPeer.addElement(p);
@@ -2567,6 +2577,13 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 					try {
 						p = new Peer(physical[i], true, true);
 					} catch(HostnameSyntaxException e) {
+						Logger.error(this, "Invalid hostname or IP Address syntax error while parsing new peer reference: " + physical[i]);
+						continue;
+					} catch (PeerParseException e) {
+						Logger.error(this, "Invalid hostname or IP Address syntax error while parsing new peer reference: " + physical[i]);
+						continue;
+					} catch (UnknownHostException e) {
+						// Should be impossible???
 						Logger.error(this, "Invalid hostname or IP Address syntax error while parsing new peer reference: " + physical[i]);
 						continue;
 					}
