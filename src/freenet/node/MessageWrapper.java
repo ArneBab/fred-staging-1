@@ -18,6 +18,7 @@ public class MessageWrapper {
 	//Sorted lists of non-overlapping ranges. If you need to lock both, lock sent first
 	private final SparseBitmap acks = new SparseBitmap();
 	private final SparseBitmap sent = new SparseBitmap();
+	private final SparseBitmap everSent = new SparseBitmap();
 	
 	private static volatile boolean logMINOR;
 	private static volatile boolean logDEBUG;
@@ -164,6 +165,7 @@ public class MessageWrapper {
 			System.arraycopy(item.buf, start, fragmentData, 0, dataLength);
 
 			sent.add(start, start + dataLength - 1);
+			everSent.add(start, start + dataLength - 1);
 			if(logDEBUG) Logger.debug(this, "Using range "+start+" to "+(start+dataLength-1)+" gives "+sent);
 		}
 
@@ -186,15 +188,33 @@ public class MessageWrapper {
 		}
 	}
 
-	public void onSent(int start, int end, int overhead) {
-		// FIXME resent bytes shouldn't count ???
-		// In old FNP they didn't.
-		item.onSent(end - start + 1 + overhead);
+	public void onSent(int start, int end, int overhead, BasePeerNode pn) {
+		int report = 0;
+		int resent = 0;
+		boolean completed = false;
 		synchronized(sent) {
-			if(reportedSent) return;
-			if(!sent.contains(0, item.buf.length-1)) return;
-			reportedSent = true;
+			if(everSent.contains(start, end)) {
+				report = 0;
+				resent = end - start + 1 + overhead;
+			} else {
+				report = everSent.notOverlapping(start, end) + overhead;
+				resent = end - start + 1 + overhead - report;
+			}
+			if(sent.contains(0, item.buf.length-1)) {
+				// Maybe completed
+				if(reportedSent)
+					completed = false;
+				else {
+					completed = true;
+					reportedSent = true;
+				}
+			}
 		}
-		item.onSentAll();
+		if(report != 0)
+			item.onSent(report);
+		if(resent != 0 && pn != null)
+			pn.resentBytes(resent);
+		if(completed)
+			item.onSentAll();
 	}
 }
