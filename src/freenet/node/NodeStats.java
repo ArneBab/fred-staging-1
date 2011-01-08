@@ -244,7 +244,9 @@ public class NodeStats implements Persistable {
 	/** PeerManagerUserAlert stats update interval (milliseconds) */
 	private static final long peerManagerUserAlertStatsUpdateInterval = 1000;  // 1 second
 
-	final Hashtable<String, TrivialRunningAverage> avgBackoffTimes;
+	// Backoff stats
+	final Hashtable<String, TrivialRunningAverage> avgRoutingBackoffTimes;
+	final Hashtable<String, TrivialRunningAverage> avgTransferBackoffTimes;
 
 	// Database stats
 	final Hashtable<String, TrivialRunningAverage> avgDatabaseJobExecutionTimes;
@@ -513,12 +515,11 @@ public class NodeStats implements Persistable {
 		this.avgClientCacheSSKSuccess    = new DecayingKeyspaceAverage(nodeLoc, 10000, throttleFS == null ? null : throttleFS.subset("AverageClientCacheSSKSuccessLocation"));
 		this.avgStoreSSKSuccess    = new DecayingKeyspaceAverage(nodeLoc, 10000, throttleFS == null ? null : throttleFS.subset("AverageStoreSSKSuccessLocation"));
 
-
-
-
 		hourlyStats = new HourlyStats(node);
 
-		avgBackoffTimes = new Hashtable<String, TrivialRunningAverage>();
+		avgRoutingBackoffTimes = new Hashtable<String, TrivialRunningAverage>();
+		avgTransferBackoffTimes = new Hashtable<String, TrivialRunningAverage>();
+
 		avgDatabaseJobExecutionTimes = new Hashtable<String, TrivialRunningAverage>();
 	}
 
@@ -2542,19 +2543,34 @@ public class NodeStats implements Persistable {
 		avg.report(executionTimeMiliSeconds);
 	}
 
-	public void reportBackoff(String backoffType, long backoffTimeMiliSeconds) {
+	public void reportRoutingBackoff(String backoffType, long backoffTimeMilliSeconds) {
 		TrivialRunningAverage avg;
 
-		synchronized (avgBackoffTimes) {
-			avg = avgBackoffTimes.get(backoffType);
+		synchronized (avgRoutingBackoffTimes) {
+			avg = avgRoutingBackoffTimes.get(backoffType);
 
 			if (avg == null) {
 				avg = new TrivialRunningAverage();
-				avgBackoffTimes.put(backoffType, avg);
+				avgRoutingBackoffTimes.put(backoffType, avg);
 			}
 		}
 
-		avg.report(backoffTimeMiliSeconds);
+		avg.report(backoffTimeMilliSeconds);
+	}
+
+	public void reportTransferBackoff(String backoffType, long backoffTimeMilliSeconds) {
+		TrivialRunningAverage avg;
+
+		synchronized (avgTransferBackoffTimes) {
+			avg = avgTransferBackoffTimes.get(backoffType);
+
+			if (avg == null) {
+				avg = new TrivialRunningAverage();
+				avgTransferBackoffTimes.put(backoffType, avg);
+			}
+		}
+
+		avg.report(backoffTimeMilliSeconds);
 	}
 
 	/**
@@ -2790,8 +2806,6 @@ public class NodeStats implements Persistable {
 	}
 
 
-
-
 	private double cappedDistance(DecayingKeyspaceAverage avgLocation, CHKStore store) {
 		double cachePercent = 1.0 * avgLocation.countReports() / store.keyCount();
 		//Cap the reported value at 100%, as the decaying average does not account beyond that anyway.
@@ -2825,12 +2839,27 @@ public class NodeStats implements Persistable {
 		}
 	}
 
-	public TimedStats[] getBackoffStatistics() {
-		TimedStats[] entries = new TimedStats[avgBackoffTimes.size()];
+	public TimedStats[] getRoutingBackoffStatistics() {
+		TimedStats[] entries = new TimedStats[avgRoutingBackoffTimes.size()];
 		int i = 0;
 
-		synchronized (avgBackoffTimes) {
-			for (Map.Entry<String, TrivialRunningAverage> entry : avgBackoffTimes.entrySet()) {
+		synchronized (avgRoutingBackoffTimes) {
+			for (Map.Entry<String, TrivialRunningAverage> entry : avgRoutingBackoffTimes.entrySet()) {
+				TrivialRunningAverage avg = entry.getValue();
+				entries[i++] = new TimedStats(entry.getKey(), avg.countReports(), (long) avg.currentValue(), (long) avg.totalValue());
+			}
+		}
+
+		Arrays.sort(entries);
+		return entries;
+	}
+
+	public TimedStats[] getTransferBackoffStatistics() {
+		TimedStats[] entries = new TimedStats[avgTransferBackoffTimes.size()];
+		int i = 0;
+
+		synchronized (avgTransferBackoffTimes) {
+			for (Map.Entry<String, TrivialRunningAverage> entry : avgTransferBackoffTimes.entrySet()) {
 				TrivialRunningAverage avg = entry.getValue();
 				entries[i++] = new TimedStats(entry.getKey(), avg.countReports(), (long) avg.currentValue(), (long) avg.totalValue());
 			}

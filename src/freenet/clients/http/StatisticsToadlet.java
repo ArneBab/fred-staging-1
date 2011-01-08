@@ -286,15 +286,31 @@ public class StatisticsToadlet extends Toadlet {
 
 			// Per backoff-type count and avg backoff lengths
 
+			// Routing Backoff
 			HTMLNode backoffStatisticsTable = backoffReasonInfobox.addChild("table", "border", "0");
 			HTMLNode row = backoffStatisticsTable.addChild("tr");
-			row.addChild("th", l10n("backoffReason"));
+			row.addChild("th", l10n("routingBackoffReason"));
 			row.addChild("th", l10n("count"));
 			row.addChild("th", l10n("avgTime"));
 			row.addChild("th", l10n("totalTime"));
 
+			for(NodeStats.TimedStats entry : stats.getRoutingBackoffStatistics()) {
+				row = backoffStatisticsTable.addChild("tr");
+				row.addChild("td", entry.keyStr);
+				row.addChild("td", Long.toString(entry.count));
+				row.addChild("td", TimeUtil.formatTime(entry.avgTime, 2, true));
+				row.addChild("td", TimeUtil.formatTime(entry.totalTime, 2, true));
+			}
 
-			for(NodeStats.TimedStats entry : stats.getBackoffStatistics()) {
+			// Transfer Backoff
+			HTMLNode transferBackoffStatisticsTable = backoffReasonInfobox.addChild("table", "border", "0");
+			row = transferBackoffStatisticsTable.addChild("tr");
+			row.addChild("th", l10n("transferBackoffReason"));
+			row.addChild("th", l10n("count"));
+			row.addChild("th", l10n("avgTime"));
+			row.addChild("th", l10n("totalTime"));
+
+			for(NodeStats.TimedStats entry : stats.getTransferBackoffStatistics()) {
 				row = backoffStatisticsTable.addChild("tr");
 				row.addChild("td", entry.keyStr);
 				row.addChild("td", Long.toString(entry.count));
