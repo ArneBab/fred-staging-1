@@ -221,6 +221,11 @@ public class OpennetPeerNode extends PeerNode {
 	}
 
 	@Override
+	public void fatalTimeout() {
+		// Disconnect.
+		forceDisconnect(true);
+	}
+	
 	public boolean shallWeRouteAccordingToOurPeersLocation() {
 		return node.shallWeRouteAccordingToOurPeersLocation();
 	}

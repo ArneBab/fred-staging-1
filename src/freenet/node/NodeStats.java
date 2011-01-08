@@ -1168,7 +1168,7 @@ public class NodeStats implements Persistable {
 		return null;
 	}
 
-	static final boolean SEND_LOAD_STATS_NOTICES = false;
+	static final boolean SEND_LOAD_STATS_NOTICES = true;
 	
 	private double getPeerLimit(PeerNode source, double bandwidthAvailableOutputLowerLimit, boolean input, boolean dontTellPeer, int transfersPerInsert, boolean realTimeFlag) {
 		
@@ -1229,6 +1229,7 @@ public class NodeStats implements Persistable {
 	}
 
 	private void rejected(String reason, boolean isLocal) {
+		if(logMINOR) Logger.minor(this, "Rejecting (local="+isLocal+") : "+reason);
 		if(!isLocal) preemptiveRejectReasons.inc(reason);
 		else this.localPreemptiveRejectReasons.inc(reason);
 	}

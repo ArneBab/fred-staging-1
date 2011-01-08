@@ -652,7 +652,7 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 		// Not connected yet; need to handshake
 		isConnected = false;
 
-		messageQueue = new PeerMessageQueue();
+		messageQueue = new PeerMessageQueue(this);
 
 		decrementHTLAtMaximum = node.random.nextFloat() < Node.DECREMENT_AT_MAX_PROB;
 		decrementHTLAtMinimum = node.random.nextFloat() < Node.DECREMENT_AT_MIN_PROB;
@@ -1108,7 +1108,7 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 			throw new NotConnectedException();
 		}
 		addToLocalNodeSentMessagesToStatistic(msg);
-		MessageItem item = new MessageItem(msg, cb == null ? null : new AsyncMessageCallback[]{cb}, ctr, this);
+		MessageItem item = new MessageItem(msg, cb == null ? null : new AsyncMessageCallback[]{cb}, ctr);
 		long now = System.currentTimeMillis();
 		reportBackoffStatus(now);
 		int x = messageQueue.queueAndEstimateSize(item);
@@ -1639,6 +1639,7 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 		if (!cb.done) {
 			Logger.error(this, "Waited too long for a blocking send for " + req + " to " + PeerNode.this, new Exception("error"));
 			this.localRejectedOverload("SendSyncTimeout");
+			// Other side will normally timeout so no need for fatalTimeout().
 		}
 	}
 
@@ -2908,7 +2909,7 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 				Logger.error(this, "No tracker to resend packet " + item.packetNumber + " on");
 				continue;
 			}
-			MessageItem mi = new MessageItem(item.buf, item.callbacks, true, resendByteCounter, item.priority);
+			MessageItem mi = new MessageItem(item.buf, item.callbacks, true, resendByteCounter, item.priority, false, false);
 			requeueMessageItems(new MessageItem[]{mi}, 0, 1, true);
 		}
 	}
@@ -2977,14 +2978,6 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 	public final RunningAverage backedOffPercent;
 	/* time of last sample */
 	private long lastSampleTime = Long.MAX_VALUE;
-
-	/**
-	 * Got a local RejectedOverload.
-	 * Back off this node for a while.
-	 */
-	public void localRejectedOverload() {
-		localRejectedOverload("");
-	}
 
 	/**
 	 * Track the percentage of time a peer spends backed off
@@ -4432,13 +4425,13 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 		private long countAllocationNotices;
 		private PeerLoadStats lastFullStats;
 		private final boolean realTimeFlag;
+		private boolean sendASAP;
 		
 		public void onSetPeerAllocation(boolean input, int thisAllocation, int transfersPerInsert) {
 			
 			boolean mustSend = false;
 			// FIXME review constants, how often are allocations actually sent?
 			long now = System.currentTimeMillis();
-			Message msg;
 			synchronized(this) {
 				int last = input ? lastSentAllocationInput : lastSentAllocationOutput;
 				if(now - timeLastSentAllocationNotice > 5000) {
@@ -4454,24 +4447,9 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 					}
 				}
 				if(!mustSend) return;
-				msg = makeLoadStats(now, transfersPerInsert);
-			}
-			if(msg != null) {
-				if(logMINOR) Logger.minor(this, "Sending allocation notice to "+this+" allocation is "+thisAllocation+" for "+input);
-				try {
-					sendAsync(msg, null, node.nodeStats.allocationNoticesCounter);
-				} catch (NotConnectedException e) {
-					// Ignore
-				}
+				sendASAP = true;
 			}
 			if(!mustSend) return;
-			timeLastSentAllocationNotice = now;
-			if(input)
-				lastSentAllocationInput = thisAllocation;
-			else
-				lastSentAllocationOutput = thisAllocation;
-			countAllocationNotices++;
-			if(logMINOR) Logger.minor(this, "Sending allocation notice to "+this+" allocation is "+thisAllocation+" for "+input);
 		}
 		
 		Message makeLoadStats(long now, int transfersPerInsert) {
@@ -4483,9 +4461,22 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 				lastFullStats = stats;
 				timeLastSentAllocationNotice = now;
 				countAllocationNotices++;
+				timeLastSentAllocationNotice = now;
+				countAllocationNotices++;
+				if(logMINOR) Logger.minor(this, "Sending allocation notice to "+this+" allocation is "+lastSentAllocationInput+" input "+lastSentAllocationOutput+" output.");
 			}
 			Message msg = DMT.createFNPPeerLoadStatus(stats);
 			return msg;
+		}
+
+		public synchronized boolean grabSendASAP() {
+			boolean send = sendASAP;
+			sendASAP = false;
+			return send;
+		}
+
+		public synchronized void setSendASAP() {
+			sendASAP = true;
 		}
 	}
 	
@@ -4737,6 +4728,33 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 		return outputLoadTracker(realTime).getIncomingLoadStats();
 	}
 
+	public LoadSender loadSender(boolean realtime) {
+		return realtime ? loadSenderRealTime : loadSenderBulk;
+	}
+	
+	/** After a fatal timeout - that is, a timeout that we reasonably believe originated
+	 * on the node rather than downstream - we do not know whether or not the node thinks
+	 * the request is still running. Hence load management will get really confused and 
+	 * likely start to send requests over and over, which are repeatedly rejected.
+	 * 
+	 * So we have some alternatives: 
+	 * 1) Lock the slot forever (or at least until the node reconnects). So every time a
+	 * node times out, it loses a slot, and gradually it becomes completely catatonic.
+	 * 2) Wait forever for an acknowledgement of the timeout. This may be worth 
+	 * investigating. One problem with this is that the slot would still count towards our
+	 * overall load management, which is surely a bad thing, although we could make it 
+	 * only count towards this node. Also, if it doesn't arrive in a reasonable time maybe
+	 * there has been a severe problem e.g. out of memory, bug etc; in that case, waiting
+	 * forever may not be sensible.
+	 * 3) Disconnect the node. This makes perfect sense for opennet. For darknet it's a 
+	 * bit more problematic.
+	 * 4) Turn off routing to the node, possibly for a limited period. This would need to
+	 * include the effects of disconnection. It might open up some cheapish local DoS's.
+	 * 
+	 * For all nodes, at present, we disconnect. For darknet nodes, we log an error, and 
+	 * allow them to reconnect. */
+	public abstract void fatalTimeout();
+	
 	public abstract boolean shallWeRouteAccordingToOurPeersLocation();
 	
 	public PeerMessageQueue getMessageQueue() {
@@ -4779,10 +4797,14 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 	public void processDecryptedMessage(byte[] data, int offset, int length, int overhead) {
 		Message m = node.usm.decodeSingleMessage(data, offset, length, this, overhead);
 		if(m != null) {
-			node.usm.checkFilters(m, crypto.socket);
+			handleMessage(m);
 		}
 	}
 	
+	public void handleMessage(Message m) {
+		node.usm.checkFilters(m, crypto.socket);
+	}
+
 	public void sendEncryptedPacket(byte[] data) throws LocalAddressException {
 		crypto.socket.sendPacket(data, getPeer(), allowLocalAddresses());
 	}
@@ -4831,4 +4853,20 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 		}
 		return false;
 	}
+	
+	public MessageItem makeLoadStats(boolean realtime, boolean boostPriority) {
+		Message msg = loadSender(realtime).makeLoadStats(System.currentTimeMillis(), node.nodeStats.outwardTransfersPerInsert());
+		if(msg == null) return null;
+		return new MessageItem(msg, null, node.nodeStats.allocationNoticesCounter, boostPriority ? DMT.PRIORITY_NOW : (short)-1);
+	}
+
+	public boolean grabSendLoadStatsASAP(boolean realtime) {
+		return loadSender(realtime).grabSendASAP();
+	}
+
+	public void setSendLoadStatsASAP(boolean realtime) {
+		loadSender(realtime).setSendASAP();
+	}
+
+	
 }

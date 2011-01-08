@@ -24,6 +24,7 @@ import java.util.LinkedList;
 import java.util.Map;
 
 import freenet.support.Logger;
+import freenet.support.Serializer;
 import freenet.support.ShortBuffer;
 
 public class MessageType {
@@ -38,14 +39,16 @@ public class MessageType {
 	private final HashMap<String, Class<?>> _linkedListTypes = new HashMap<String, Class<?>>();
 	private final boolean internalOnly;
 	private final short priority;
+	private final boolean isLossyPacketMessage;
 
 	public MessageType(String name, short priority) {
-	    this(name, priority, false);
+	    this(name, priority, false, false);
 	}
 	
-	public MessageType(String name, short priority, boolean internal) {
+	public MessageType(String name, short priority, boolean internal, boolean isLossyPacketMessage) {
 		_name = name;
 		this.priority = priority;
+		this.isLossyPacketMessage = isLossyPacketMessage;
 		internalOnly = internal;
 		Integer id = Integer.valueOf(name.hashCode());
 		if (_specs.containsKey(id)) {
@@ -140,5 +143,20 @@ public class MessageType {
 	
 	public short getPriority() {
 		return priority;
+	}
+
+	/** Only works for simple messages!! */
+	public int getMaxSize(int maxStringLength) {
+		// This method mirrors Message.encodeToPacket.
+		int length = 0;
+		length += 4; // _spec.getName().hashCode()
+		for (Map.Entry<String, Class<?>> entry : _fields.entrySet()) {
+			length += Serializer.length(entry.getValue(), maxStringLength);
+		}
+		return length;
+	}
+
+	public boolean isLossyPacketMessage() {
+		return isLossyPacketMessage;
 	}
 }

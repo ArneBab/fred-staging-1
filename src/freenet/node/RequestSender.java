@@ -22,6 +22,7 @@ import freenet.io.comm.RetrievalException;
 import freenet.io.comm.SlowAsyncMessageFilterCallback;
 import freenet.io.xfer.BlockReceiver;
 import freenet.io.xfer.BlockReceiver.BlockReceiverCompletion;
+import freenet.io.xfer.BlockReceiver.BlockReceiverTimeoutHandler;
 import freenet.io.xfer.PartiallyReceivedBlock;
 import freenet.keys.CHKBlock;
 import freenet.keys.Key;
@@ -541,6 +542,9 @@ loadWaiterLoop:
         		if(reply == null) {
         			// We gave it a chance, don't give it another.
         			offers.deleteLastOffer();
+        			Logger.error(this, "Timeout awaiting reply to offer request on "+this+" to "+pn);
+        			// FIXME bug #4613 consider two-stage timeout.
+        			pn.fatalTimeout();
     	        	origTag.removeFetchingOfferedKeyFrom(pn);
         			continue;
         		} else {
@@ -560,7 +564,11 @@ loadWaiterLoop:
 					continue;
 				}
         		if(reply == null) {
+        			// We gave it a chance, don't give it another.
             		offers.deleteLastOffer();
+        			Logger.error(this, "Timeout awaiting reply to offer request on "+this+" to "+pn);
+        			// FIXME bug #4613 consider two-stage timeout.
+        			pn.fatalTimeout();
     	        	origTag.removeFetchingOfferedKeyFrom(pn);
         			continue;
         		} else {
@@ -696,7 +704,7 @@ loadWaiterLoop:
         		}
         		fireCHKTransferBegins();
 				
-        		BlockReceiver br = new BlockReceiver(node.usm, pn, uid, prb, this, node.getTicker(), true, realTimeFlag);
+        		BlockReceiver br = new BlockReceiver(node.usm, pn, uid, prb, this, node.getTicker(), true, realTimeFlag, myTimeoutHandler);
         		
        			if(logMINOR) Logger.minor(this, "Receiving data");
        			final PeerNode p = pn;
@@ -761,21 +769,8 @@ loadWaiterLoop:
     	while(true) {
     		
     		Message msg;
-    		/**
-    		 * What are we waiting for?
-    		 * FNPAccepted - continue
-    		 * FNPRejectedLoop - go to another node
-    		 * FNPRejectedOverload - propagate back to source, go to another node if local
-    		 */
     		
-    		MessageFilter mfAccepted = MessageFilter.create().setSource(next).setField(DMT.UID, uid).setTimeout(ACCEPTED_TIMEOUT).setType(DMT.FNPAccepted);
-    		MessageFilter mfRejectedLoop = MessageFilter.create().setSource(next).setField(DMT.UID, uid).setTimeout(ACCEPTED_TIMEOUT).setType(DMT.FNPRejectedLoop);
-    		MessageFilter mfRejectedOverload = MessageFilter.create().setSource(next).setField(DMT.UID, uid).setTimeout(ACCEPTED_TIMEOUT).setType(DMT.FNPRejectedOverload);
-    		
-    		// mfRejectedOverload must be the last thing in the or
-    		// So its or pointer remains null
-    		// Otherwise we need to recreate it below
-    		MessageFilter mf = mfAccepted.or(mfRejectedLoop.or(mfRejectedOverload));
+    		MessageFilter mf = makeAcceptedRejectedFilter(next, ACCEPTED_TIMEOUT);
     		
     		try {
     			msg = node.usm.waitFor(mf, this);
@@ -793,10 +788,7 @@ loadWaiterLoop:
     			forwardRejectedOverload();
     			node.failureTable.onFailed(key, next, htl, timeSinceSent());
     			// Try next node
-    			// It could still be running. So the timeout is fatal to the node.
-    			Logger.error(this, "Timeout awaiting Accepted/Rejected "+this+" to "+next);
-    			//next.fatalTimeout();
-    			next.noLongerRoutingTo(origTag, false);
+    			handleAcceptedRejectedTimeout(next, origTag);
     			return DO.NEXT_PEER;
     		}
     		
@@ -844,6 +836,78 @@ loadWaiterLoop:
     		return DO.FINISHED;
     		
     	}
+	}
+
+	private void handleAcceptedRejectedTimeout(final PeerNode next,
+			final RequestTag origTag) {
+		
+		int timeout = fetchTimeout;
+		
+		MessageFilter mf = makeAcceptedRejectedFilter(next, timeout);
+		try {
+			node.usm.addAsyncFilter(mf, new SlowAsyncMessageFilterCallback() {
+
+				public void onMatched(Message m) {
+					if(m.getSpec() == DMT.FNPRejectedLoop ||
+							m.getSpec() == DMT.FNPRejectedOverload) {
+						// Ok.
+						origTag.removeRoutingTo(next);
+					} else {
+						assert(m.getSpec() == DMT.FNPAccepted);
+						// Uh oh ...
+						// Now what?!
+						// FIXME fork it and accept the data if any
+						// FIXME or wait for it and then cancel the transfer
+						// FIXME or introduce a cancel function for requests (probable security issues!)
+						Logger.error(this, "Timed out waiting for Accepted/Rejected but then got Accepted from "+next+", treating as fatal on "+RequestSender.this);
+						next.fatalTimeout();
+					}
+				}
+				
+				public boolean shouldTimeout() {
+					return false;
+				}
+
+				public void onTimeout() {
+					Logger.error(this, "Fatal timeout waiting for Accepted/Rejected from "+next+" on "+RequestSender.this);
+					next.fatalTimeout();
+				}
+
+				public void onDisconnect(PeerContext ctx) {
+					origTag.removeRoutingTo(next);
+				}
+
+				public void onRestarted(PeerContext ctx) {
+					origTag.removeRoutingTo(next);
+				}
+
+				public int getPriority() {
+					return NativeThread.NORM_PRIORITY;
+				}
+				
+			}, this);
+		} catch (DisconnectedException e) {
+			origTag.removeRoutingTo(next);
+		}
+	}
+
+	private MessageFilter makeAcceptedRejectedFilter(PeerNode next,
+			int acceptedTimeout) {
+		/**
+		 * What are we waiting for?
+		 * FNPAccepted - continue
+		 * FNPRejectedLoop - go to another node
+		 * FNPRejectedOverload - propagate back to source, go to another node if local
+		 */
+		
+		MessageFilter mfAccepted = MessageFilter.create().setSource(next).setField(DMT.UID, uid).setTimeout(acceptedTimeout).setType(DMT.FNPAccepted);
+		MessageFilter mfRejectedLoop = MessageFilter.create().setSource(next).setField(DMT.UID, uid).setTimeout(acceptedTimeout).setType(DMT.FNPRejectedLoop);
+		MessageFilter mfRejectedOverload = MessageFilter.create().setSource(next).setField(DMT.UID, uid).setTimeout(acceptedTimeout).setType(DMT.FNPRejectedOverload);
+		
+		// mfRejectedOverload must be the last thing in the or
+		// So its or pointer remains null
+		// Otherwise we need to recreate it below
+		return mfAccepted.or(mfRejectedLoop.or(mfRejectedOverload));
 	}
 
 	private MessageFilter createMessageFilter(int timeout) {
@@ -997,7 +1061,7 @@ loadWaiterLoop:
     	fireCHKTransferBegins();
     	
     	final long tStart = System.currentTimeMillis();
-    	final BlockReceiver br = new BlockReceiver(node.usm, next, uid, prb, this, node.getTicker(), true, realTimeFlag);
+    	final BlockReceiver br = new BlockReceiver(node.usm, next, uid, prb, this, node.getTicker(), true, realTimeFlag, myTimeoutHandler);
     	
     	if(logMINOR) Logger.minor(this, "Receiving data");
     	final PeerNode from = next;
@@ -1449,6 +1513,7 @@ loadWaiterLoop:
 			opennetFinished = true;
 			notifyAll();
 		}
+		
     }
 
     /** Wait for the opennet completion message and discard it */
@@ -1793,4 +1858,24 @@ loadWaiterLoop:
 		return fetchTimeout;
 	}
 
+	BlockReceiverTimeoutHandler myTimeoutHandler = new BlockReceiverTimeoutHandler() {
+
+		/** The data receive has failed. A block timed out. The PRB will be cancelled as
+		 * soon as we return, and that will cause the source node to consider the request
+		 * finished. Meantime we don't know whether the upstream node has finished or not.
+		 * So we reassign the request to ourself, and then wait for the second timeout. */
+		public void onFirstTimeout() {
+			node.reassignTagToSelf(origTag);
+		}
+
+		/** The timeout appears to have been caused by the node we are directly connected
+		 * to. So we need to disconnect the node, or take other fairly strong sanctions,
+		 * to avoid load management problems. */
+		public void onFatalTimeout(PeerContext receivingFrom) {
+			Logger.error(this, "Fatal timeout receiving requested block on "+this+" from "+receivingFrom);
+			((PeerNode)receivingFrom).fatalTimeout();
+		}
+		
+	};
+	
 }

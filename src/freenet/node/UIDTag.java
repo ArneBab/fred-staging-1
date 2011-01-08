@@ -3,8 +3,8 @@ package freenet.node;
 import java.lang.ref.WeakReference;
 import java.util.HashSet;
 
-import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
+import freenet.support.LogThresholdCallback;
 import freenet.support.Logger.LogLevel;
 
 /**
