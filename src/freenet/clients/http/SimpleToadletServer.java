@@ -102,6 +102,7 @@ public final class SimpleToadletServer implements ToadletContainer, Runnable {
 	private boolean enablePersistentConnections;
 	private boolean enableInlinePrefetch;
 	private boolean enableActivelinks;
+	private boolean enableKeychain;
 	private boolean enableExtendedMethodHandling;
 	
 	// Something does not really belongs to here
@@ -583,6 +584,21 @@ public final class SimpleToadletServer implements ToadletContainer, Runnable {
 			
 		});
 		enableActivelinks = fproxyConfig.getBoolean("enableActivelinks");
+
+		fproxyConfig.register("enableKeychain", false, configItemOrder++, true, false, "SimpleToadletServer.enableKeychain", "SimpleToadletServer.enableKeychainLong", new BooleanCallback() {
+
+			@Override
+			public Boolean get() {
+				return enableKeychain;
+			}
+
+			@Override
+			public void set(Boolean val) throws InvalidConfigValueException, NodeNeedRestartException {
+				enableKeychain = val;
+			}
+			
+		});
+		enableKeychain = fproxyConfig.getBoolean("enableKeychain");
 		
 		fproxyConfig.register("passthroughMaxSize", (2L*1024*1024*11)/10, configItemOrder++, true, false, "SimpleToadletServer.passthroughMaxSize", "SimpleToadletServer.passthroughMaxSizeLong", new FProxyPassthruMaxSize(), true);
 		FProxyToadlet.MAX_LENGTH = fproxyConfig.getLong("passthroughMaxSize");
