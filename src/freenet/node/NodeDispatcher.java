@@ -129,6 +129,11 @@ public class NodeDispatcher implements Dispatcher, Runnable {
 			source.setRemoteDetectedPeer(p);
 			node.ipDetector.redetectAddress();
 			return true;
+		} else if(spec == DMT.FNPDetectedTransportIPAddress){
+			Peer p = (Peer) m.getObject(DMT.EXTERNAL_ADDRESS);
+			source.setRemoteDetectedTransportPeer(p);
+			node.ipDetector.redetectAddress();
+			return true;
 		} else if(spec == DMT.FNPTime) {
 			return handleTime(m, source);
 		} else if(spec == DMT.FNPUptime) {

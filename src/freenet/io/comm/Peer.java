@@ -263,6 +263,10 @@ public class Peer implements WritableToDataOutputStream {
 	public FreenetInetAddress getFreenetAddress() {
 		return addr;
 	}
+	
+	public String getTransportName(){
+		return transportName;
+	}
 
 	public boolean isRealInternetAddress(boolean lookup, boolean defaultVal, boolean allowLocalAddresses) {
 		return addr.isRealInternetAddress(lookup, defaultVal, allowLocalAddresses);

@@ -1347,6 +1347,30 @@ public class DMT {
 		msg.set(EXTERNAL_ADDRESS, peer);
 		return msg;
 	}
+	
+	/**
+	 * Create new type for different transports. 
+	 * The old FNPDetectedIPAddress does not know which transport a Peer object belongs to.
+	 * Now we are using transportName field as the UID for a plugin. This field is present in Peer.
+	 * For compatibility reasons we have two types. The old builds will not know anything about transports.
+	 * So it is best to create a new message type.
+	 */
+	public static final MessageType FNPDetectedTransportIPAddress = new MessageType("FNPDetectedTransportIPAddress", PRIORITY_HIGH) {{
+		addField(EXTERNAL_ADDRESS, Peer.class);
+	}};
+	
+	/**
+	 * Create new message type for different transports. 
+	 * The old FNPDetectedIPAddress does not know which transport a Peer object belongs to.
+	 * Now we are using transportName field as the UID for a plugin. This field is present in Peer.
+	 * For compatibility reasons we have two types. The old builds will not know anything about transports.
+	 * So it is best to create a new message type.
+	 */
+	public static final Message createFNPDetectedTransportIPAddress(Peer peer) {
+		Message msg = new Message(FNPDetectedTransportIPAddress);
+		msg.set(EXTERNAL_ADDRESS, peer);
+		return msg;
+	}
 
 	public static final MessageType FNPTime = new MessageType("FNPTime", PRIORITY_HIGH) {{
 		addField(TIME, Long.class);
