@@ -38,6 +38,7 @@ import freenet.support.ShortBuffer;
 public class DMT {
 
 	public static final String UID = "uid";
+	public static final String TRANSPORT_NAME = "transportName";
 	public static final String SEND_TIME = "sendTime";
 	public static final String EXTERNAL_ADDRESS = "externalAddress";
 	public static final String BUILD = "build";
@@ -1357,6 +1358,7 @@ public class DMT {
 	 */
 	public static final MessageType FNPDetectedTransportIPAddress = new MessageType("FNPDetectedTransportIPAddress", PRIORITY_HIGH) {{
 		addField(EXTERNAL_ADDRESS, Peer.class);
+		addField(TRANSPORT_NAME, String.class);
 	}};
 	
 	/**
@@ -1366,9 +1368,10 @@ public class DMT {
 	 * For compatibility reasons we have two types. The old builds will not know anything about transports.
 	 * So it is best to create a new message type.
 	 */
-	public static final Message createFNPDetectedTransportIPAddress(Peer peer) {
+	public static final Message createFNPDetectedTransportIPAddress(Peer peer, String transportName) {
 		Message msg = new Message(FNPDetectedTransportIPAddress);
 		msg.set(EXTERNAL_ADDRESS, peer);
+		msg.set(TRANSPORT_NAME, transportName);
 		return msg;
 	}
 

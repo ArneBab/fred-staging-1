@@ -21,6 +21,7 @@ import freenet.keys.KeyBlock;
 import freenet.keys.NodeSSK;
 import freenet.node.NodeStats.PeerLoadStats;
 import freenet.node.NodeStats.RejectReason;
+import freenet.pluginmanager.TransportPluginException;
 import freenet.store.BlockMetadata;
 import freenet.support.Fields;
 import freenet.support.LogThresholdCallback;
@@ -131,7 +132,12 @@ public class NodeDispatcher implements Dispatcher, Runnable {
 			return true;
 		} else if(spec == DMT.FNPDetectedTransportIPAddress){
 			Peer p = (Peer) m.getObject(DMT.EXTERNAL_ADDRESS);
-			source.setRemoteDetectedTransportPeer(p);
+			String transportName = (String) m.getObject(DMT.TRANSPORT_NAME);
+			try {
+				source.setRemoteDetectedTransportPeer(p, transportName);
+			} catch (TransportPluginException e) {
+				Logger.error(this, "Unknown transport plugin", e);
+			}
 			node.ipDetector.redetectAddress();
 			return true;
 		} else if(spec == DMT.FNPTime) {
