@@ -3118,8 +3118,19 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 	*/
 	public synchronized SimpleFieldSet exportMetadataFieldSet() {
 		SimpleFieldSet fs = new SimpleFieldSet(true);
-		if(detectedPeer != null)
-			fs.putSingle("detected.udp", detectedPeer.toStringPrefNumeric());
+		/*
+		 * Add detected peer for all transports.
+		 */
+		for(String transportName:peerPacketTransportMap.keySet()){
+			PeerPacketTransport peerTransport = peerPacketTransportMap.get(transportName);
+			if(peerTransport.detectedTransportPeer != null)
+				fs.putSingle("detected." + transportName, peerTransport.detectedTransportPeer.toStringPrefNumeric());
+		}
+		for(String transportName:peerStreamTransportMap.keySet()){
+			PeerStreamTransport peerTransport = peerStreamTransportMap.get(transportName);
+			if(peerTransport.detectedTransportPeer != null)
+				fs.putSingle("detected." + transportName, peerTransport.detectedTransportPeer.toStringPrefNumeric());
+		}
 		if(lastReceivedPacketTime() > 0)
 			fs.put("timeLastReceivedPacket", timeLastReceivedPacket);
 		if(lastReceivedAckTime() > 0)
@@ -3179,8 +3190,19 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 		SimpleFieldSet fs = new SimpleFieldSet(true);
 		if(getLastGoodVersion() != null)
 			fs.putSingle("lastGoodVersion", lastGoodVersion);
-		for(int i = 0; i < nominalPeer.size(); i++)
-			fs.putAppend("physical.udp", nominalPeer.get(i).toString());
+		/*
+		 * Add physical location (nominal peer) for all transports.
+		 */
+		for(String transportName:peerPacketTransportMap.keySet()){
+			PeerPacketTransport peerTransport = peerPacketTransportMap.get(transportName);
+			for(int i = 0; i < nominalPeer.size(); i++)
+				fs.putAppend("physical." + transportName, peerTransport.nominalTransportPeer.get(i).toString());
+		}
+		for(String transportName:peerStreamTransportMap.keySet()){
+			PeerStreamTransport peerTransport = peerStreamTransportMap.get(transportName);
+			for(int i = 0; i < nominalPeer.size(); i++)
+				fs.putAppend("physical." + transportName, peerTransport.nominalTransportPeer.get(i).toString());
+		}
 		fs.put("auth.negTypes", negTypes);
 		fs.putSingle("identity", getIdentityString());
 		fs.put("location", currentLocation);
@@ -3651,6 +3673,15 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 
 	public void setRemoteDetectedPeer(Peer p) {
 		this.remoteDetectedPeer = p;
+	}
+	
+	public void setRemoteDetectedTransportPeer(Peer p, String transportName) throws TransportPluginException{
+		if(peerPacketTransportMap.containsKey(transportName))
+			peerPacketTransportMap.get(transportName).detectedTransportPeer = p;
+		else if(peerStreamTransportMap.containsKey(transportName))
+			peerStreamTransportMap.get(transportName).detectedTransportPeer = p;
+		else
+			throw new TransportPluginException("Plugin not found");
 	}
 
 	public Peer getRemoteDetectedPeer() {
@@ -6534,5 +6565,12 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode {
 		}
 	}
 	
+	public HashMap<String, PeerPacketTransport> getPeerPacketTransportMap(){
+		return peerPacketTransportMap;
+	}
+	
+	public HashMap<String, PeerStreamTransport> getPeerStreamTransportMap(){
+		return peerStreamTransportMap;
+	}
 	
 }
