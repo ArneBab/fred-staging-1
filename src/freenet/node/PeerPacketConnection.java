@@ -17,12 +17,12 @@ public class PeerPacketConnection extends PeerConnection {
 	protected PacketTransportPlugin transportPlugin;
 	
 	/** Mangler to handle connections for different transports */
-	protected OutgoingPacketMangler packetMangler;
+	protected FNPPacketMangler packetMangler;
 	
-	protected PacketFormat packetFormat;
+	protected NewPacketFormat packetFormat;
 	
 	
-	public PeerPacketConnection(PeerNode pn, PacketTransportPlugin transportPlugin, OutgoingPacketMangler packetMangler, PacketFormat packetFormat, Peer detectedPeer){
+	public PeerPacketConnection(PeerNode pn, PacketTransportPlugin transportPlugin, FNPPacketMangler packetMangler, NewPacketFormat packetFormat, Peer detectedPeer){
 		super(transportPlugin.transportName, pn);
 		this.transportPlugin = transportPlugin;
 		this.packetMangler = packetMangler;
