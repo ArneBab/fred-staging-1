@@ -1,9 +1,5 @@
 package freenet.pluginmanager;
 
-import java.net.UnknownHostException;
-
-import freenet.io.comm.IOStatisticCollector;
-import freenet.io.comm.PeerParseException;
 import freenet.node.Node;
 import freenet.node.TransportManager.TransportMode;
 
@@ -40,15 +36,9 @@ public abstract class TransportPlugin implements Runnable {
 	}
 	
 	/**
-	 * Method to initialise and start the plugin. It must create its own thread for listening.
-     * FredPlugin should help with that.
-	 * @param pluginAddress If plugin is configurable then the pluginAddress is used to bind
-	 * @param collector If plugin supports sharing statistics, then the object will be used
-	 * @param startTime 
-	 * @return Whether plugin is configurable by node
-	 * FIXME Figure out other parameters needed
+	 * To start listening and do whatever it needs to.
 	 */
-	public abstract boolean initPlugin(PluginAddress pluginAddress, IOStatisticCollector collector, long startTime);
+	public abstract void startPlugin();
 	
 	/**Method to pause a plugin, not terminate it.  
 	 * Can be used for temporarily stopping a plugin, or putting it to sleep state.
@@ -67,12 +57,10 @@ public abstract class TransportPlugin implements Runnable {
 	/** The PluginAddress the plugin is bound to. */
 	public abstract PluginAddress getPluginAddress();
 	
-	/** If we want to manually set the PluginAddress to bind to. 
-	 * @return True if the plugin allows the node to configure it, false if the plugin is automatically configuring itself
+	/**
+	 * To stop and disconnect. Can be used to unload plugin as well as only disable using TransportManager
 	 */
-	public abstract boolean setPluginAddress(PluginAddress pluginAddress);
-	
-	public abstract PluginAddress toPluginAddress(String address) throws UnknownHostException, PeerParseException;
+	public abstract void stopPlugin();
 	
 }
 
