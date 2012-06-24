@@ -15,6 +15,7 @@ import freenet.io.comm.Peer.LocalAddressException;
 import freenet.node.Node;
 import freenet.node.PrioRunnable;
 import freenet.node.TransportManager.TransportMode;
+import freenet.pluginmanager.MalformedPluginAddressException;
 import freenet.pluginmanager.PacketTransportPlugin;
 import freenet.pluginmanager.PluginAddress;
 import freenet.support.Logger;
@@ -24,7 +25,7 @@ import freenet.support.transport.ip.IPUtil;
 
 public class UdpSocketHandler extends PacketTransportPlugin  implements PrioRunnable, PortForwardSensitiveSocketHandler {
 
-	public PluginAddress pluginAddress;
+	private PluginAddress pluginAddress;
 	private final DatagramSocket _sock;
 	private final InetAddress _bindTo;
 	private final AddressTracker tracker;
@@ -52,7 +53,7 @@ public class UdpSocketHandler extends PacketTransportPlugin  implements PrioRunn
         }
 
 	public UdpSocketHandler(TransportMode transportMode, int listenPort, InetAddress bindto, Node node, long startupTime, String title, IOStatisticCollector collector) throws SocketException {
-		super(node.defaultPacketTransportName, transportMode, node);
+		super(Node.defaultPacketTransportName, transportMode, node);
 		this.node = node;
 		this.collector = collector;
 		this.title = title;
@@ -408,10 +409,10 @@ public class UdpSocketHandler extends PacketTransportPlugin  implements PrioRunn
 	 */
 	
 	@Override
-	public boolean initPlugin(PluginAddress pluginAddress, IOStatisticCollector collector, long startTime) {
-		return false; //The plugin is initialised at start()
+	public void startPlugin() {
+		start();
 	}
-
+	
 	@Override
 	public boolean pauseTransportPlugin() {
 		return false; 
@@ -433,55 +434,11 @@ public class UdpSocketHandler extends PacketTransportPlugin  implements PrioRunn
 	}
 
 	@Override
-	public boolean setPluginAddress(PluginAddress pluginAddress) {
-		return false; //The default is coded inherently. We don't need this method
-	}
-
-	/**
-	 * Convert a simple string address into a plugin address
-	 */
-	@Override
-	public PluginAddress toPluginAddress(String address) throws UnknownHostException, PeerParseException {
-		PluginAddress pluginAddress;
-		int offset = address.lastIndexOf(':');
-		if(offset < 0) 
-			throw new PeerParseException();
-		String stringAddress = address.substring(0, offset);
-		InetAddress inetAddress;
-		inetAddress = InetAddress.getByName(stringAddress);
-		
-		int portNumber;
-		try {
-			portNumber = Integer.parseInt(address.substring(offset + 1));
-            if(portNumber < 0 || portNumber > 65535)
-            	throw new PeerParseException("Invalid port "+ portNumber);
-        } catch (NumberFormatException e) {
-            throw new PeerParseException(e);
-        }
-		
-		pluginAddress = new PluginAddressImpl(inetAddress, portNumber);
-		return pluginAddress;
+	public void stopPlugin() {
+		close();
 	}
 
 }
 
 
-/**
- * Simple implementation of PluginAddress for the TransportPlugin type
- * @author chetan
- *
- */
-class PluginAddressImpl implements PluginAddress{
-	InetAddress inetAddress;
-	int portNumber;
-	
-	PluginAddressImpl(InetAddress inetAddress, int portNumber){
-		this.inetAddress = inetAddress;
-		this.portNumber = portNumber;
-	}
-	
-	@Override
-	public String toStringAddress() {
-		return (inetAddress.getHostAddress() + ":" + portNumber);
-	}
-}
+
