@@ -11,7 +11,6 @@ import java.net.MalformedURLException;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Vector;
 import java.util.zip.DeflaterOutputStream;
 
 import net.i2p.util.NativeBigInteger;
@@ -35,6 +34,7 @@ import freenet.io.AddressTracker.Status;
 import freenet.io.comm.FreenetInetAddress;
 import freenet.io.comm.IncomingPacketFilterImpl;
 import freenet.io.comm.Peer;
+import freenet.io.comm.UDPSocketPluginFactory;
 import freenet.io.comm.UdpSocketHandler;
 import freenet.keys.FreenetURI;
 import freenet.keys.InsertableClientSSK;
@@ -69,10 +69,9 @@ public class NodeCrypto {
 	final TransportMode transportMode;
 	/** The transportManager for the mode of operation(darknet, opennet) */
 	public TransportManager transportManager;
-	/** Copy of packet transports got from the transport manager */
-	private HashMap<String, PacketTransportPlugin> packetTransportMap;
-	/** Copy of stream transports got from the transport manager */
-	private HashMap<String, StreamTransportPlugin> streamTransportMap;
+	/** The config for the transportManager */
+	public TransportManagerConfig transportManagerConfig;
+
 	/** A list of packet transport with mangler objects and keys. Each PeerNode will use a copy of it.
 	 * We must ensure we take inform existing PeerNode of a new transport.
 	 * All new PeerNode must know of the existing transports.
@@ -139,60 +138,101 @@ public class NodeCrypto {
 		this.isOpennet = isOpennet;
 		
 		transportMode = isOpennet ? TransportMode.opennet:TransportMode.darknet;
+		transportManager = node.getTransportManager(transportMode);
+		transportManagerConfig = transportManager.getTransportManagerConfig();
+		
 		
 		config.starting(this);
 
 		try {
 
-		int port = config.getPort();
-
-		FreenetInetAddress bindto = config.getBindTo();
-
-		UdpSocketHandler u = null;
-
-		if(port > 65535) {
-			throw new NodeInitException(NodeInitException.EXIT_IMPOSSIBLE_USM_PORT, "Impossible port number: "+port);
-		} else if(port == -1) {
-			// Pick a random port
-			for(int i=0;i<200000;i++) {
-				int portNo = 1024 + random.nextInt(65535-1024);
+			int port = config.getPort();
+	
+			FreenetInetAddress bindto = config.getBindTo();
+	
+			UdpSocketHandler u = null;
+			
+			UDPSocketPluginFactory udpFactory = new UDPSocketPluginFactory(node);
+	
+			if(port > 65535) {
+				throw new NodeInitException(NodeInitException.EXIT_IMPOSSIBLE_USM_PORT, "Impossible port number: "+port);
+			} else if(port == -1) {
+				// Pick a random port
+				for(int i=0;i<200000;i++) {
+					int portNo = 1024 + random.nextInt(65535-1024);
+					try {
+						//An implementation that makes existing udp behave like transport plugins
+						String address = bindto.getAddress().getHostAddress() + ":" + portNo;
+						transportManagerConfig.addTransportAddress(Node.defaultPacketTransportName, address);
+						u = (UdpSocketHandler) transportManager.registerDefaultTransport(udpFactory);
+						//u = new UdpSocketHandler(transportMode, portNo, bindto.getAddress(), node, startupTime, getTitle(portNo), node.collector);
+						port = u.getPortNumber();
+						break;
+					} catch (Exception e) {
+						Logger.normal(this, "Could not use port: "+bindto+ ':' +portNo+": "+e, e);
+						System.err.println("Could not use port: "+bindto+ ':' +portNo+": "+e);
+						e.printStackTrace();
+						continue;
+					}
+				}
+				if(u == null)
+					throw new NodeInitException(NodeInitException.EXIT_NO_AVAILABLE_UDP_PORTS, "Could not find an available UDP port number for FNP (none specified)");
+			} else {
 				try {
-					u = new UdpSocketHandler(transportMode, portNo, bindto.getAddress(), node, startupTime, getTitle(portNo), node.collector);
-					port = u.getPortNumber();
-					break;
+					//An implementation that makes existing udp behave like transport plugins
+					String address = bindto.getAddress().getHostAddress() + ":" + port;
+					transportManagerConfig.addTransportAddress(Node.defaultPacketTransportName, address);
+					u = (UdpSocketHandler) transportManager.registerDefaultTransport(udpFactory);
+					//u = new UdpSocketHandler(transportMode, port, bindto.getAddress(), node, startupTime, getTitle(port), node.collector);
 				} catch (Exception e) {
-					Logger.normal(this, "Could not use port: "+bindto+ ':' +portNo+": "+e, e);
-					System.err.println("Could not use port: "+bindto+ ':' +portNo+": "+e);
+					Logger.error(this, "Caught "+e, e);
+					System.err.println(e);
 					e.printStackTrace();
-					continue;
+					throw new NodeInitException(NodeInitException.EXIT_IMPOSSIBLE_USM_PORT, "Could not bind to port: "+port+" (node already running?)");
 				}
 			}
-			if(u == null)
-				throw new NodeInitException(NodeInitException.EXIT_NO_AVAILABLE_UDP_PORTS, "Could not find an available UDP port number for FNP (none specified)");
-		} else {
-			try {
-				u = new UdpSocketHandler(transportMode, port, bindto.getAddress(), node, startupTime, getTitle(port), node.collector);
-			} catch (Exception e) {
-				Logger.error(this, "Caught "+e, e);
-				System.err.println(e);
-				e.printStackTrace();
-				throw new NodeInitException(NodeInitException.EXIT_IMPOSSIBLE_USM_PORT, "Could not bind to port: "+port+" (node already running?)");
+			socket = u;
+	
+			Logger.normal(this, "FNP port created on "+bindto+ ':' +port);
+			System.out.println("FNP port created on "+bindto+ ':' +port);
+			portNumber = port;
+			config.setPort(port);
+	
+			socket.setDropProbability(config.getDropProbability());
+			
+			/*
+			 * This code is for all transports. Parts of the above code will be replaced in future when UDP becomes a plugin.
+			 * Presently we want fred to start using UDP transport inherently and by default.
+			 * Some scenarios-
+			 * 1. opennet is started after the plugins have been loaded
+			 * 2. darknet is always started at the beginning, when the plugins haven't loaded. Still they check if transports exist
+			 */
+			
+			/** Copy of packet transports got from the transport manager */
+			HashMap<String, PacketTransportPlugin> packetTransportMap = transportManager.initialiseNewPacketTransportMap();
+			/** Copy of stream transports got from the transport manager */
+			HashMap<String, StreamTransportPlugin> streamTransportMap = transportManager.initialiseNewStreamTransportMap();
+			
+			for(String transportName : packetTransportMap.keySet()){
+				PacketTransportPlugin transportPlugin = packetTransportMap.get(transportName);
+				
+				FNPPacketMangler mangler = new FNPPacketMangler(node, this, transportPlugin);
+				transportPlugin.setLowLevelFilter(new IncomingPacketFilterImpl(mangler, node, this));
+				PacketTransportBundle packetTransportBundle = new PacketTransportBundle(transportPlugin, mangler);
+				packetTransportBundleMap.put(transportPlugin.transportName, packetTransportBundle); 
+				
+				notifyPeerNode(packetTransportBundle);
 			}
-		}
-		socket = u;
-
-		Logger.normal(this, "FNP port created on "+bindto+ ':' +port);
-		System.out.println("FNP port created on "+bindto+ ':' +port);
-		portNumber = port;
-		config.setPort(port);
-
-		socket.setDropProbability(config.getDropProbability());
-
-		packetMangler = new FNPPacketMangler(node, this, socket);
-
-		detector = new NodeIPPortDetector(node, node.ipDetector, this, enableARKs);
-
-		anonSetupCipher = new Rijndael(256,256);
+			for(String transportName:streamTransportMap.keySet()){
+				
+			}
+			
+			//Till we finish refactoring
+			packetMangler = packetTransportBundleMap.get(Node.defaultPacketTransportName).packetMangler;
+	
+			detector = new NodeIPPortDetector(node, node.ipDetector, this, enableARKs);
+	
+			anonSetupCipher = new Rijndael(256,256);
 
 		} catch (NodeInitException e) {
 			config.stopping(this);
@@ -208,35 +248,6 @@ public class NodeCrypto {
 			throw new Error(e);
 		} finally {
 			config.maybeStarted(this);
-		}
-		
-		/*
-		 * This code is for all transports. Parts of the above code will be replaced in future when UDP becomes a plugin.
-		 * Presently we want fred to start using UDP transport inherently and by default.
-		 * If other transports are available then handleNewTransport method is called.
-		 * Some scenarios-
-		 * 1. opennet is started after the plugins have been loaded
-		 * 2. darknet is always started at the beginning, when the plugins haven't loaded. Still they check if transports exist
-		 */
-		transportManager = node.getTransports().get(transportMode);
-		
-		transportManager.addDefaultTransport(socket);
-		
-		packetTransportMap = transportManager.getPacketTransportMap();
-		streamTransportMap = transportManager.getStreamTransportMap();
-		
-		PacketTransportBundle packetTransportBundle = new PacketTransportBundle(socket, packetMangler);
-		packetTransportBundleMap.put(packetTransportBundle.transportName, packetTransportBundle);
-		
-		for(String e:packetTransportMap.keySet()){
-			if(e.equals(Node.defaultPacketTransportName))
-				continue; //Don't handle default transport as they are handled inherently
-			handleNewTransport(packetTransportMap.get(e));
-		}
-		for(String e:streamTransportMap.keySet()){
-			if(e.equals(Node.defaultStreamTransportName))
-				continue; //Don't handle default transport as they are handled inherently
-			handleNewTransport(streamTransportMap.get(e));
 		}
 		
 	}
@@ -348,9 +359,15 @@ public class NodeCrypto {
 
 	public void start() {
 		socket.calculateMaxPacketSize();
-		socket.setLowLevelFilter(new IncomingPacketFilterImpl(packetMangler, node, this));
-		packetMangler.start();
-		socket.start();
+		
+		//socket.setLowLevelFilter(new IncomingPacketFilterImpl(packetMangler, node, this)); Check NodeCrypto constructor
+		//packetMangler.start();
+		//socket.start();
+		//Happens in the loop
+		for(String transportName : packetTransportBundleMap.keySet()){
+			packetTransportBundleMap.get(transportName).packetMangler.start();
+			packetTransportBundleMap.get(transportName).transportPlugin.startPlugin();
+		}
 	}
 
 	public SimpleFieldSet exportPrivateFieldSet() {
@@ -552,7 +569,11 @@ public class NodeCrypto {
 
 	public void stop() {
 		config.stopping(this);
-		socket.close();
+		//socket.close(); Stopped in the following code
+		for(String transportName : packetTransportBundleMap.keySet()){
+			PacketTransportPlugin transportPlugin = packetTransportBundleMap.get(transportName).transportPlugin;
+			transportPlugin.stopPlugin();
+		}
 	}
 
 	public PeerNode[] getPeerNodes() {
@@ -715,16 +736,20 @@ public class NodeCrypto {
 		PacketTransportBundle packetTransportBundle = new PacketTransportBundle(transportPlugin, mangler);
 		packetTransportBundleMap.put(transportPlugin.transportName, packetTransportBundle); 
 		
-		//FIXME Have a separate collector and see if we want to try and set the address. Also handle the return value
-		transportPlugin.initPlugin(null, null, 0);
+		notifyPeerNode(packetTransportBundle);
+		
 		mangler.start();
+		transportPlugin.startPlugin();
+	}
+	
+	private void notifyPeerNode(PacketTransportBundle packetTransportBundle) {
 		synchronized(node){
 			PeerNode[] peers = getPeerNodes();
 			for(PeerNode peer: peers){
 				peer.handleNewPeerTransport(packetTransportBundle);
 			}
 		}
-	}	
+	}
 	
 	/**
 	 * Detect a new stream transport.
@@ -739,6 +764,15 @@ public class NodeCrypto {
 	 */
 	public void handleNewTransport(StreamTransportPlugin transportPlugin){
 		
+	}
+
+	private void notifyPeerNode(StreamTransportBundle streamTransportBundle) {
+		synchronized(node){
+			PeerNode[] peers = getPeerNodes();
+			for(PeerNode peer: peers){
+				peer.handleNewPeerTransport(streamTransportBundle);
+			}
+		}
 	}
 	
 	public HashMap<String, PacketTransportBundle> getPacketTransportBundleMap(){
