@@ -1,5 +1,9 @@
 package freenet.pluginmanager;
-
+/**
+ * Thrown when a requested transportName String did not find a transport plugin.
+ * @author chetan
+ *
+ */
 public class TransportPluginException extends Exception{
 
 	/**
