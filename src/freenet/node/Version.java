@@ -49,10 +49,16 @@ public class Version {
 	/** The protocol version supported */
 	public static final String protocolVersion = "1.0";
 
-	/** The build number of the current revision */
-	private static final int buildNumber = 1417;
+    /**
+     * The build number reported to other nodes for network compatibility reasons
+     * */
+	private static final int networkVersion = 1417;
 
-	/** Oldest build of Fred we will talk to */
+    /** The build number of the current revision. for official releases it should
+     *  be the same as buildNumber */
+	private static final int buildNumber = networkVersion;
+	
+    /** Oldest build of Fred we will talk to */
 	private static final int oldLastGoodBuild = 1412;
 	private static final int newLastGoodBuild = 1416;
 	static final long transitionTime;
@@ -87,11 +93,22 @@ public class Version {
 	 *
 	 * @return The build number (not SVN revision number) of this node.
 	 */
+
+    /**
+     * buildNumber is now used to for determining when to download updates,
+     * and networkVersion is used for determining compatibility between nodes.
+     * The reason they have been split is to allow alternate builds to use
+     * automatic updating and still be compatible with official builds.
+     * */
 	public static int buildNumber() {
 		return buildNumber;
 	}
 
-	/**
+	public static int networkVersion() {
+		return networkVersion;
+	}
+
+    /**
 	 * Analogous to {@link #buildNumber()} but for {@link #publicVersion}.
 	 */
 	public static String publicVersion() {
@@ -119,7 +136,7 @@ public class Version {
 	}
 
 	/** The highest reported build of fred */
-	private static int highestSeenBuild = buildNumber;
+	private static int highestSeenBuild = networkVersion;
 
 	/** The current stable tree version */
 	public static final String stableNodeVersion = "0.7";
@@ -145,7 +162,7 @@ public class Version {
 	 */
 	public static String[] getVersion() {
 		String[] ret =
-			{ nodeName, nodeVersion, protocolVersion, "" + buildNumber };
+			{ nodeName, nodeVersion, protocolVersion, "" + networkVersion };
 		return ret;
 	}
 
