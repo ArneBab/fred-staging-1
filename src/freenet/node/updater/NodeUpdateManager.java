@@ -56,7 +56,7 @@ import freenet.support.io.FileUtil;
  */
 public class NodeUpdateManager {
 
-	public final static String UPDATE_URI = "freenet:USK@BFa1voWr5PunINSZ5BGMqFwhkJTiDBBUrOZ0MYBXseg,BOrxeLzUMb6R9tEZzexymY0zyKAmBNvrU4A9Q0tAqu0,AQACAAE/update/"+Version.buildNumber();
+	public final static String UPDATE_URI = "freenet:USK@virOTvBfehYSm3JZGAHI8aUg1mROfclxMRBkvkwYIHc,pSr0VwTMXZEF5TwQMN7fW9cBEB58NzaFGZxurlIL71E,AQACAAE/update/"+Version.buildNumber();
 	public final static String REVOCATION_URI = "SSK@tHlY8BK2KFB7JiO2bgeAw~e4sWU43YdJ6kmn73gjrIw,DnQzl0BYed15V8WQn~eRJxxIA-yADuI8XW7mnzEbut8,AQACAAE/revoked";
 	public final static String EXT_URI = "freenet:USK@BFa1voWr5PunINSZ5BGMqFwhkJTiDBBUrOZ0MYBXseg,BOrxeLzUMb6R9tEZzexymY0zyKAmBNvrU4A9Q0tAqu0,AQACAAE/ext/"+NodeStarter.extBuildNumber;
 

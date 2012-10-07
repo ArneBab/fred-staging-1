@@ -56,7 +56,7 @@ public class Version {
 
     /** The build number of the current revision. for official releases it should
      *  be the same as buildNumber */
-	private static final int buildNumber = networkVersion;
+	private static final int buildNumber = 1;
 	
     /** Oldest build of Fred we will talk to */
 	private static final int oldLastGoodBuild = 1412;
