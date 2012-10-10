@@ -142,7 +142,9 @@ public class ArchiveManager {
 	 */
 	public ArchiveManager(int maxHandlers, long maxCachedData, long maxArchivedFileSize, int maxCachedElements, BucketFactory tempBucketFactory) {
 		maxArchiveHandlers = maxHandlers;
-		archiveHandlers = LRUMap.createSafeMap();
+		// FIXME PERFORMANCE I'm assuming there isn't much locality here, so it's faster to use the FAST_COMPARATOR.
+		// This may not be true if there are a lot of sites with many containers all inserted as individual SSKs?
+		archiveHandlers = LRUMap.createSafeMap(FreenetURI.FAST_COMPARATOR);
 		this.maxCachedElements = maxCachedElements;
 		this.maxCachedData = maxCachedData;
 		storedData = new LRUMap<ArchiveKey, ArchiveStoreItem>();

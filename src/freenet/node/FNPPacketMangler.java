@@ -20,7 +20,6 @@ import freenet.crypt.DSAGroup;
 import freenet.crypt.DSASignature;
 import freenet.crypt.DiffieHellman;
 import freenet.crypt.DiffieHellmanLightContext;
-import freenet.crypt.EntropySource;
 import freenet.crypt.Global;
 import freenet.crypt.HMAC;
 import freenet.crypt.PCFBMode;
@@ -52,6 +51,7 @@ import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
 import freenet.support.SimpleFieldSet;
 import freenet.support.TimeUtil;
+import freenet.support.io.InetAddressComparator;
 import freenet.support.io.NativeThread;
 
 /**
@@ -553,7 +553,10 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 			return;
 		}
 		if(!(negType == 6 || negType == 7)) {
-			Logger.error(this, "Unknown neg type: "+negType);
+			if(negType > 7)
+				Logger.error(this, "Unknown neg type: "+negType);
+			else
+				Logger.warning(this, "Received a setup packet with unsupported obsolete neg type: "+negType);
 			return;
 		}
 
@@ -600,7 +603,10 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 			return;
 		}
 		if(!(negType == 6 || negType == 7)) {
-			Logger.error(this, "Unknown neg type: "+negType);
+			if(negType > 7)
+				Logger.error(this, "Unknown neg type: "+negType);
+			else
+				Logger.warning(this, "Received a setup packet with unsupported obsolete neg type: "+negType);
 			return;
 		}
 
@@ -792,7 +798,7 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 		}
 	}
 	
-	private final LRUMap<InetAddress, Long> throttleRekeysByIP = LRUMap.createSafeMap();
+	private final LRUMap<InetAddress, Long> throttleRekeysByIP = LRUMap.createSafeMap(InetAddressComparator.COMPARATOR);
 
 	private static final int REKEY_BY_IP_TABLE_SIZE = 1024;
 
@@ -1152,6 +1158,7 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 		DiffieHellmanLightContext ctx = findContextByExponential(_ourExponential);
 		if(ctx == null) {
 			Logger.error(this, "WTF? the HMAC verified but we don't know about that exponential! SHOULDN'T HAPPEN! - JFK3 - "+pn);
+			// Possible this is a replay or severely delayed? We don't keep every exponential we ever use.
 			return;
 		}
 		BigInteger computedExponential = ctx.getHMACKey(_hisExponential, Global.DHgroupA);
