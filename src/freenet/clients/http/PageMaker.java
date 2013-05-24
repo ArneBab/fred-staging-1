@@ -377,11 +377,11 @@ public final class PageMaker {
                         bodyNode.addChild("script", new String[] { "type", "language" }, new String[] { "text/javascript", "javascript" }).addChild("%", PushingTagReplacerCallback.getClientSideLocalizationScript());
                 }
 
-                HTMLNode pageDiv = bodyNode.addChild("div", new String[] { "id", "class"}, new String[] { "page", "container"});
-                //HTMLNode topBarDiv = pageDiv.addChild("div", "id", "topbar");
+                HTMLNode contentDiv = bodyNode.addChild("div", new String[] { "id", "class"}, new String[] { "content", "container"});
+                //HTMLNode topBarDiv = contentDiv.addChild("div", "id", "topbar");
 
                 if (renderParameters.isRenderStatus() && fullAccess) {
-                        final HTMLNode statusBarDiv = pageDiv.addChild("div", "id", "statusbar-container").addChild("div", "id", "statusbar");
+                        final HTMLNode statusBarDiv = contentDiv.addChild("div", "id", "statusbar-container").addChild("div", "id", "statusbar");
 
                          if (node != null && node.clientCore != null) {
                                  final HTMLNode alerts = node.clientCore.alerts.createSummary(true);
@@ -469,11 +469,11 @@ public final class PageMaker {
                         }
                 }
 
-                //pageDiv.addChild("h1", title);
+                //contentDiv.addChild("h1", title);
                 if (renderParameters.isRenderNavigationLinks()) {
                         SubMenu selected = null;
                         // Render the full menu.
-                        HTMLNode navbarDiv = pageDiv.addChild("div", new String[] {"id","class"}, new String[] {"navbar","navbar navbar-inverse navbar-fixed-top"});
+                        HTMLNode navbarDiv = contentDiv.addChild("div", new String[] {"id","class"}, new String[] {"navbar","navbar navbar-inverse navbar-fixed-top"});
                         HTMLNode navbarInnerDiv = navbarDiv.addChild("div", "class", "navbar-inner");
                         HTMLNode navbarContainer = navbarInnerDiv.addChild("div", "class", "container");
                         HTMLNode brandContainerDiv = navbarContainer.addChild("div","class","brand");
@@ -623,12 +623,12 @@ public final class PageMaker {
                                                 sublistItem.addChild("a", "href", navigationPath, navigationLink);
                                 }
                                 if(nonEmpty)
-                                        pageDiv.addChild(div);
+                                        contentDiv.addChild(div);
                         }
                 }
 
-                HTMLNode contentDiv = bodyNode.addChild("div", new String[] { "id", "class"}, new String[] { "page", "container"});
-                //HTMLNode contentDiv = pageDiv.addChild("div", "id", "content");
+
+                //HTMLNode contentDiv = contentDiv.addChild("div", "id", "content");
                 return new PageNode(pageNode, headNode, contentDiv);
         }
 
