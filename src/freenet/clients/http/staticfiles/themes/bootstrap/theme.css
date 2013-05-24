@@ -8178,6 +8178,10 @@ TODO:
     color: #777;
 }
 
+#startupContainer {
+    margin-top: 40px;
+}
+
 #startupProgressBar {
     float: none;
     margin: 0 auto;
@@ -8189,6 +8193,7 @@ TODO:
     overflow: auto;
     position: relative;
     padding-top: 0;
+    margin-top: 50px;
 }
 
 #openAppNav a {
