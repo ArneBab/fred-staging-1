@@ -16,6 +16,7 @@ public class Location {
 	public static double getLocation(String init) {
 		try {
 			if(init == null) return -1;
+			//???: I'm not sure, but I think that parseDouble() can be Locale dependant (robert)
 			double d = Double.parseDouble(init);
 			if(d < 0.0 || d > 1.0) return -1;
 			return d;
