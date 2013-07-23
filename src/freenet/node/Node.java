@@ -683,6 +683,7 @@ public class Node implements TimeSkewDetectorCallback {
 	private final NodeCryptoConfig opennetCryptoConfig;
 	OpennetManager opennet;
 	private volatile boolean isAllowedToConnectToSeednodes;
+    public  volatile boolean isXenophobicOfMutualFriends;
 	private int maxOpennetPeers;
 	private boolean acceptSeedConnections;
 	private boolean passOpennetRefsThroughDarknet;
@@ -1780,6 +1781,24 @@ public class Node implements TimeSkewDetectorCallback {
 			}
 		});
 		isAllowedToConnectToSeednodes = opennetConfig.getBoolean("connectToSeednodes");
+
+         //!!!: simply copied the above true/0/true/false values
+         opennetConfig.register("foafXeno", true, 0, true, false, "Node.foafXeno", "Node.foafXenoLong", new BooleanCallback() {
+             @Override
+             public Boolean get() {
+                 return isXenophobicOfMutualFriends;
+             }
+             @Override
+             public void set(Boolean val) throws InvalidConfigValueException, NodeNeedRestartException {
+                 if (get().equals(val))
+                     return;
+                 synchronized(Node.this) {
+                     isXenophobicOfMutualFriends = val;
+                 }
+             }
+         });
+
+         isXenophobicOfMutualFriends = opennetConfig.getBoolean("foafXeno");
 
 		// Can be enabled on the fly
 		opennetConfig.register("enabled", false, 0, true, true, "Node.opennetEnabled", "Node.opennetEnabledLong", new BooleanCallback() {

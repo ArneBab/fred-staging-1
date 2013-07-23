@@ -461,6 +461,28 @@ public class OpennetManager {
 				return false;
 			}
 		}
+
+        if (nodeToAddNow != null && node.isXenophobicOfMutualFriends)
+        {
+            double location=nodeToAddNow.getLocation();
+
+            for (PeerNode peerNode : node.peers.connectedPeers())
+            {
+                double[] foafLocations=peerNode.getPeersLocation();
+                if (foafLocations!=null)
+                {
+                    for (double foafLocation : foafLocations)
+                    {
+                        if (location == foafLocation)
+                        {
+                            Logger.normal(this, "Rejecting peer, as (we think) it is already connected to one of our other peers: "+peerNode);
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+
 		int maxPeers = getNumberOfConnectedPeersToAim();
 		synchronized(this) {
 			if(nodeToAddNow != null &&
