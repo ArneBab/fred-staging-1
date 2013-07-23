@@ -5,12 +5,7 @@ package freenet.node.simulator;
 
 import freenet.crypt.RandomSource;
 import freenet.io.comm.PeerParseException;
-import freenet.node.FSParseException;
-import freenet.node.Location;
-import freenet.node.Node;
-import freenet.node.NodeInitException;
-import freenet.node.NodeStats;
-import freenet.node.PeerNode;
+import freenet.node.*;
 import freenet.node.DarknetPeerNode.FRIEND_TRUST;
 import freenet.node.DarknetPeerNode.FRIEND_VISIBILITY;
 import freenet.support.LogThresholdCallback;
@@ -63,8 +58,12 @@ public class RealNodeTest {
 			double div = 1.0 / nodes.length;
 			double loc = 0.0;
 			for (int i=0; i<nodes.length; i++) {
-				nodes[i].setLocation(loc);
-				loc += div;
+                try {
+				    nodes[i].setLocation(loc);
+                } catch (LocationManager.StaticLocationSetException e) {
+                    e.printStackTrace();
+                }
+                loc += div;
 			}
 		}
 		if(forceNeighbourConnections) {

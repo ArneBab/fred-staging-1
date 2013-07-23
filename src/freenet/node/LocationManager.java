@@ -24,22 +24,28 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
 
+import freenet.config.InvalidConfigValueException;
+import freenet.config.NodeNeedRestartException;
+import freenet.config.SubConfig;
 import freenet.crypt.RandomSource;
 import freenet.crypt.SHA256;
-import freenet.io.comm.ByteCounter;
-import freenet.io.comm.DMT;
-import freenet.io.comm.DisconnectedException;
-import freenet.io.comm.Message;
-import freenet.io.comm.MessageFilter;
-import freenet.io.comm.NotConnectedException;
+import freenet.io.comm.*;
 import freenet.node.PeerManager.LocationUIDPair;
 import freenet.support.Fields;
 import freenet.support.Logger;
+import freenet.support.Logger.LogLevel;
 import freenet.support.ShortBuffer;
 import freenet.support.TimeSortedHashtable;
-import freenet.support.Logger.LogLevel;
+import freenet.support.api.StringCallback;
 import freenet.support.io.Closer;
 import freenet.support.math.BootstrappingDecayingRunningAverage;
+
+import java.io.*;
+import java.security.MessageDigest;
+import java.text.DateFormat;
+import java.text.DecimalFormat;
+import java.text.ParseException;
+import java.util.*;
 
 /**
  * @author amphibian
@@ -97,8 +103,9 @@ public class LocationManager implements ByteCounter {
     final Node node;
     long timeLastSuccessfullySwapped;
 
-    public LocationManager(RandomSource r, Node node) {
-        loc = r.nextDouble();
+    public LocationManager(RandomSource r, Node node, SubConfig nodeConfig)
+    {
+        dynamicLocation = r.nextDouble();
         sender = new SwapRequestSender();
         this.r = r;
         this.node = node;
@@ -108,35 +115,120 @@ public class LocationManager implements ByteCounter {
         timeLocSet = System.currentTimeMillis();
 
         logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
+
+        {
+            final String  optionName   = "staticLocation";
+            final String  defaultValue = null;
+            final int     sortOrder    = 1000; //???
+            final boolean expert       = true;
+            final boolean forceWrite   = false; //???
+            final String  shortDesc    = "Node.staticLocation";
+            final String  longDesc     = "Node.staticLocationLong";
+
+            nodeConfig.register(optionName, defaultValue, sortOrder, expert, forceWrite, shortDesc, longDesc, new StaticLocationCallback());
+        }
     }
 
-    private double loc;
+    private double dynamicLocation;
     private long timeLocSet;
     private double locChangeSession = 0.0;
 
     int numberOfRemotePeerLocationsSeenInSwaps = 0;
 
+    private Double staticLocation;
+
+    private class StaticLocationCallback extends StringCallback
+    {
+
+        private DecimalFormat decimalFormat=new DecimalFormat("0.000000000000");
+
+        @Override
+        public String get()
+        {
+            final Double location = staticLocation;
+            if (location==null)
+            {
+                return "";
+            }
+            else
+            {
+                synchronized (decimalFormat)
+                {
+                    return decimalFormat.format(location);
+                }
+            }
+        }
+
+        @Override
+        public void set(String val) throws InvalidConfigValueException, NodeNeedRestartException
+        {
+            if (val==null || val.length()==0)
+            {
+                staticLocation=null;
+            }
+            else
+            {
+                final double location;
+                synchronized (decimalFormat)
+                {
+                    try {
+                        location=((Double)decimalFormat.parse(val));
+                    } catch (ParseException e) {
+                        throw new InvalidConfigValueException("This field must be a double in the format: "+decimalFormat.toPattern(), e);
+                    }
+                }
+                if (!Location.isValid(location))
+                {
+                    throw new InvalidConfigValueException("Not a valid location: "+val);
+                }
+                staticLocation=location;
+            }
+        }
+    }
+
     /**
      * @return The current Location of this node.
      */
-    public synchronized double getLocation() {
-        return loc;
+    public synchronized
+    double getLocation()
+    {
+        if (staticLocation==null)
+        {
+            return dynamicLocation;
+        }
+        else
+        {
+            return staticLocation;
+        }
+    }
+
+    public
+    boolean isStaticLocationSet()
+    {
+        return (staticLocation!=null);
     }
 
     /**
      * @param l
      */
-    public synchronized void setLocation(double l) {
-    	if(!Location.isValid(l)) {
+    public synchronized
+    void setLocation(double l) throws StaticLocationSetException
+    {
+        if (staticLocation!=null)
+        {
+            throw new StaticLocationSetException();
+        }
+    	if(!Location.isValid(l))
+        {
     		Logger.error(this, "Setting invalid location: "+l, new Exception("error"));
     		return;
     	}
-        this.loc = l;
+        this.dynamicLocation = l;
         timeLocSet = System.currentTimeMillis();
     }
 
     public synchronized void updateLocationChangeSession(double newLoc) {
-    	double oldLoc = loc;
+    	double oldLoc = dynamicLocation;
 		double diff = Location.change(oldLoc, newLoc);
 		if(logMINOR) Logger.minor(this, "updateLocationChangeSession: oldLoc: "+oldLoc+" -> newLoc: "+newLoc+" moved: "+diff);
 		this.locChangeSession += diff;
@@ -417,7 +509,12 @@ public class LocationManager implements ByteCounter {
 
             spyOnLocations(commit, true, shouldSwap, myLoc);
 
-            if(shouldSwap) {
+            if (isStaticLocationSet())
+            {
+                if(logMINOR) Logger.minor(this, "Didn't swap (have static location): "+myLoc+" <-> "+hisLoc+" - "+uid);
+                noSwaps++;
+            }
+            else if(shouldSwap) {
                 timeLastSuccessfullySwapped = System.currentTimeMillis();
                 // Swap
                 updateLocationChangeSession(hisLoc);
@@ -434,7 +531,7 @@ public class LocationManager implements ByteCounter {
             reachedEnd = true;
 
             // Randomise our location every 2*SWAP_RESET swap attempts, whichever way it went.
-            if(node.random.nextInt(SWAP_RESET) == 0) {
+            if(!isStaticLocationSet() && node.random.nextInt(SWAP_RESET) == 0) {
                 setLocation(node.random.nextDouble());
                 announceLocChange(true, true, false);
                 node.writeNodeFile();
@@ -466,6 +563,7 @@ public class LocationManager implements ByteCounter {
 		    freenet.support.Logger.OSThread.logPID(this);
             long uid = r.nextLong();
             if(!lock()) return;
+            if (isStaticLocationSet()) return;
             boolean reachedEnd = false;
             try {
                 startedSwaps++;
@@ -1426,4 +1524,9 @@ public class LocationManager implements ByteCounter {
 	public void sentPayload(int x) {
 		Logger.error(this, "LocationManager sentPayload()?", new Exception("debug"));
 	}
+
+    //Intended to help hunt down uses of setLocation()
+    public class StaticLocationSetException extends Exception
+    {
+    }
 }

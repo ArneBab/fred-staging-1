@@ -873,7 +873,13 @@ public class Node implements TimeSkewDetectorCallback {
 		double locD = Location.getLocation(loc);
 		if (locD == -1.0)
 			throw new IOException("Invalid location: " + loc);
-		lm.setLocation(locD);
+        if (!lm.isStaticLocationSet())
+        {
+            try {
+         		lm.setLocation(locD);
+            } catch (LocationManager.StaticLocationSetException e) {
+            }
+        }
 		myName = fs.get("myName");
 		if(myName == null) {
 			myName = newName();
@@ -1156,7 +1162,7 @@ public class Node implements TimeSkewDetectorCallback {
 
 		nodeNameUserAlert = new MeaningfulNodeNameUserAlert(this);
 		this.config = config;
-		lm = new LocationManager(random, this);
+		lm = new LocationManager(random, this, nodeConfig);
 
 		try {
 			localhostAddress = InetAddress.getByName("127.0.0.1");
@@ -5054,7 +5060,9 @@ public class Node implements TimeSkewDetectorCallback {
 	/**
 	 * Warning: does not announce change in location!
 	 */
-	public void setLocation(double loc) {
+	public
+    void setLocation(double loc) throws LocationManager.StaticLocationSetException
+    {
 		lm.setLocation(loc);
 	}
 
