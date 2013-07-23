@@ -468,6 +468,11 @@ public class OpennetManager {
 
             for (PeerNode peerNode : node.peers.connectedPeers())
             {
+                if (peerNode.getPRejected() > 0.50d)
+                {
+                    //don't skip out on the opportunity to shore up an overloaded link
+                    continue;
+                }
                 double[] foafLocations=peerNode.getPeersLocation();
                 if (foafLocations!=null)
                 {
