@@ -11,11 +11,18 @@ package freenet.config;
  * it.
  */
 @SuppressWarnings("serial")
-public class InvalidConfigValueException extends ConfigException {
+public class InvalidConfigValueException extends ConfigException
+{
 	public InvalidConfigValueException(String msg) {
 		super(msg);
 	}
+
 	public InvalidConfigValueException(Throwable cause) {
 		super(cause);
 	}
+
+    public InvalidConfigValueException(String message, Throwable cause)
+    {
+        super(message, cause);
+    }
 }
