@@ -3,14 +3,14 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.node;
  
-import java.net.InetAddress;
-import java.util.Map;
-
 import freenet.clients.http.DarknetConnectionsToadlet;
 import freenet.io.comm.FreenetInetAddress;
 import freenet.io.comm.Peer;
 import freenet.io.xfer.PacketThrottle;
 import freenet.node.PeerNode.IncomingLoadSummaryStats;
+
+import java.net.InetAddress;
+import java.util.Map;
 
 /**
  * Contains various status information for a {@link PeerNode}. Used e.g. in
@@ -35,6 +35,7 @@ public class PeerNodeStatus {
 
 	private final String statusName;
 
+    private final String cssName;
 	private final String statusCSSName;
 
 	private final double location;
@@ -147,6 +148,7 @@ public class PeerNodeStatus {
 		this.selectionRate = peerNode.selectionRate();
 		this.statusValue = peerNode.getPeerNodeStatus();
 		this.statusName = peerNode.getPeerNodeStatusString();
+        this.cssName       = peerNode.getPeerNodeCSSClassName();
 		this.statusCSSName = peerNode.getPeerNodeStatusCSSClassName();
 		this.location = peerNode.getLocation();
 		this.peersLocation = peerNode.getPeersLocation();
@@ -354,6 +356,12 @@ public class PeerNodeStatus {
 	public long getRoutingBackoffLength(boolean realTime) {
 		return realTime ? routingBackoffLengthRT : routingBackoffLengthBulk;
 	}
+
+    public
+    String getCssName()
+    {
+        return cssName;
+    }
 
 	/**
 	 * @return the statusCSSName

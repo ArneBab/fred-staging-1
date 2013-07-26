@@ -112,7 +112,9 @@ public class PeerManager {
 			}
 		}
 	};
-	
+
+    private static final int MAX_SEGREGATION_STALENESS = 2*60*1000;
+
 	protected void writePeersNow(boolean rotateBackups) {
 		writePeersDarknetNow(rotateBackups);
 		writePeersOpennetNow(rotateBackups);
@@ -131,6 +133,42 @@ public class PeerManager {
 			writePeersInnerOpennet(rotateBackups);
 		}
 	}
+
+    private Long averagePeerBandwidthBytes;
+    private long totalPeerBandwidthCalculated;
+
+    public
+    long getAveragePeerBandwidthBytes()
+    {
+        if (averagePeerBandwidthBytes == null || System.currentTimeMillis()-totalPeerBandwidthCalculated > MAX_SEGREGATION_STALENESS)
+        {
+            int count=0;
+            long total=0;
+            for (PeerNode peerNode : connectedPeers())
+            {
+                if (peerNode.isRoutable())
+                {
+                    PeerNode.IncomingLoadSummaryStats incomingLoadStats = peerNode.getIncomingLoadStats(false);
+                    if (incomingLoadStats!=null)
+                    {
+                        total+=incomingLoadStats.peerCapacityOutputBytes;
+                        count++;
+                    }
+                }
+            }
+            if (count==0)
+            {
+                averagePeerBandwidthBytes=0l;
+                totalPeerBandwidthCalculated=System.currentTimeMillis();
+            }
+            else
+            {
+                averagePeerBandwidthBytes=total/count;
+                totalPeerBandwidthCalculated=System.currentTimeMillis();
+            }
+        }
+        return averagePeerBandwidthBytes;
+    }
 
 	public static final int PEER_NODE_STATUS_CONNECTED = 1;
 	public static final int PEER_NODE_STATUS_ROUTING_BACKED_OFF = 2;

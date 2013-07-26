@@ -947,7 +947,7 @@ public abstract class ConnectionsToadlet extends Toadlet {
 		int peerSelectionPercentage = 0;
 		if(totalSelectionRate > 0)
 			peerSelectionPercentage = (int) (selectionRate * 100 / totalSelectionRate);
-		HTMLNode peerRow = peerTable.addChild("tr", "class", "darknet_connections_"+(peerSelectionPercentage > PeerNode.SELECTION_PERCENTAGE_WARNING ? "warning" : "normal"));
+		HTMLNode peerRow = peerTable.addChild("tr", "class", "darknet_connections_"+(peerSelectionPercentage > PeerNode.SELECTION_PERCENTAGE_WARNING ? "warning" : "normal") + " " + peerNodeStatus.getCssName());
 		
 		if(enablePeerActions) {
 			// check box column
@@ -955,7 +955,8 @@ public abstract class ConnectionsToadlet extends Toadlet {
 		}
 
         double[] peersLoc = peerNodeStatus.getPeersLocation();
-        String oneOrTwoRows=(drawMessageTypes || (advancedModeEnabled && peersLoc!=null) ? "2" : "1");
+        //String oneOrTwoRows=(drawMessageTypes || (advancedModeEnabled && peersLoc!=null) ? "2" : "1");
+        String oneOrTwoRows=(drawMessageTypes ? "2" : "1");
 
 		// status column
 		String statusString = peerNodeStatus.getStatusName();

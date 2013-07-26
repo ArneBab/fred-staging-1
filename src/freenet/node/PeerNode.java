@@ -1043,7 +1043,35 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode, Pe
 		return hashCode;
 	}
 
-	/**
+    /**
+     * Returns true if this node has bandwith information *AND* it ranks higher than the average of our set of connected peers.
+     */
+    public boolean isAboveAverageBandwidth()
+    {
+        IncomingLoadSummaryStats incomingLoadStats = getIncomingLoadStats(false);
+        if (incomingLoadStats!=null)
+        {
+            long average = peers.getAveragePeerBandwidthBytes();
+            return incomingLoadStats.peerCapacityOutputBytes > average;
+        }
+        return false;
+    }
+
+    /**
+     * Returns true if this node has bandwith information *AND* it ranks lower than the average of our set of connected peers.
+     */
+    public boolean isBelowAverageBandwidth()
+    {
+        IncomingLoadSummaryStats incomingLoadStats = getIncomingLoadStats(false);
+        if (incomingLoadStats!=null)
+        {
+            long average = peers.getAveragePeerBandwidthBytes();
+            return incomingLoadStats.peerCapacityOutputBytes < average;
+        }
+        return false;
+    }
+
+    /**
 	 * Returns true if the last-known build number for this peer is to old to allow traffic to be routed to it.
 	 * This does not give any indication as to the connection status of the peer.
 	 */
@@ -3440,10 +3468,22 @@ public abstract class PeerNode implements USKRetrieverCallback, BasePeerNode, Pe
 		return "UNKNOWN STATUS";
 	}
 
-	public String getPeerNodeStatusCSSClassName() {
+	public
+    String getPeerNodeStatusCSSClassName()
+    {
 		int status = getPeerNodeStatus();
-		return getPeerNodeStatusCSSClassName(status);
+        return getPeerNodeStatusCSSClassName(status);
 	}
+
+    public
+    String getPeerNodeCSSClassName()
+    {
+        if (isAboveAverageBandwidth())
+            return "above_average";
+        if (isBelowAverageBandwidth())
+            return "below_average";
+        return "average";
+    }
 
 	public static String getPeerNodeStatusCSSClassName(int status) {
 		if(status == PeerManager.PEER_NODE_STATUS_CONNECTED)
