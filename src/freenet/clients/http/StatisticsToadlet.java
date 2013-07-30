@@ -1,42 +1,15 @@
 package freenet.clients.http;
 
-import static java.util.concurrent.TimeUnit.DAYS;
-import static java.util.concurrent.TimeUnit.HOURS;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static java.util.concurrent.TimeUnit.SECONDS;
-
-import java.io.IOException;
-import java.net.URI;
-import java.text.DecimalFormat;
-import java.text.DecimalFormatSymbols;
-import java.text.NumberFormat;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.Locale;
-import java.util.Map;
-
-import freenet.client.async.ClientRequester;
 import freenet.client.HighLevelSimpleClient;
+import freenet.client.async.ClientRequester;
 import freenet.config.SubConfig;
 import freenet.crypt.ciphers.Rijndael;
 import freenet.io.comm.IncomingPacketFilterImpl;
 import freenet.io.xfer.BlockReceiver;
 import freenet.io.xfer.BlockTransmitter;
-import freenet.l10n.NodeL10n;
 import freenet.keys.FreenetURI;
-import freenet.node.Location;
-import freenet.node.Node;
-import freenet.node.NodeClientCore;
-import freenet.node.NodeStarter;
-import freenet.node.NodeStats;
-import freenet.node.OpennetManager;
-import freenet.node.PeerManager;
-import freenet.node.PeerNodeStatus;
-import freenet.node.RequestClient;
-import freenet.node.RequestStarterGroup;
-import freenet.node.RequestTracker;
-import freenet.node.Version;
+import freenet.l10n.NodeL10n;
+import freenet.node.*;
 import freenet.node.stats.DataStoreInstanceType;
 import freenet.node.stats.DataStoreStats;
 import freenet.node.stats.StatsNotAvailableException;
@@ -47,6 +20,18 @@ import freenet.support.SizeUtil;
 import freenet.support.TimeUtil;
 import freenet.support.api.HTTPRequest;
 import freenet.support.io.NativeThread;
+
+import java.io.IOException;
+import java.net.URI;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
+import java.text.NumberFormat;
+import java.util.*;
+
+import static java.util.concurrent.TimeUnit.DAYS;
+import static java.util.concurrent.TimeUnit.HOURS;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 public class StatisticsToadlet extends Toadlet {
 
@@ -1520,18 +1505,30 @@ public class StatisticsToadlet extends Toadlet {
 		int histogramIndex;
 		int peerCount = peerNodeStatuses.length;
 		int newPeerCount = 0;
-		for (int peerIndex = 0; peerIndex < peerCount; peerIndex++) {
+
+        //Draw the FOAF locations first so they will be "behind" our peers...
+        for (int peerIndex = 0; peerIndex < peerCount; peerIndex++)
+        {
+            peerNodeStatus = peerNodeStatuses[peerIndex];
+            peerLocation = peerNodeStatus.getLocation();
+            if(!peerNodeStatus.isSearchable()) continue;
+            if(peerLocation < 0.0 || peerLocation > 1.0) continue;
+            double[] foafLocations=peerNodeStatus.getPeersLocation();
+            if (foafLocations!=null && peerNodeStatus.isRoutable()) {
+                for (double foafLocation : foafLocations) {
+                    //one grey dot for each "Friend-of-a-friend"
+                    peerCircleInfoboxContent.addChild("span", new String[] { "style", "class" }, new String[] { generatePeerCircleStyleString(foafLocation, false, 0.9), "disconnected" }, ".");
+                }
+            }
+        }
+
+        for (int peerIndex = 0; peerIndex < peerCount; peerIndex++)
+        {
 			peerNodeStatus = peerNodeStatuses[peerIndex];
 			peerLocation = peerNodeStatus.getLocation();
 			if(!peerNodeStatus.isSearchable()) continue;
 			if(peerLocation < 0.0 || peerLocation > 1.0) continue;
-			double[] foafLocations=peerNodeStatus.getPeersLocation();
-			if (foafLocations!=null && peerNodeStatus.isRoutable()) {
-				for (double foafLocation : foafLocations) {
-					//one grey dot for each "Friend-of-a-friend"
-					peerCircleInfoboxContent.addChild("span", new String[] { "style", "class" }, new String[] { generatePeerCircleStyleString(foafLocation, false, 0.9), "disconnected" }, ".");
-				}
-			}
+
 			newPeerCount++;
 			peerDistance = Location.distance( myLocation, peerLocation );
 			histogramIndex = (int) (Math.floor(peerDistance * HISTOGRAM_LENGTH * 2));
@@ -1540,7 +1537,7 @@ public class StatisticsToadlet extends Toadlet {
 			} else {
 				histogramDisconnected[histogramIndex]++;
 			}
-			peerCircleInfoboxContent.addChild("span", new String[] { "style", "class" }, new String[] { generatePeerCircleStyleString(peerLocation, false, (1.0 - peerNodeStatus.getPReject())), ((peerNodeStatus.isConnected())?"connected":"disconnected") }, ((peerNodeStatus.isOpennet())?"o":"x"));
+			peerCircleInfoboxContent.addChild("span", new String[] { "style", "class" }, new String[] { generatePeerCircleStyleString(peerLocation, false, (1.0 - peerNodeStatus.getPReject())), getPeerNodeStatusCSSClass(peerNodeStatus) }, ((peerNodeStatus.isOpennet())?"o":"x"));
 		}
 		peerCircleInfoboxContent.addChild("span", new String[] { "style", "class" }, new String[] { generatePeerCircleStyleString(myLocation, true, 1.0), "me" }, "x");
 		//
@@ -1558,7 +1555,13 @@ public class StatisticsToadlet extends Toadlet {
 		}
 	}
 
-	private String generatePeerCircleStyleString (double peerLocation, boolean offsetMe, double strength) {
+    private String getPeerNodeStatusCSSClass(PeerNodeStatus peerNodeStatus)
+    {
+        String primary=((peerNodeStatus.isConnected())?"connected":"disconnected");
+        return primary+" "+peerNodeStatus.getCssName()+" "+peerNodeStatus.getStatusCSSName();
+    }
+
+    private String generatePeerCircleStyleString (double peerLocation, boolean offsetMe, double strength) {
 		peerLocation *= Math.PI * 2;
 		//
 		int offset = 0;

@@ -485,6 +485,17 @@ table.column td {
 	vertical-align: top;
 }
 
+table.darknet_connections tr.darknet_connections_normal.above_average
+{
+	background-color: #adb1ff;
+}
+
+table.darknet_connections tr.darknet_connections_normal.below_average
+{
+	background-color: #dde1b5;
+}
+
+
 table.darknet_connections span.peer_connected,
 table.darknet_connections span.peer_disconnected {
 	font-weight: bold;
@@ -530,6 +541,14 @@ div.peercircle span.backed_off {
 
 div.peercircle span.disconnected {
   font-weight: bold;
+}
+
+div.peercircle span.above_average {
+	color: blue;
+}
+
+div.peercircle span.below_average {
+	color: #9cc206;
 }
 
 div.histogramLabel {
