@@ -1537,7 +1537,7 @@ public class StatisticsToadlet extends Toadlet {
 			} else {
 				histogramDisconnected[histogramIndex]++;
 			}
-			peerCircleInfoboxContent.addChild("span", new String[] { "style", "class" }, new String[] { generatePeerCircleStyleString(peerLocation, false, (1.0 - peerNodeStatus.getPReject())), getPeerNodeStatusCSSClass(peerNodeStatus) }, ((peerNodeStatus.isOpennet())?"o":"x"));
+			peerCircleInfoboxContent.addChild("span", new String[] { "style", "class", "title" }, new String[] { generatePeerCircleStyleString(peerLocation, false, (1.0 - peerNodeStatus.getPReject())), getPeerNodeStatusCSSClass(peerNodeStatus), getPeerNodeStatusIdentifier(peerNodeStatus) }, ((peerNodeStatus.isOpennet())?"o":"x"));
 		}
 		peerCircleInfoboxContent.addChild("span", new String[] { "style", "class" }, new String[] { generatePeerCircleStyleString(myLocation, true, 1.0), "me" }, "x");
 		//
@@ -1554,6 +1554,17 @@ public class StatisticsToadlet extends Toadlet {
 			peerHistogramGraphCell.addChild("div", new String[] { "class", "style" }, new String[] { "histogramDisconnected", "height: " + fix3pctUS.format(histogramPercent) + "; width: 100%;" }, "\u00a0");
 		}
 	}
+
+    /**
+     * Returns an identifier by which this peer can be looked up in the peers table (IP & Port).
+     * @param peerNodeStatus
+     * @return
+     */
+    private
+    String getPeerNodeStatusIdentifier(PeerNodeStatus peerNodeStatus)
+    {
+        return peerNodeStatus.getPeerAddress()+":"+peerNodeStatus.getPeerPort();
+    }
 
     private String getPeerNodeStatusCSSClass(PeerNodeStatus peerNodeStatus)
     {
