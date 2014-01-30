@@ -11,6 +11,11 @@ import static freenet.node.stats.DataStoreType.CACHE;
 import static freenet.node.stats.DataStoreType.CLIENT;
 import static freenet.node.stats.DataStoreType.SLASHDOT;
 import static freenet.node.stats.DataStoreType.STORE;
+import static java.util.concurrent.TimeUnit.DAYS;
+import static java.util.concurrent.TimeUnit.HOURS;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.MINUTES;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 import java.io.BufferedReader;
 import java.io.EOFException;
@@ -485,6 +490,7 @@ public class Node implements TimeSkewDetectorCallback {
 	public long nodeDBHandle;
 
 	private boolean autoChangeDatabaseEncryption = true;
+	private DatabaseKey databaseKey;
 
 	/** Stats */
 	public final NodeStats nodeStats;
@@ -510,12 +516,12 @@ public class Node implements TimeSkewDetectorCallback {
 	// timeout. Most nodes don't need to send keepalives because they are constantly busy,
 	// this is only an issue for disabled darknet connections, very quiet private networks
 	// etc.
-	public static final int KEEPALIVE_INTERVAL = 7000;
+	public static final long KEEPALIVE_INTERVAL = SECONDS.toMillis(7);
 	// If no activity for 30 seconds, node is dead
 	// 35 seconds allows plenty of time for resends etc even if above is 14 sec as it is on older nodes.
-	public static final int MAX_PEER_INACTIVITY = 35000;
+	public static final long MAX_PEER_INACTIVITY = SECONDS.toMillis(35);
 	/** Time after which a handshake is assumed to have failed. */
-	public static final int HANDSHAKE_TIMEOUT = 4800; // Keep the below within the 30 second assumed timeout.
+	public static final int HANDSHAKE_TIMEOUT = (int) MILLISECONDS.toMillis(4800); // Keep the below within the 30 second assumed timeout.
 	// Inter-handshake time must be at least 2x handshake timeout
 	public static final int MIN_TIME_BETWEEN_HANDSHAKE_SENDS = HANDSHAKE_TIMEOUT*2; // 10-20 secs
 	public static final int RANDOMIZED_TIME_BETWEEN_HANDSHAKE_SENDS = HANDSHAKE_TIMEOUT*2; // avoid overlap when the two handshakes are at the same time
@@ -528,11 +534,10 @@ public class Node implements TimeSkewDetectorCallback {
 	public static final int MIN_BURSTING_HANDSHAKE_BURST_SIZE = 1; // 1-4 handshake sends per burst
 	public static final int RANDOMIZED_BURSTING_HANDSHAKE_BURST_SIZE = 3;
 	// If we don't receive any packets at all in this period, from any node, tell the user
-	public static final long ALARM_TIME = 60*1000;
+	public static final long ALARM_TIME = MINUTES.toMillis(1);
 
-	// 900ms
-	static final int MIN_INTERVAL_BETWEEN_INCOMING_SWAP_REQUESTS = 900;
-	static final int MIN_INTERVAL_BETWEEN_INCOMING_PROBE_REQUESTS = 1000;
+	static final long MIN_INTERVAL_BETWEEN_INCOMING_SWAP_REQUESTS = MILLISECONDS.toMillis(900);
+	static final long MIN_INTERVAL_BETWEEN_INCOMING_PROBE_REQUESTS = MILLISECONDS.toMillis(1000);
 	public static final int SYMMETRIC_KEY_LENGTH = 32; // 256 bits - note that this isn't used everywhere to determine it
 
 	/** Datastore directory */
@@ -606,7 +611,7 @@ public class Node implements TimeSkewDetectorCallback {
 	// FIXME make the first two configurable
 	private long maxSlashdotCacheSize;
 	private int maxSlashdotCacheKeys;
-	static final long PURGE_INTERVAL = 60*1000;
+	static final long PURGE_INTERVAL = SECONDS.toMillis(60);
 
 	private CHKStore chkSlashdotcache;
 	private SlashdotStore<CHKBlock> chkSlashdotcacheStore;
@@ -711,7 +716,7 @@ public class Node implements TimeSkewDetectorCallback {
 	/** Should inserts ignore low backoff times by default? */
 	public static final boolean IGNORE_LOW_BACKOFF_DEFAULT = false;
 	/** Definition of "low backoff times" for above. */
-	public static final int LOW_BACKOFF = 30*1000;
+	public static final long LOW_BACKOFF = SECONDS.toMillis(30);
 	/** Should inserts be fairly blatently prioritised on accept by default? */
 	public static final boolean PREFER_INSERT_DEFAULT = false;
 	/** Should inserts fork when the HTL reaches cacheability? */
@@ -1139,7 +1144,7 @@ public class Node implements TimeSkewDetectorCallback {
 			// if it's not null it's because we are running in the simulator
 		}
 		// This can block too.
-		this.secureRandom = new SecureRandom();
+		this.secureRandom = NodeStarter.getGlobalSecureRandom();
 		isPRNGReady = true;
 		toadlets.getStartupToadlet().setIsPRNGReady();
 		if(weakRandom == null) {
@@ -1207,7 +1212,6 @@ public class Node implements TimeSkewDetectorCallback {
 			f = null;
 		} else {
 			f = new File(value);
-			if (!f.isAbsolute()) { f = userDir.file(value); }
 
 			if(f.exists() && !(f.canWrite() && f.canRead()))
 				throw new NodeInitException(NodeInitException.EXIT_CANT_WRITE_MASTER_KEYS, "Cannot read from and write to master keys file "+f);
@@ -1237,7 +1241,7 @@ public class Node implements TimeSkewDetectorCallback {
 				db.close();
 				if(securityLevels.getPhysicalThreatLevel() == PHYSICAL_THREAT_LEVEL.MAXIMUM) {
 					try {
-						FileUtil.secureDelete(dbFileCrypt, random);
+						FileUtil.secureDelete(dbFileCrypt);
 					} catch (IOException e) {
 						// Ignore
 					} finally {
@@ -1602,30 +1606,34 @@ public class Node implements TimeSkewDetectorCallback {
 		// Bandwidth limit
 
 		nodeConfig.register("outputBandwidthLimit", "15K", sortOrder++, false, true, "Node.outBWLimit", "Node.outBWLimitLong", new IntCallback() {
-					@Override
-					public Integer get() {
-						//return BlockTransmitter.getHardBandwidthLimit();
-						return outputBandwidthLimit;
-					}
-					@Override
-					public void set(Integer obwLimit) throws InvalidConfigValueException {
-						if(obwLimit <= 0) throw new InvalidConfigValueException(l10n("bwlimitMustBePositive"));
-						if (obwLimit < minimumBandwidth) throw lowBandwidthLimit(obwLimit);
-						synchronized(Node.this) {
-							outputBandwidthLimit = obwLimit;
-						}
-						outputThrottle.changeNanosAndBucketSize((1000L * 1000L * 1000L) / obwLimit, obwLimit/2);
-						nodeStats.setOutputLimit(obwLimit);
-					}
+			@Override
+			public Integer get() {
+				//return BlockTransmitter.getHardBandwidthLimit();
+				return outputBandwidthLimit;
+			}
+			@Override
+			public void set(Integer obwLimit) throws InvalidConfigValueException {
+				checkOutputBandwidthLimit(obwLimit);
+				try {
+					outputThrottle.changeNanosAndBucketSize(SECONDS.toNanos(1) / obwLimit, obwLimit/2);
+					nodeStats.setOutputLimit(obwLimit);
+				} catch (IllegalArgumentException e) {
+					throw new InvalidConfigValueException(e);
+				}
+				synchronized(Node.this) {
+					outputBandwidthLimit = obwLimit;
+				}
+			}
 		});
 
 		int obwLimit = nodeConfig.getInt("outputBandwidthLimit");
-		if(obwLimit <= 0)
-			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, "Invalid outputBandwidthLimit");
-		if (obwLimit < minimumBandwidth) {
-			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, lowBandwidthLimit(obwLimit).getMessage());
-		}
 		outputBandwidthLimit = obwLimit;
+		try {
+			checkOutputBandwidthLimit(outputBandwidthLimit);
+		} catch (InvalidConfigValueException e) {
+			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, e.getMessage());
+		}
+
 		// Bucket size of 0.5 seconds' worth of bytes.
 		// Add them at a rate determined by the obwLimit.
 		// Maximum forced bytes 80%, in other words, 20% of the bandwidth is reserved for
@@ -1634,41 +1642,50 @@ public class Node implements TimeSkewDetectorCallback {
 		// Must have at least space for ONE PACKET.
 		// FIXME: make compatible with alternate transports.
 		bucketSize = Math.max(bucketSize, 2048);
-		outputThrottle = new TokenBucket(bucketSize, (1000L*1000L*1000L) / obwLimit, obwLimit/2);
+		try {
+		outputThrottle = new TokenBucket(bucketSize, SECONDS.toNanos(1) / obwLimit, obwLimit/2);
+		} catch (IllegalArgumentException e) {
+			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, e.getMessage());
+		}
 
 		nodeConfig.register("inputBandwidthLimit", "-1", sortOrder++, false, true, "Node.inBWLimit", "Node.inBWLimitLong",	new IntCallback() {
-					@Override
-					public Integer get() {
-						if(inputLimitDefault) return -1;
-						return inputBandwidthLimit;
-					}
-					@Override
-					public void set(Integer ibwLimit) throws InvalidConfigValueException {
-						synchronized(Node.this) {
-							if(ibwLimit == -1) {
-								inputLimitDefault = true;
-								ibwLimit = outputBandwidthLimit * 4;
-							} else {
-								if(ibwLimit <= 1) throw new InvalidConfigValueException(l10n("bandwidthLimitMustBePositiveOrMinusOne"));
-								if (ibwLimit < minimumBandwidth) throw lowBandwidthLimit(ibwLimit);
-								inputLimitDefault = false;
-							}
-							inputBandwidthLimit = ibwLimit;
-						}
+			@Override
+			public Integer get() {
+				if(inputLimitDefault) return -1;
+				return inputBandwidthLimit;
+			}
+			@Override
+			public void set(Integer ibwLimit) throws InvalidConfigValueException {
+				synchronized(Node.this) {
+					checkInputBandwidthLimit(ibwLimit);
+					try {
 						nodeStats.setInputLimit(ibwLimit);
+					} catch (IllegalArgumentException e) {
+						throw new InvalidConfigValueException(e);
 					}
+
+					if(ibwLimit == -1) {
+						inputLimitDefault = true;
+						ibwLimit = outputBandwidthLimit * 4;
+					} else {
+						inputLimitDefault = false;
+					}
+					inputBandwidthLimit = ibwLimit;
+				}
+			}
 		});
 
 		int ibwLimit = nodeConfig.getInt("inputBandwidthLimit");
 		if(ibwLimit == -1) {
 			inputLimitDefault = true;
 			ibwLimit = obwLimit * 4;
-		} else if(ibwLimit <= 0)
-			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, "Invalid inputBandwidthLimit");
-		if (ibwLimit < minimumBandwidth) {
-			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, lowBandwidthLimit(ibwLimit).getMessage());
 		}
 		inputBandwidthLimit = ibwLimit;
+		try {
+			checkInputBandwidthLimit(inputBandwidthLimit);
+		} catch (InvalidConfigValueException e) {
+			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, e.getMessage());
+		}
 
 		nodeConfig.register("throttleLocalTraffic", false, sortOrder++, true, false, "Node.throttleLocalTraffic", "Node.throttleLocalTrafficLong", new BooleanCallback() {
 
@@ -2067,6 +2084,7 @@ public class Node implements TimeSkewDetectorCallback {
 		storeSaltHashResizeOnStart = nodeConfig.getBoolean("storeSaltHashResizeOnStart");
 
 		this.storeDir = setupProgramDir(installConfig, "storeDir", userDir().file("datastore").getPath(), "Node.storeDirectory", "Node.storeDirectoryLong", nodeConfig);
+		installConfig.finishedInitialization();
 
 		final String suffix = getStoreSuffix();
 
@@ -2316,7 +2334,7 @@ public class Node implements TimeSkewDetectorCallback {
 
 		boolean startedClientCache = false;
 
-		byte[] databaseKey = null;
+		DatabaseKey key = null;
 		MasterKeys keys = null;
 
 		for(int i=0;i<2 && !startedClientCache; i++) {
@@ -2333,7 +2351,10 @@ public class Node implements TimeSkewDetectorCallback {
 					if(securityLevels.getPhysicalThreatLevel() == PHYSICAL_THREAT_LEVEL.HIGH) {
 						System.err.println("Physical threat level is set to HIGH but no password, resetting to NORMAL - probably timing glitch");
 						securityLevels.resetPhysicalThreatLevel(PHYSICAL_THREAT_LEVEL.NORMAL);
-						databaseKey = keys.databaseKey;
+						key = keys.createDatabaseKey(random);
+						synchronized(this) {
+						    databaseKey = key;
+						}
 						shouldWriteConfig = true;
 					} else {
 						keys.clearAllNotClientCacheKey();
@@ -2439,7 +2460,7 @@ public class Node implements TimeSkewDetectorCallback {
 
 		});
 
-		nodeConfig.register("slashdotCacheLifetime", 30*60*1000L, sortOrder++, true, false, "Node.slashdotCacheLifetime", "Node.slashdotCacheLifetimeLong", new LongCallback() {
+		nodeConfig.register("slashdotCacheLifetime", MINUTES.toMillis(30), sortOrder++, true, false, "Node.slashdotCacheLifetime", "Node.slashdotCacheLifetimeLong", new LongCallback() {
 
 			@Override
 			public Long get() {
@@ -2597,7 +2618,7 @@ public class Node implements TimeSkewDetectorCallback {
 		shutdownHook.addEarlyJob(new NativeThread("Shutdown plugins", NativeThread.HIGH_PRIORITY, true) {
 			@Override
 			public void realRun() {
-				pluginManager.stop(30*1000); // FIXME make it configurable??
+				pluginManager.stop(SECONDS.toMillis(30)); // FIXME make it configurable??
 			}
 		});
 
@@ -2608,7 +2629,7 @@ public class Node implements TimeSkewDetectorCallback {
 		// it's likely (on reports so far) that a restart will fix it.
 		// And we have to get a build out because ALL plugins are now failing to load,
 		// including the absolutely essential (for most nodes) JSTUN and UPnP.
-		WrapperManager.signalStarting(120*1000);
+		WrapperManager.signalStarting((int) MINUTES.toMillis(2));
 
 		FetchContext ctx = clientCore.makeClient((short)0, true, false).getFetchContext();
 
@@ -2639,7 +2660,7 @@ public class Node implements TimeSkewDetectorCallback {
 		System.out.println("Node constructor completed");
 	}
 
-	/** Delete files from old BDB-index datastore. */
+    /** Delete files from old BDB-index datastore. */
 	private void deleteOldBDBIndexStoreFiles() {
 		File dbDir = storeDir.file("database-"+getDarknetPortNumber());
 		FileUtil.removeAll(dbDir);
@@ -2651,7 +2672,7 @@ public class Node implements TimeSkewDetectorCallback {
 					name.toLowerCase().matches("((chk)|(ssk)|(pubkey))-[0-9]*\\.((store)|(cache))(\\.((keys)|(lru)))?")) {
 				System.out.println("Deleting old datastore file \""+f+"\"");
 				try {
-					FileUtil.secureDelete(f, fastWeakRandom, true);
+					FileUtil.secureDelete(f);
 				} catch (IOException e) {
 					System.err.println("Failed to delete old datastore file \""+f+"\": "+e);
 					e.printStackTrace();
@@ -2700,7 +2721,7 @@ public class Node implements TimeSkewDetectorCallback {
 	** Sets up a program directory using the config value defined by the given
 	** parameters.
 	*/
-	protected ProgramDirectory setupProgramDir(SubConfig installConfig,
+	public ProgramDirectory setupProgramDir(SubConfig installConfig,
 	  String cfgKey, String defaultValue, String shortdesc, String longdesc, String moveErrMsg,
 	  SubConfig oldConfig) throws NodeInitException {
 		ProgramDirectory dir = new ProgramDirectory(moveErrMsg);
@@ -2722,7 +2743,7 @@ public class Node implements TimeSkewDetectorCallback {
 		return setupProgramDir(installConfig, cfgKey, defaultValue, shortdesc, longdesc, null, oldConfig);
 	}
 
-	public void lateSetupDatabase(byte[] databaseKey) throws MasterKeysWrongPasswordException, MasterKeysFileSizeException, IOException {
+	public void lateSetupDatabase(DatabaseKey databaseKey) throws MasterKeysWrongPasswordException, MasterKeysFileSizeException, IOException {
 		if(db != null) return;
 		System.out.println("Starting late database initialisation");
 		setupDatabase(databaseKey);
@@ -2776,7 +2797,7 @@ public class Node implements TimeSkewDetectorCallback {
 	 * @param databaseKey The encryption key to the database. Null if the database is not encrypted
 	 * @return A new Db4o Configuration object which is fully configured to Fred's desired database settings.
 	 */
-	private Configuration getNewDatabaseConfiguration(byte[] databaseKey) {
+	private Configuration getNewDatabaseConfiguration(DatabaseKey databaseKey) {
 		Configuration dbConfig = Db4o.newConfiguration();
 		/* On my db4o test node with lots of downloads, and several days old, com.db4o.internal.freespace.FreeSlotNode
 		 * used 73MB out of the 128MB limit (117MB used). This memory was not reclaimed despite constant garbage collection.
@@ -2837,10 +2858,8 @@ public class Node implements TimeSkewDetectorCallback {
 		// The database is encrypted.
 		if(databaseKey != null) {
 			IoAdapter baseAdapter = dbConfig.io();
-			if(logDEBUG)
-				Logger.debug(this, "Encrypting database with "+HexUtil.bytesToHex(databaseKey));
 			try {
-				dbConfig.io(new EncryptingIoAdapter(baseAdapter, databaseKey, random));
+				dbConfig.io(databaseKey.createEncryptingDb4oAdapter(baseAdapter));
 			} catch (GlobalOnlyConfigException e) {
 				// Fouled up after encrypting/decrypting.
 				System.err.println("Caught "+e+" opening encrypted database.");
@@ -2853,7 +2872,7 @@ public class Node implements TimeSkewDetectorCallback {
 		return dbConfig;
 	}
 
-	private void setupDatabase(byte[] databaseKey) throws MasterKeysWrongPasswordException, MasterKeysFileSizeException, IOException {
+	private void setupDatabase(DatabaseKey databaseKey) throws MasterKeysWrongPasswordException, MasterKeysFileSizeException, IOException {
 		/* FIXME: Backup the database! */
 
 		ObjectContainer database;
@@ -2874,10 +2893,12 @@ public class Node implements TimeSkewDetectorCallback {
 
 		try {
 			if(securityLevels.getPhysicalThreatLevel() == PHYSICAL_THREAT_LEVEL.MAXIMUM) {
-				databaseKey = new byte[32];
-				random.nextBytes(databaseKey);
-				FileUtil.secureDelete(dbFileCrypt, random);
-				FileUtil.secureDelete(dbFile, random);
+                databaseKey = DatabaseKey.createRandom(random);
+			    synchronized(this) {
+			        this.databaseKey = databaseKey;
+			    }
+				FileUtil.secureDelete(dbFileCrypt);
+				FileUtil.secureDelete(dbFile);
 				database = openCryptDatabase(databaseKey);
 				synchronized(this) {
 					databaseEncrypted = true;
@@ -2902,13 +2923,16 @@ public class Node implements TimeSkewDetectorCallback {
 						securityLevels.setThreatLevel(PHYSICAL_THREAT_LEVEL.HIGH);
 						throw e;
 					}
-					databaseKey = keys.databaseKey;
-					keys.clearAllNotDatabaseKey();
+					databaseKey = keys.createDatabaseKey(random);
+					synchronized(this) {
+					    this.databaseKey = databaseKey;
+					}
+					keys.clearAll();
 				}
 				System.err.println("Decrypting the old node.db4o.crypt ...");
 				IoAdapter baseAdapter = new RandomAccessFileAdapter();
 				EncryptingIoAdapter adapter =
-					new EncryptingIoAdapter(baseAdapter, databaseKey, random);
+				    databaseKey.createEncryptingDb4oAdapter(baseAdapter);
 				File tempFile = new File(dbFile.getPath()+".tmp");
 				tempFile.deleteOnExit();
 				FileOutputStream fos = new FileOutputStream(tempFile);
@@ -2916,7 +2940,7 @@ public class Node implements TimeSkewDetectorCallback {
 					(EncryptingIoAdapter) adapter.open(dbFileCrypt.toString(), false, 0, true);
 				long length = readAdapter.getLength();
 				// Estimate approx 1 byte/sec.
-				WrapperManager.signalStarting((int)Math.min(24*60*60*1000, 300*1000+length));
+				WrapperManager.signalStarting((int) Math.min(DAYS.toMillis(1), MINUTES.toMillis(5) + length));
 				byte[] buf = new byte[65536];
 				long read = 0;
 				while(read < length) {
@@ -2955,13 +2979,15 @@ public class Node implements TimeSkewDetectorCallback {
 					// Try with no password
 					MasterKeys keys;
 					keys = MasterKeys.read(masterKeysFile, random, "");
-					databaseKey = keys.databaseKey;
-					keys.clearAllNotDatabaseKey();
+					databaseKey = keys.createDatabaseKey(random);
+					synchronized(this) {
+					    this.databaseKey = databaseKey;
+					}
+					keys.clearAll();
 				}
 				System.err.println("Encrypting the old node.db4o ...");
 				IoAdapter baseAdapter = new RandomAccessFileAdapter();
-				EncryptingIoAdapter adapter =
-					new EncryptingIoAdapter(baseAdapter, databaseKey, random);
+				EncryptingIoAdapter adapter = databaseKey.createEncryptingDb4oAdapter(baseAdapter);
 				File tempFile = new File(dbFileCrypt.getPath()+".tmp");
 				tempFile.delete();
 				tempFile.deleteOnExit();
@@ -2970,7 +2996,7 @@ public class Node implements TimeSkewDetectorCallback {
 				FileInputStream fis = new FileInputStream(dbFile);
 				long length = dbFile.length();
 				// Estimate approx 1 byte/sec.
-				WrapperManager.signalStarting((int)Math.min(24*60*60*1000, 300*1000+length));
+				WrapperManager.signalStarting((int) Math.min(DAYS.toMillis(1), MINUTES.toMillis(5) + length));
 				byte[] buf = new byte[65536];
 				long read = 0;
 				while(read < length) {
@@ -2983,7 +3009,7 @@ public class Node implements TimeSkewDetectorCallback {
 				fis.close();
 				readAdapter.close();
 				if(FileUtil.renameTo(tempFile, dbFileCrypt)) {
-					FileUtil.secureDelete(dbFile, random);
+					FileUtil.secureDelete(dbFile);
 					System.err.println("Completed encrypting the old node.db4o.");
 					database = openCryptDatabase(databaseKey);
 					synchronized(this) {
@@ -3007,8 +3033,11 @@ public class Node implements TimeSkewDetectorCallback {
 					// Try with no password
 					MasterKeys keys;
 					keys = MasterKeys.read(masterKeysFile, random, "");
-					databaseKey = keys.databaseKey;
-					keys.clearAllNotDatabaseKey();
+					databaseKey = keys.createDatabaseKey(random);
+					synchronized(this) {
+					    this.databaseKey = databaseKey;
+					}
+					keys.clearAll();
 				}
 				database = openCryptDatabase(databaseKey);
 				synchronized(this) {
@@ -3148,7 +3177,7 @@ public class Node implements TimeSkewDetectorCallback {
 	}
 
 
-	private ObjectContainer openCryptDatabase(byte[] databaseKey) throws IOException {
+	private ObjectContainer openCryptDatabase(DatabaseKey databaseKey) throws IOException {
 		maybeDefragmentDatabase(dbFileCrypt, databaseKey);
 
 		ObjectContainer database = Db4o.openFile(getNewDatabaseConfiguration(databaseKey), dbFileCrypt.toString());
@@ -3159,7 +3188,7 @@ public class Node implements TimeSkewDetectorCallback {
 	}
 
 
-	private void maybeDefragmentDatabase(File databaseFile, byte[] databaseKey) throws IOException {
+	private void maybeDefragmentDatabase(File databaseFile, final DatabaseKey databaseKey) throws IOException {
 
 		synchronized(this) {
 			if(!defragDatabaseOnStartup) return;
@@ -3173,14 +3202,14 @@ public class Node implements TimeSkewDetectorCallback {
 		if(!databaseFile.exists()) return;
 		long length = databaseFile.length();
 		// Estimate approx 1 byte/sec.
-		WrapperManager.signalStarting((int)Math.min(24*60*60*1000, 300*1000+length));
+		WrapperManager.signalStarting((int) Math.min(DAYS.toMillis(1), MINUTES.toMillis(5) + length));
 		System.err.println("Defragmenting persistent downloads database.");
 
 		File backupFile = new File(databaseFile.getPath()+".tmp");
-		FileUtil.secureDelete(backupFile, random);
+		FileUtil.secureDelete(backupFile);
 
 		File tmpFile = new File(databaseFile.getPath()+".map");
-		FileUtil.secureDelete(tmpFile, random);
+		FileUtil.secureDelete(tmpFile);
 
 
 
@@ -3192,7 +3221,7 @@ public class Node implements TimeSkewDetectorCallback {
 		} catch (IOException e) {
 			if(backupFile.exists()) {
 				System.err.println("Defrag failed. Trying to preserve original database file.");
-				FileUtil.secureDelete(databaseFile, random);
+				FileUtil.secureDelete(databaseFile);
 				if(!backupFile.renameTo(databaseFile)) {
 					System.err.println("Unable to rename backup file back to database file! Restarting on the assumption that it didn't get closed...");
 					WrapperManager.restart();
@@ -3202,7 +3231,7 @@ public class Node implements TimeSkewDetectorCallback {
 		} catch (Db4oException e) {
 			if(backupFile.exists()) {
 				System.err.println("Defrag failed. Trying to preserve original database file.");
-				FileUtil.secureDelete(databaseFile, random);
+				FileUtil.secureDelete(databaseFile);
 				if(!backupFile.renameTo(databaseFile)) {
 					System.err.println("Unable to rename backup file back to database file! Restarting on the assumption that it didn't get closed...");
 					WrapperManager.restart();
@@ -3223,8 +3252,8 @@ public class Node implements TimeSkewDetectorCallback {
 			}
 		} else {
 			double change = 100.0 * (((double)(oldSize - newSize)) / ((double)oldSize));
-			FileUtil.secureDelete(tmpFile, random);
-			FileUtil.secureDelete(backupFile, random);
+			FileUtil.secureDelete(tmpFile);
+			FileUtil.secureDelete(backupFile);
 			System.err.println("Defragment completed. "+SizeUtil.formatSize(oldSize)+" ("+oldSize+") -> "+SizeUtil.formatSize(newSize)+" ("+newSize+") ("+(int)change+"% shrink)");
 		}
 
@@ -3246,7 +3275,7 @@ public class Node implements TimeSkewDetectorCallback {
 
 
 	public void killMasterKeysFile() throws IOException {
-		MasterKeys.killMasterKeys(masterKeysFile, random);
+		MasterKeys.killMasterKeys(masterKeysFile);
 	}
 
 
@@ -4560,7 +4589,7 @@ public class Node implements TimeSkewDetectorCallback {
 			Logger.normal(this, "Received differential node reference node to node message from "+src.getPeer());
 			SimpleFieldSet fs = null;
 			try {
-				fs = new SimpleFieldSet(new String(data, "UTF-8"), false, true);
+				fs = new SimpleFieldSet(new String(data, "UTF-8"), false, true, false);
 			} catch (IOException e) {
 				Logger.error(this, "IOException while parsing node to node message data", e);
 				return;
@@ -4590,7 +4619,7 @@ public class Node implements TimeSkewDetectorCallback {
 			Logger.normal(this, "Received N2NTM from '"+darkSource.getPeer()+"'");
 			SimpleFieldSet fs = null;
 			try {
-				fs = new SimpleFieldSet(new String(data, "UTF-8"), false, true);
+				fs = new SimpleFieldSet(new String(data, "UTF-8"), false, true, false);
 			} catch (UnsupportedEncodingException e) {
 				throw new Error("Impossible: JVM doesn't support UTF-8: " + e, e);
 			} catch (IOException e) {
@@ -4752,7 +4781,7 @@ public class Node implements TimeSkewDetectorCallback {
 		return lm.getAverageSwapTime();
 	}
 
-	public int getSendSwapInterval() {
+	public long getSendSwapInterval() {
 		return lm.getSendSwapInterval();
 	}
 
@@ -5140,7 +5169,7 @@ public class Node implements TimeSkewDetectorCallback {
 							}
 						}
 
-					}, 10*60*1000);
+					}, MINUTES.toMillis(10));
 				}
 			} else wantClientCache = true;
 			wantDatabase = db == null;
@@ -5148,7 +5177,7 @@ public class Node implements TimeSkewDetectorCallback {
 		if(wantClientCache)
 			activatePasswordedClientCache(keys);
 		if(wantDatabase)
-			lateSetupDatabase(keys.databaseKey);
+			lateSetupDatabase(keys.createDatabaseKey(random));
 	}
 
 
@@ -5214,8 +5243,8 @@ public class Node implements TimeSkewDetectorCallback {
 			db = null;
 		}
 		try {
-			FileUtil.secureDelete(dbFile, random);
-			FileUtil.secureDelete(dbFileCrypt, random);
+			FileUtil.secureDelete(dbFile);
+			FileUtil.secureDelete(dbFileCrypt);
 		} catch (IOException e) {
 			// Ignore
 		}
@@ -5427,4 +5456,29 @@ public class Node implements TimeSkewDetectorCallback {
 		return false;
 	}
 
+
+    public byte[] getPluginStoreKey(String storeIdentifier) {
+        DatabaseKey key;
+        synchronized(this) {
+            key = databaseKey;
+        }
+        if(key != null)
+            return key.getPluginStoreKey(storeIdentifier);
+        else
+            return null;
+    }
+
+	private void checkOutputBandwidthLimit(int obwLimit) throws InvalidConfigValueException {
+		if(obwLimit <= 0) throw new InvalidConfigValueException(l10n("bwlimitMustBePositive"));
+		if (obwLimit < minimumBandwidth) throw lowBandwidthLimit(obwLimit);
+	}
+
+	private void checkInputBandwidthLimit(int ibwLimit) throws InvalidConfigValueException {
+		// Reserved value for limit based on output limit.
+		if (ibwLimit == -1) {
+			return;
+		}
+		if(ibwLimit <= 1) throw new InvalidConfigValueException(l10n("bandwidthLimitMustBePositiveOrMinusOne"));
+		if (ibwLimit < minimumBandwidth) throw lowBandwidthLimit(ibwLimit);
+	}
 }

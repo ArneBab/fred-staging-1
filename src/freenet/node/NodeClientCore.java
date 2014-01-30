@@ -1,5 +1,7 @@
 package freenet.node;
 
+import static java.util.concurrent.TimeUnit.SECONDS;
+
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
@@ -64,6 +66,7 @@ import freenet.node.fcp.FCPServer;
 import freenet.node.useralerts.SimpleUserAlert;
 import freenet.node.useralerts.UserAlert;
 import freenet.node.useralerts.UserAlertManager;
+import freenet.pluginmanager.PluginStores;
 import freenet.store.KeyCollisionException;
 import freenet.support.Base64;
 import freenet.support.Executor;
@@ -160,18 +163,20 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 	private UserAlert startingUpAlert;
 	private RestartDBJob[] startupDatabaseJobs;
 	private boolean alwaysCommit;
+	private final PluginStores pluginStores;
 
 	NodeClientCore(Node node, Config config, SubConfig nodeConfig, SubConfig installConfig, int portNumber, int sortOrder, SimpleFieldSet oldConfig, SubConfig fproxyConfig, SimpleToadletServer toadlets, long nodeDBHandle, ObjectContainer container) throws NodeInitException {
 		this.node = node;
 		this.tracker = node.tracker;
 		this.nodeStats = node.nodeStats;
 		this.random = node.random;
+		this.pluginStores = new PluginStores(node, installConfig);
 		killedDatabase = container == null;
 		if(killedDatabase)
 			System.err.println("Database corrupted (before entering NodeClientCore)!");
 		fecQueue = initFECQueue(node.nodeDBHandle, container, null);
 		this.backgroundBlockEncoder = new BackgroundBlockEncoder();
-		clientDatabaseExecutor = new PrioritizedSerialExecutor(NativeThread.NORM_PRIORITY, NativeThread.MAX_PRIORITY+1, NativeThread.NORM_PRIORITY, true, 30*1000, this, node.nodeStats);
+		clientDatabaseExecutor = new PrioritizedSerialExecutor(NativeThread.NORM_PRIORITY, NativeThread.MAX_PRIORITY+1, NativeThread.NORM_PRIORITY, true, SECONDS.toMillis(30), this, node.nodeStats);
 		storeChecker = new DatastoreChecker(node);
 		byte[] pwdBuf = new byte[16];
 		random.nextBytes(pwdBuf);
@@ -200,7 +205,7 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 		if(oldTemp.exists() && oldTemp.isDirectory() && !FileUtil.equals(tempDir.dir, oldTemp)) {
 			System.err.println("Deleting old temporary dir: "+oldTemp);
 			try {
-				FileUtil.secureDeleteAll(oldTemp, new MersenneTwister(random.nextLong()));
+				FileUtil.secureDeleteAll(oldTemp);
 			} catch (IOException e) {
 				// Ignore.
 			}
@@ -249,7 +254,7 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 			}
 		});
 
-		this.persistentTempDir = node.setupProgramDir(installConfig, "persistentTempDir", node.userDir().file("persistent-temp-"+portNumber).toString(),
+		this.persistentTempDir = node.setupProgramDir(installConfig, "persistentTempDir", node.userDir().file("persistent-temp").toString(),
 		  "NodeClientCore.persistentTempDir", "NodeClientCore.persistentTempDirLong", nodeConfig);
 		initPTBF(container, nodeConfig);
 
@@ -333,6 +338,8 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 		
 		clientContext.init(requestStarters, alerts);
 		initKeys(container);
+		if(container != null)
+		    migratePluginStores(container);
 
 		node.securityLevels.addPhysicalThreatLevelListener(new SecurityLevelListener<PHYSICAL_THREAT_LEVEL>() {
 
@@ -644,6 +651,7 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 		requestStarters.lateStart(this, nodeDBHandle, container);
 		// Must create the CRSCore's before telling them to load stuff.
 		initKeys(container);
+		migratePluginStores(container);
 		if(!killedDatabase)
 			fcpServer.load(container);
 		synchronized(this) {
@@ -690,7 +698,22 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 		return true;
 	}
 
-	private void lateInitFECQueue(long nodeDBHandle, ObjectContainer container) {
+	private void migratePluginStores(ObjectContainer container) {
+	    try {
+	        pluginStores.migrateAllPluginStores(container, node.nodeDBHandle);
+	    } catch (Db4oException e) {
+	        System.err.println("Failed to migrate plugin stores due to database error: "+e+" - assuming node.db4o[.crypt] is corrupt.");
+	        Logger.error(this, "Failed to migrate plugin stores due to database error: "+e+" - assuming node.db4o[.crypt] is corrupt.", e);
+            killedDatabase = true;
+	    } catch (Throwable e) {
+	        // Yes this really is necessary. db4o corruption can throw all sorts of crap.
+            System.err.println("Failed to migrate plugin stores due to database error: "+e+" - assuming node.db4o[.crypt] is corrupt.");
+            Logger.error(this, "Failed to migrate plugin stores due to database error: "+e+" - assuming node.db4o[.crypt] is corrupt.", e);
+            killedDatabase = true;
+	    }
+    }
+
+    private void lateInitFECQueue(long nodeDBHandle, ObjectContainer container) {
 		fecQueue = initFECQueue(nodeDBHandle, container, fecQueue);
 		clientContext.setFECQueue(fecQueue);
 	}
@@ -1391,7 +1414,7 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 				synchronized(is) {
 					if(is.getStatus() == CHKInsertSender.NOT_FINISHED)
 						try {
-							is.wait(5 * 1000);
+							is.wait(SECONDS.toMillis(5));
 						} catch(InterruptedException e) {
 							// Ignore
 						}
@@ -1410,7 +1433,7 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 					if(is.completed())
 						break;
 					try {
-						is.wait(10 * 1000);
+						is.wait(SECONDS.toMillis(10));
 					} catch(InterruptedException e) {
 						// Go around again
 					}
@@ -1515,7 +1538,7 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 				synchronized(is) {
 					if(is.getStatus() == SSKInsertSender.NOT_FINISHED)
 						try {
-							is.wait(5 * 1000);
+							is.wait(SECONDS.toMillis(5));
 						} catch(InterruptedException e) {
 							// Ignore
 						}
@@ -1534,7 +1557,7 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 					if(is.getStatus() != SSKInsertSender.NOT_FINISHED)
 						break;
 					try {
-						is.wait(10 * 1000);
+						is.wait(SECONDS.toMillis(10));
 					} catch(InterruptedException e) {
 						// Go around again
 					}
@@ -1849,9 +1872,9 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 
 	private long lastCommitted = System.currentTimeMillis();
 
-	static final int MAX_COMMIT_INTERVAL = 30*1000;
+	static final long MAX_COMMIT_INTERVAL = SECONDS.toMillis(30);
 
-	static final int SOON_COMMIT_INTERVAL = 5*1000;
+	static final long SOON_COMMIT_INTERVAL = SECONDS.toMillis(5);
 
 	class DBJobWrapper implements Runnable {
 
@@ -2102,5 +2125,9 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 		node.peers.closerPeer(null, new HashSet<PeerNode>(), key.toNormalizedDouble(), true, false, -1, null, 2.0, key, origHTL, 0, true, realTime, r, false, System.currentTimeMillis(), node.enableNewLoadManagement(realTime));
 		return r.recentlyFailed();
 	}
+
+    public PluginStores getPluginStores() {
+        return pluginStores;
+    }
 
 }

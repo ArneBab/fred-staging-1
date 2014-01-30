@@ -52,6 +52,7 @@ public class ContentFilterToadlet extends Toadlet implements LinkEnabledCallback
     }
     
     public boolean isEnabled (ToadletContext ctx) {
+        if(ctx == null) return false;
         boolean fullAccess = !container.publicGatewayMode() || ctx.isAllowedFullAccess();
         return ctx.isAdvancedModeEnabled() && fullAccess;
     }
@@ -59,8 +60,7 @@ public class ContentFilterToadlet extends Toadlet implements LinkEnabledCallback
     public void handleMethodGET(URI uri, final HTTPRequest request, final ToadletContext ctx)
             throws ToadletContextClosedException, IOException, RedirectException {
         if (container.publicGatewayMode() && !ctx.isAllowedFullAccess()) {
-            sendErrorPage(ctx, 403, NodeL10n.getBase().getString("Toadlet.unauthorizedTitle"),
-                    NodeL10n.getBase().getString("Toadlet.unauthorized"));
+            sendUnauthorizedPage(ctx);
             return;
         }
         
@@ -80,8 +80,7 @@ public class ContentFilterToadlet extends Toadlet implements LinkEnabledCallback
     public void handleMethodPOST(URI uri, final HTTPRequest request, final ToadletContext ctx)
             throws ToadletContextClosedException, IOException, RedirectException {
         if (container.publicGatewayMode() && !ctx.isAllowedFullAccess()) {
-            sendErrorPage(ctx, 403, NodeL10n.getBase().getString("Toadlet.unauthorizedTitle"),
-                    NodeL10n.getBase().getString("Toadlet.unauthorized"));
+            sendUnauthorizedPage(ctx);
             return;
         }
         try {

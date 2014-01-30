@@ -1,5 +1,8 @@
 package freenet.clients.http;
 
+import static java.util.concurrent.TimeUnit.HOURS;
+import static java.util.concurrent.TimeUnit.SECONDS;
+
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
@@ -25,7 +28,7 @@ import freenet.client.HighLevelSimpleClient;
 import freenet.client.async.ClientContext;
 import freenet.client.filter.ContentFilter;
 import freenet.client.filter.FoundURICallback;
-import freenet.client.filter.MIMEType;
+import freenet.client.filter.FilterMIMEType;
 import freenet.client.filter.PushingTagReplacerCallback;
 import freenet.client.filter.UnsafeContentTypeException;
 import freenet.clients.http.ajaxpush.DismissAlertToadlet;
@@ -84,7 +87,7 @@ public final class FProxyToadlet extends Toadlet implements RequestClient {
 	}
 
 	// ?force= links become invalid after 2 hours.
-	private static final long FORCE_GRAIN_INTERVAL = 60*60*1000;
+	private static final long FORCE_GRAIN_INTERVAL = HOURS.toMillis(1);
 	/** Maximum size for transparent pass-through, should be a config option */
 	public static long MAX_LENGTH_WITH_PROGRESS = (5*1024*1024 * 11) / 10; // 2MB plus a bit due to buggy inserts
 	public static long MAX_LENGTH_NO_PROGRESS = (2*1024*1024 * 11) / 10; // 2MB plus a bit due to buggy inserts
@@ -228,7 +231,7 @@ public final class FProxyToadlet extends Toadlet implements RequestClient {
 			// see http://onjava.com/pub/a/onjava/excerpt/jebp_3/index3.html
 			// Testing on FF3.5.1 shows that application/x-force-download wants to run it in wine,
 			// whereas application/force-download wants to save it.
-			context.sendReplyHeaders(200, "OK", headers, "application/force-download", size);
+			context.sendReplyHeadersFProxy(200, "OK", headers, "application/force-download", size);
 			context.writeData(data);
 		} else {
 			// Send the data, intact
@@ -265,10 +268,10 @@ public final class FProxyToadlet extends Toadlet implements RequestClient {
 				}
 				MultiValueTable<String, String> retHdr = new MultiValueTable<String, String>();
 				retHdr.put("Content-Range", "bytes " + range[0] + "-" + range[1] + "/" + size);
-				context.sendReplyHeaders(206, "Partial content", retHdr, mimeType, tmpRange.size());
+				context.sendReplyHeadersFProxy(206, "Partial content", retHdr, mimeType, tmpRange.size());
 				context.writeData(tmpRange);
 			} else {
-				context.sendReplyHeaders(200, "OK", new MultiValueTable<String, String>(), mimeType, size);
+				context.sendReplyHeadersFProxy(200, "OK", new MultiValueTable<String, String>(), mimeType, size);
 				context.writeData(data);
 			}
 		}
@@ -284,7 +287,7 @@ public final class FProxyToadlet extends Toadlet implements RequestClient {
 		        netLevel == NETWORK_THREAT_LEVEL.LOW)) || disableFiltration);
 		if((filterChecked) && mimeType != null && !mimeType.equals("application/octet-stream") &&
 			!mimeType.equals("")) {
-			MIMEType type = ContentFilter.getMIMEType(mimeType);
+			FilterMIMEType type = ContentFilter.getMIMEType(mimeType);
 			if((type == null || (!(type.safeToRead || type.readFilter != null))) &&
 				        !(threatLevel == PHYSICAL_THREAT_LEVEL.HIGH ||
 				        threatLevel == PHYSICAL_THREAT_LEVEL.MAXIMUM ||
@@ -524,30 +527,17 @@ public final class FProxyToadlet extends Toadlet implements RequestClient {
 				return;
 			}
 		}else if(ks.equals("/favicon.ico")){
-			byte[] buf = new byte[1024];
-			int len;
-			InputStream strm = getClass().getResourceAsStream("staticfiles/favicon.ico");
-
-			try {
-				if (strm == null) {
-					this.sendErrorPage(ctx, 404, l10n("pathNotFoundTitle"), l10n("pathNotFound"));
-					return;
-				}
-				ctx.sendReplyHeaders(200, "OK", null, "image/x-icon", strm.available());
-
-				while ( (len = strm.read(buf)) > 0) {
-					ctx.writeData(buf, 0, len);
-				}
-			} finally {
-				Closer.close(strm);
-			}
-			return;
+		    try {
+                throw new RedirectException(StaticToadlet.ROOT_PATH+"favicon.ico");
+            } catch (URISyntaxException e) {
+                throw new Error(e);
+            }
 		} else if(ks.startsWith("/feed/") || ks.equals("/feed")) {
 			//TODO Better way to find the host. Find if https is used?
 			String host = ctx.getHeaders().get("host");
 			String atom = ctx.getAlertManager().getAtom("http://" + host);
 			byte[] buf = atom.getBytes("UTF-8");
-			ctx.sendReplyHeaders(200, "OK", null, "application/atom+xml", buf.length);
+			ctx.sendReplyHeadersFProxy(200, "OK", null, "application/atom+xml", buf.length);
 			ctx.writeData(buf, 0, buf.length);
 			return;
 		}else if(ks.equals("/robots.txt") && ctx.doRobots()){
@@ -660,7 +650,7 @@ public final class FProxyToadlet extends Toadlet implements RequestClient {
 						@Override
 						public void run() {
 							for(FreenetURI uri : uris) {
-								client.prefetch(uri, 60*1000, 512*1024, prefetchAllowedTypes);
+								client.prefetch(uri, SECONDS.toMillis(60), 512*1024, prefetchAllowedTypes);
 							}
 						}
 						
@@ -1248,7 +1238,7 @@ public final class FProxyToadlet extends Toadlet implements RequestClient {
 		server.register(friendsToadlet, "FProxyToadlet.categoryFriends", "/friends/", true,
 		        "FProxyToadlet.friendsTitle", "FProxyToadlet.friends", true, null);
 
-		DarknetAddRefToadlet addRefToadlet = new DarknetAddRefToadlet(node, client);
+		DarknetAddRefToadlet addRefToadlet = new DarknetAddRefToadlet(node, client, friendsToadlet);
 		server.register(addRefToadlet, "FProxyToadlet.categoryFriends", "/addfriend/", true,
 		        "FProxyToadlet.addFriendTitle", "FProxyToadlet.addFriend", true, null);
 

@@ -1,5 +1,7 @@
 package freenet.clients.http;
 
+import static java.util.concurrent.TimeUnit.SECONDS;
+
 import java.io.IOException;
 import java.net.SocketException;
 import java.net.URI;
@@ -38,7 +40,7 @@ import freenet.support.api.HTTPRequest;
 public class PproxyToadlet extends Toadlet {
 	private static final int MAX_PLUGIN_NAME_LENGTH = 1024;
 	/** Maximum time to wait for a threaded plugin to exit */
-	private static final int MAX_THREADED_UNLOAD_WAIT_TIME = 60*1000;
+	private static final long MAX_THREADED_UNLOAD_WAIT_TIME = SECONDS.toMillis(60);
 	private final Node node;
 
         private static volatile boolean logMINOR;
@@ -65,10 +67,8 @@ public class PproxyToadlet extends Toadlet {
 
 		MultiValueTable<String, String> headers = new MultiValueTable<String, String>();
 
-		if(!ctx.isAllowedFullAccess()) {
-			super.sendErrorPage(ctx, 403, l10n("unauthorizedTitle"), l10n("unauthorized"));
-			return;
-		}
+        if(!ctx.checkFullAccess(this))
+            return;
 
 		String path=request.getPath();
 
@@ -336,10 +336,8 @@ public class PproxyToadlet extends Toadlet {
 			Logger.minor(this, "Pproxy fetching "+path);
 		try {
 			if (path.equals("")) {
-				if (!ctx.isAllowedFullAccess()) {
-					super.sendErrorPage(ctx, 403, "Unauthorized", NodeL10n.getBase().getString("Toadlet.unauthorized"));
-					return;
-				}
+		        if(!ctx.checkFullAccess(this))
+		            return;
 
 				Iterator<PluginProgress> loadingPlugins = pm.getStartingPlugins().iterator();
 

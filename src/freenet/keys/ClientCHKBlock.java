@@ -116,6 +116,7 @@ public class ClientCHKBlock implements ClientKeyBlock {
      * @return the original data
      * @throws IOException If there is a bucket error.
      */
+    @SuppressWarnings("deprecation") // FIXME Back compatibility, using dubious ciphers; remove eventually.
     public Bucket decodeOld(BucketFactory bf, int maxLength, boolean dontCompress) throws CHKDecodeException, IOException {
         // Overall hash already verified, so first job is to decrypt.
 		if(key.cryptoAlgorithm != Key.ALGO_AES_PCFB_256_SHA256)
@@ -201,7 +202,7 @@ public class ClientCHKBlock implements ClientKeyBlock {
 			if (sun != null) {
 				// SunJCE provider is faster (in some configurations)
 				try {
-					Mac sun_hmac = Mac.getInstance(algo, "HmacSHA256");
+					Mac sun_hmac = Mac.getInstance(algo, sun);
 					sun_hmac.init(dummyKey); // resolve provider
 					if (hmac.getProvider() != sun_hmac.getProvider()) {
 						long time_def = benchmark(hmac);
@@ -570,6 +571,7 @@ public class ClientCHKBlock implements ClientKeyBlock {
 		}
     }
     
+    @SuppressWarnings("deprecation") // FIXME Back compatibility, using dubious ciphers; remove eventually.
     public static ClientCHKBlock innerEncode(byte[] data, int dataLength, MessageDigest md256, byte[] encKey, boolean asMetadata, short compressionAlgorithm, byte cryptoAlgorithm) {
     	if(cryptoAlgorithm != Key.ALGO_AES_PCFB_256_SHA256)
     		throw new IllegalArgumentException("Unsupported crypto algorithm "+cryptoAlgorithm);

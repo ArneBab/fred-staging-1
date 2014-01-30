@@ -3,6 +3,8 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.pluginmanager;
 
+import static java.util.concurrent.TimeUnit.MINUTES;
+
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileFilter;
@@ -242,7 +244,7 @@ public class PluginManager {
 		}
 	}
 
-	public void stop(int maxWaitTime) {
+	public void stop(long maxWaitTime) {
 		// Stop loading plugins.
 		ArrayList<PluginProgress> matches = new ArrayList<PluginProgress>();
 		synchronized(this) {
@@ -965,7 +967,7 @@ public class PluginManager {
 		throw new NotFoundPluginHTTPException("Plugin '"+plugin+"' not found!", "/plugins");
 	}
 
-	public void killPlugin(String name, int maxWaitTime, boolean reloading) {
+	public void killPlugin(String name, long maxWaitTime, boolean reloading) {
 		PluginInfoWrapper pi = null;
 		boolean found = false;
 		synchronized(pluginWrappers) {
@@ -981,7 +983,7 @@ public class PluginManager {
 			pi.stopPlugin(this, maxWaitTime, reloading);
 	}
 
-	public void killPluginByFilename(String name, int maxWaitTime, boolean reloading) {
+	public void killPluginByFilename(String name, long maxWaitTime, boolean reloading) {
 		PluginInfoWrapper pi = null;
 		boolean found = false;
 		synchronized(pluginWrappers) {
@@ -997,7 +999,7 @@ public class PluginManager {
 			pi.stopPlugin(this, maxWaitTime, reloading);
 	}
 
-	public void killPluginByClass(String name, int maxWaitTime) {
+	public void killPluginByClass(String name, long maxWaitTime) {
 		PluginInfoWrapper pi = null;
 		boolean found = false;
 		synchronized(pluginWrappers) {
@@ -1013,7 +1015,7 @@ public class PluginManager {
 			pi.stopPlugin(this, maxWaitTime, false);
 	}
 
-	public void killPlugin(FredPlugin plugin, int maxWaitTime) {
+	public void killPlugin(FredPlugin plugin, long maxWaitTime) {
 		PluginInfoWrapper pi = null;
 		boolean found = false;
 		synchronized(pluginWrappers) {
@@ -1095,7 +1097,7 @@ public class PluginManager {
 	static {
 		try {
 		addOfficialPlugin("Freemail", "communication", false, 15, true, new FreenetURI("CHK@6dfMgGf7YEfJhF0W~K0HUv0fnbuRwYH6iMqrLIbTI7k,huYBf8oBevwW6lRQnz-0jDP1dl5ej7FKeyVZ3CnH0Ec,AAMC--8/Freemail.jar"), true, false, false);
-		addOfficialPlugin("Freemail_wot", "communication", false, 22, false, new FreenetURI("CHK@K5k-X3NYB2w2gFZyuuzzJZjYqLCdFmyU3iyYpEtLV~E,lB00kThLv0iwEoQCSfyZkf09EgL3AgUUjlt0pm8z1ng,AAMC--8/Freemail_wot.jar"));
+		addOfficialPlugin("Freemail_wot", "communication", false, 23, false, new FreenetURI("CHK@RL2twhvr2E7snE~rB0pSRzs178d4AF4Js2C6finxw8Y,dOfAtMTqkxdR2yC8l0bp4B-PzwHWj-9hdXmhcFOgm8M,AAMC--8/Freemail_wot.jar"));
 		addOfficialPlugin("HelloWorld", "example", false, new FreenetURI("CHK@ZdTXnWV-ikkt25-y8jmhlHjCY-nikDMQwcYlWHww5eg,Usq3uRHpHuIRmMRRlNQE7BNveO1NwNI7oNKdb7cowFM,AAIC--8/HelloWorld.jar"), false, false, true);
 		addOfficialPlugin("HelloFCP", "example", false, new FreenetURI("CHK@0gtXJpw1QUJCmFOhoPRNqhsNbMtVw1CGVe46FUv7-e0,X8QqhtPkHoaFCUd89bgNaKxX1AV0WNBVf3sRgSF51-g,AAIC--8/HelloFCP.jar"), false, false, true);
 		addOfficialPlugin("JSTUN", "connectivity", true, 2, false, new FreenetURI("CHK@STQEzqyYLPtd4mCMIXO2HV38J6jG492hyPcEjTdc1oI,ojl4TCcJpJbo1OcO8nwPjycNCt1mn6zJq3lxCNExIHI,AAIC--8/JSTUN.jar"));
@@ -1108,11 +1110,10 @@ public class PluginManager {
 		addOfficialPlugin("XMLLibrarian", "index", false, 26, true, new FreenetURI("CHK@TvjyCaG1dx0xIBSJkXSKA1ZT4I~NkRKeQqwC0a0bhFM,JiQe4CRjF1RwhQRFFQzP-ih9t2i0peV0tBCfJAeFCdk,AAIC--8/XMLLibrarian.jar"), true, false, false);
 		addOfficialPlugin("XMLSpider", "index", false, 48, true, new FreenetURI("CHK@ne-aaLuzVZLcHj0YmrclaCXJqxsSb7q-J0eYEiL9V9o,v0EdgDGBhTE9k6GsB44UrQ4ADUq5LCUVknLaE4iSEBk,AAMC--8/XMLSpider.jar"), true, false, false);
 		addOfficialPlugin("Freereader", "index", false, 4, true, new FreenetURI("CHK@4PuSjXk4Z0Hdu04JLhdPHLyOVLljj8qVbjRn3rHVzvg,bDGYnuYj67Q4uzroPBEWAYWRk26bPzf-iQ4~Uo3S7mg,AAIC--8/Freereader.jar"));
-		addOfficialPlugin("Library", "index", false, 33, true, new FreenetURI("CHK@Jz1PB4xYuLXFZM0cjtR7SsiRA-2V1r9zWWU3R2KsWb0,HzvnuqkEj3h2xXpOQ0U6Uf6~HSyaRZxjqI9L1N55gVU,AAMC--8/Library.jar"));
+		addOfficialPlugin("Library", "index", false, 35, true, new FreenetURI("CHK@VhhWe6sT41pPei4SBwxcmRXrJpMfPDXTFhtJ4rFxfsk,MrPki7hU35x2MHvV~8am~CdF-B4xzqxjMwDtqFVYJLQ,AAMC--8/Library.jar"));
 		addOfficialPlugin("Spider", "index", false, 51, false, new FreenetURI("CHK@CcJfB~uOTgbzdpVr8htrhLXs0uNsVW6KFRpEvHGjXDU,BPr2fm9Cq9gj7BQeJdLbkCmcmXRx-e-b6aerDzSK4zk,AAMC--8/Spider.jar"), false, false, true);
-		addOfficialPlugin("Freetalk", "communication", false, 13, true, new FreenetURI("CHK@zZDy-KwoZHYy4ZRpK9ZNNQb1vyespIIi9b-RPIyRM0k,EDHJbQpLtGSW4WHA23UHt6MpcoAp--dR7zmX-SGzzis,AAMC--8/Freetalk.jar"), false, false, true);
-		addOfficialPlugin("WebOfTrust", "communication", false, 12, true, new FreenetURI("CHK@Z6jitqIR4tJc9gOXih5cbTJxwnThweDvE5e-pTzetGM,vJfK3hmt06b-dF0yIbovPZlCUqTdgZ5-xsRzcslq1KU,AAIC--8/WebOfTrust.jar"), false, false, false); // from 35617f66afba287d98320843a521a9b395a5fbb3 (WoT build fix for headless)
-		addOfficialPlugin("FlogHelper", "communication", false, 29, true, new FreenetURI("CHK@deSqrIbHCOtLe6n1HdvhCprm-mAm9Fo7dxN9fGcGHmU,mqT5nMqNftPnoYd0JEuftSP3yInvZxYeF2PQMIJeerU,AAMC--8/FlogHelper.jar"), false, false, false);
+		addOfficialPlugin("WebOfTrust", "communication", false, 13, true, new FreenetURI("CHK@dSfeVmjFX15QVyFCTUQmZItrJi8XnoYpiapxLTxaQeg,wizfFOtkKSBEdjUYgjCUJczjl74r0CjRBfzvaRvKUMo,AAMC--8/WebOfTrust.jar"), false, false, false);
+		addOfficialPlugin("FlogHelper", "communication", false, 30, true, new FreenetURI("CHK@4Ey1hDbEPTTJ1AVKkrq3h0QaeMWFETzPaBYFkoauYvs,SNmqkFnxgOdy7Qu8vOoibQORJFIa8su1Hc3U9DRUa9E,AAMC--8/FlogHelper.jar"), false, false, false);
 		} catch (MalformedURLException e) {
 			throw new Error("Malformed hardcoded URL: "+e, e);
 		}
@@ -1260,7 +1261,7 @@ public class PluginManager {
 				try {
 					downloaded = true;
 					System.err.println("Downloading plugin "+name);
-					WrapperManager.signalStarting(5*60*1000);
+					WrapperManager.signalStarting((int) MINUTES.toMillis(5));
 					File tempPluginFile = null;
 					OutputStream pluginOutputStream = null;
 					InputStream pluginInputStream = null;

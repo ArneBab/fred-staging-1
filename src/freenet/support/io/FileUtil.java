@@ -19,9 +19,19 @@ import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Method;
 import java.nio.CharBuffer;
 import java.nio.charset.Charset;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.util.Random;
 
+import org.bouncycastle.crypto.BufferedBlockCipher;
+import org.bouncycastle.crypto.engines.AESFastEngine;
+import org.bouncycastle.crypto.io.CipherInputStream;
+import org.bouncycastle.crypto.modes.SICBlockCipher;
+import org.bouncycastle.crypto.params.KeyParameter;
+import org.bouncycastle.crypto.params.ParametersWithIV;
+
 import freenet.client.DefaultMIMETypes;
+import freenet.node.NodeStarter;
 import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.SizeUtil;
@@ -49,13 +59,31 @@ final public class FileUtil {
 			this.isUnix = unix;
 		};
 	};
+	
+	public static enum CPUArchitecture {
+	    Unknown,
+	    X86,
+	    X86_64,
+	    PPC_32,
+	    PPC_64,
+	    ARM,
+	    SPARC,
+	    IA64
+	}
 
 	public static final OperatingSystem detectedOS;
+	
+	/** Caveat: Sometimes this may not be entirely accurate, e.g. we may not be able to distinguish
+	 * 32-bit from 64-bit, we may be using the wrong JVM for the platform, we may be using an x86 
+	 * wrapper or JVM on an IA64 system etc. This *should* be the version the JVM is running. */
+	public static final CPUArchitecture detectedArch;
 
 	private static final Charset fileNameCharset;
 
 	static {
 		detectedOS = detectOperatingSystem();
+		
+		detectedArch = detectCPUArchitecture();
 
 		// I did not find any way to detect the Charset of the file system so I'm using the file encoding charset.
 		// On Windows and Linux this is set based on the users configured system language which is probably equal to the filename charset.
@@ -111,6 +139,29 @@ final public class FileUtil {
 		}
 
 		return OperatingSystem.Unknown;
+	}
+	
+	private static CPUArchitecture detectCPUArchitecture() { // TODO Move to the proper class
+	    try {
+	        final String name = System.getProperty("os.arch").toLowerCase();
+	        if(name.equals("x86") || name.equals("i386") || name.matches("i[3-9]86"))
+	            return CPUArchitecture.X86;
+	        if(name.equals("amd64") || name.equals("x86-64") || name.equals("x86_64") ||
+	                name.equals("x86") || name.equals("em64t") || name.equals("x8664") ||
+	                name.equals("8664"))
+	            return CPUArchitecture.X86_64;
+	        if(name.startsWith("arm"))
+	            return CPUArchitecture.ARM; // FIXME arm64 support?
+	        if(name.equals("ppc") || name.equals("powerpc"))
+	            return CPUArchitecture.PPC_32;
+	        if(name.equals("ppc64"))
+	            return CPUArchitecture.PPC_64;
+	        if(name.startsWith("ia64"))
+	            return CPUArchitecture.IA64;
+	    } catch (Throwable t) {
+	        Logger.error(FileUtil.class, "CPU architecture detection failed", t);
+	    }
+	    return CPUArchitecture.Unknown;
 	}
 
 	/**
@@ -325,31 +376,9 @@ final public class FileUtil {
             		return false;
             	}
             }
-    		if(!orig.renameTo(dest)) {
-    			// Copy the data
-    			InputStream is = null;
-    			OutputStream os = null;
-    			try {
-    				is = new FileInputStream(orig);
-    				os = new FileOutputStream(dest);
-    				copy(is, os, orig.length());
-    				is.close();
-    				is = null;
-    				os.close();
-    				os = null;
-    				orig.delete();
-    				return true;
-    			} catch (IOException e) {
-    				dest.delete();
-    				Logger.error(FileUtil.class, "Move failed from "+orig+" to "+dest+" : "+e, e);
-    				System.err.println("Move failed from "+orig+" to "+dest+" : "+e);
-    				e.printStackTrace();
-    				return false;
-    			} finally {
-    				Closer.close(is);
-    				Closer.close(os);
-    			}
-    		} else return true;
+    		if(!orig.renameTo(dest))
+    		    return copyFile(orig, dest);
+    		else return true;
     	}
 
     /**
@@ -525,11 +554,11 @@ final public class FileUtil {
 		}
 	}
 	
-	public static boolean secureDeleteAll(File wd, Random random) throws IOException {
+	public static boolean secureDeleteAll(File wd) throws IOException {
 		if(!wd.isDirectory()) {
 			System.err.println("DELETING FILE "+wd);
 			try {
-				secureDelete(wd, random);
+				secureDelete(wd);
 			} catch (IOException e) {
 				Logger.error(FileUtil.class, "Could not delete file: "+wd, e);
 				return false;
@@ -566,11 +595,7 @@ final public class FileUtil {
 		return true;
 	}
 	
-	public static void secureDelete(File file, Random random) throws IOException {
-		secureDelete(file, random, false);
-	}
-
-	public static void secureDelete(File file, Random random, boolean quick) throws IOException {
+	public static void secureDelete(File file) throws IOException {
 		// FIXME somebody who understands these things should have a look at this...
 		if(!file.exists()) return;
 		long size = file.length();
@@ -579,51 +604,11 @@ final public class FileUtil {
 			try {
 				System.out.println("Securely deleting "+file+" which is of length "+size+" bytes...");
 				raf = new RandomAccessFile(file, "rw");
-				raf.seek(0);
 				long count;
-				byte[] buf = new byte[4096];
-				// First zero it out
-				count = 0;
-				while(count < size) {
-					int written = (int) Math.min(buf.length, size - count);
-					raf.write(buf, 0, written);
-					count += written;
-				}
+				// Random data first.
+				raf.seek(0);
+				fill(new RandomAccessFileOutputStream(raf), size);
 				raf.getFD().sync();
-				if(!quick) {
-					// Then ffffff it out
-					for(int i=0;i<buf.length;i++)
-						buf[i] = (byte)0xFF;
-					raf.seek(0);
-					count = 0;
-					while(count < size) {
-						int written = (int) Math.min(buf.length, size - count);
-						raf.write(buf, 0, written);
-						count += written;
-					}
-					raf.getFD().sync();
-					// Then random data
-					random.nextBytes(buf);
-					raf.seek(0);
-					count = 0;
-					while(count < size) {
-						int written = (int) Math.min(buf.length, size - count);
-						raf.write(buf, 0, written);
-						count += written;
-					}
-					raf.getFD().sync();
-					raf.seek(0);
-					// Then 0's again
-					for(int i=0;i<buf.length;i++)
-						buf[i] = 0;
-					count = 0;
-					while(count < size) {
-						int written = (int) Math.min(buf.length, size - count);
-						raf.write(buf, 0, written);
-						count += written;
-					}
-					raf.getFD().sync();
-				}
 				raf.close();
 				raf = null;
 			} finally {
@@ -634,14 +619,19 @@ final public class FileUtil {
 			throw new IOException("Unable to delete file "+file);
 	}
 
+	/** @Deprecated */
+    public static void secureDelete(File file, Random random) throws IOException {
+        secureDelete(file);
+    }
+    
 	public static long getFreeSpace(File dir) {
 		// Use JNI to find out the free space on this partition.
 		long freeSpace = -1;
 		try {
 			Class<? extends File> c = dir.getClass();
-			Method m = c.getDeclaredMethod("getFreeSpace", new Class<?>[0]);
+			Method m = c.getDeclaredMethod("getFreeSpace");
 			if(m != null) {
-				Long lFreeSpace = (Long) m.invoke(dir, new Object[0]);
+				Long lFreeSpace = (Long) m.invoke(dir);
 				if(lFreeSpace != null) {
 					freeSpace = lFreeSpace.longValue();
 					System.err.println("Found free space on node's partition: on " + dir + " = " + SizeUtil.formatSize(freeSpace));
@@ -729,15 +719,96 @@ final public class FileUtil {
 
 	public static boolean copyFile(File copyFrom, File copyTo) {
 		copyTo.delete();
+		boolean executable = copyFrom.canExecute();
 		FileBucket outBucket = new FileBucket(copyTo, false, true, false, false, false);
 		FileBucket inBucket = new FileBucket(copyFrom, true, false, false, false, false);
 		try {
 			BucketTools.copy(inBucket, outBucket);
+			if(executable) {
+			    if(!(copyTo.setExecutable(true) || copyTo.canExecute())) {
+			        System.err.println("Unable to preserve executable bit when copying "+copyFrom+" to "+copyTo+" - you may need to make it executable!");
+			        // return false; ??? FIXME debatable.
+			    }
+			}
 			return true;
 		} catch (IOException e) {
 			System.err.println("Unable to copy from "+copyFrom+" to "+copyTo);
 			return false;
 		}
 	}
+	
+	private static CipherInputStream cis;
+	private static ZeroInputStream zis = new ZeroInputStream();
+	private static long cisCounter;
+	
+	/** Write hard to identify random data to the OutputStream. Does not drain the global secure 
+	 * random number generator, and is significantly faster than it.
+	 * @param os The stream to write to.
+	 * @param length The number of bytes to write.
+	 * @throws IOException If unable to write to the stream.
+	 */
+	public static void fill(OutputStream os, long length) throws IOException {
+	    long remaining = length;
+	    byte[] buffer = new byte[BUFFER_SIZE];
+	    int read = 0;
+	    while ((remaining == -1) || (remaining > 0)) {
+	        synchronized(FileUtil.class) {
+	            if(cis == null || cisCounter > Long.MAX_VALUE/2) {
+	                // Reset it well before the birthday paradox (note this is actually counting bytes).
+	                byte[] key = new byte[16];
+	                byte[] iv = new byte[16];
+	                SecureRandom rng = NodeStarter.getGlobalSecureRandom();
+	                rng.nextBytes(key);
+	                rng.nextBytes(iv);
+	                AESFastEngine e = new AESFastEngine();
+	                SICBlockCipher ctr = new SICBlockCipher(e);
+	                ctr.init(true, new ParametersWithIV(new KeyParameter(key),iv));
+	                cis = new CipherInputStream(zis, new BufferedBlockCipher(ctr));
+	                cisCounter = 0;
+	            }
+	            read = cis.read(buffer, 0, ((remaining > BUFFER_SIZE) || (remaining == -1)) ? BUFFER_SIZE : (int) remaining);
+	            cisCounter += read;
+	        }
+	        if (read == -1) {
+	            if (length == -1) {
+	                return;
+	            }
+	            throw new EOFException("stream reached eof");
+	        }
+	        os.write(buffer, 0, read);
+	        if (remaining > 0)
+	            remaining -= read;
+	    }
+	    
+	}
+
+	/** @deprecated */
+    public static void fill(OutputStream os, Random random, long length) throws IOException {
+        long moved = 0;
+        byte[] buf = new byte[BUFFER_SIZE];
+        while(moved < length) {
+            int toRead = (int)Math.min(BUFFER_SIZE, length - moved);
+            random.nextBytes(buf);
+            os.write(buf, 0, toRead);
+            moved += toRead;
+        }
+    }
+
+    public static boolean equalStreams(InputStream a, InputStream b, long size) throws IOException {
+        byte[] aBuffer = new byte[BUFFER_SIZE];
+        byte[] bBuffer = new byte[BUFFER_SIZE];
+        DataInputStream aIn = new DataInputStream(a);
+        DataInputStream bIn = new DataInputStream(b);
+        long checked = 0;
+        while(checked < size) {
+            int toRead = (int)Math.min(BUFFER_SIZE, size - checked);
+            aIn.readFully(aBuffer, 0, toRead);
+            bIn.readFully(bBuffer, 0, toRead);
+            if(!MessageDigest.isEqual(aBuffer, bBuffer))
+                return false;
+            checked += toRead;
+        }
+        return true;
+    }
 
 }

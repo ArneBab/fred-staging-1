@@ -164,7 +164,7 @@ public final class PageMaker {
 				navigationLinkL10n.put(name, l10n);
 		}
 
-		@Deprecated
+		/** Remove a link from this sub-menu. */
 		public void removeNavigationLink(String name) {
 			navigationLinkTexts.remove(name);
 			navigationLinkTextsNonFull.remove(name);
@@ -173,14 +173,6 @@ public final class PageMaker {
 			navigationLinkL10n.remove(name); //Should this be here? If so, why not remove from navigationLinkCallbacks too
 		}
 
-		@Deprecated
-		public void removeAllNavigationLinks() {
-			navigationLinkTexts.clear();
-			navigationLinkTextsNonFull.clear();
-			navigationLinkTitles.clear();
-			navigationLinks.clear();
-			navigationLinkL10n.clear(); //Should this be here? If so, why not clear navigationLinkCallbacks too
-		}
 	}
 	
 	protected PageMaker(THEME t, Node n) {
@@ -236,18 +228,14 @@ public final class PageMaker {
 			throw new NullPointerException("there is no menu named "+menutext);
 		menu.addNavigationLink(path, name, title, fullOnly, cb, l10n);
 	}
-	
-	/* FIXME: Implement a proper way for chosing what the menu looks like upon handleHTTPGet/Post */
-	@Deprecated
+
+	/** Remove a navigation link from a sub-menu. Applies globally, do not use this to customise 
+	 * menus when sending one page! */
 	public synchronized void removeNavigationLink(String menutext, String name) {
 		SubMenu menu = subMenus.get(menutext);
-		menu.removeNavigationLink(name);
-	}
-	
-	@Deprecated
-	public synchronized void removeAllNavigationLinks() {
-		for(SubMenu menu : subMenus.values())
-			menu.removeAllNavigationLinks();
+		// The menu may have already been removed.
+		if(menu != null)
+		    menu.removeNavigationLink(name);
 	}
 	
 	public HTMLNode createBackLink(ToadletContext toadletContext, String name) {

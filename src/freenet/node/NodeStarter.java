@@ -3,8 +3,11 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.node;
 
+import static java.util.concurrent.TimeUnit.MINUTES;
+
 import java.io.File;
 import java.io.IOException;
+import java.security.SecureRandom;
 
 import org.tanukisoftware.wrapper.WrapperListener;
 import org.tanukisoftware.wrapper.WrapperManager;
@@ -161,7 +164,7 @@ public class NodeStarter implements WrapperListener {
 				public void run() {
 					while(true) {
 						try {
-							Thread.sleep(60 * 60 * 1000);
+							Thread.sleep(MINUTES.toMillis(60));
 						} catch(InterruptedException e) {
 							// Ignore
 						} catch(Throwable t) {
@@ -307,7 +310,7 @@ public class NodeStarter implements WrapperListener {
 					public void run() {
 						while(true) {
 							try {
-								Thread.sleep(60 * 60 * 1000);
+								Thread.sleep(MINUTES.toMillis(60));
 							} catch(InterruptedException e) {
 								// Ignore
 							} catch(Throwable t) {
@@ -493,4 +496,16 @@ public class NodeStarter implements WrapperListener {
 			return maxMemory;
 		}
 	}
+	
+	/** Static instance of SecureRandom, as opposed to Node's copy. @see getSecureRandom() */
+    private static SecureRandom globalSecureRandom;
+	
+	public static synchronized SecureRandom getGlobalSecureRandom() {
+	    if(globalSecureRandom == null) {
+	        globalSecureRandom = new SecureRandom();
+	        globalSecureRandom.nextBytes(new byte[16]); // Force it to seed itself so it blocks now not later.
+	    }
+	    return globalSecureRandom;
+	}
+
 }

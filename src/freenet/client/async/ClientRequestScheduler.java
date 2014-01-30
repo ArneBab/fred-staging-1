@@ -3,6 +3,8 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.client.async;
 
+import static java.util.concurrent.TimeUnit.SECONDS;
+
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -216,10 +218,10 @@ public class ClientRequestScheduler implements RequestScheduler {
 					container.deactivate(req, 1);
 					return;
 				}
-				schedCore.innerRegister(req, random, container, clientContext, null);
+				schedCore.innerRegister(req, container, clientContext, null);
 				starter.wakeUp();
 		} else {
-			schedTransient.innerRegister(req, random, null, clientContext, null);
+			schedTransient.innerRegister(req, null, clientContext, null);
 			starter.wakeUp();
 		}
 	}
@@ -337,7 +339,7 @@ public class ClientRequestScheduler implements RequestScheduler {
 						if(!(getter.isCancelled(container))) {
 							wereAnyValid = true;
 							if(!getter.preRegister(container, clientContext, true)) {
-								schedCore.innerRegister(getter, random, container, clientContext, getters);
+								schedCore.innerRegister(getter, container, clientContext, getters);
 							}
 						} else
 							getter.preRegister(container, clientContext, false);
@@ -363,7 +365,7 @@ public class ClientRequestScheduler implements RequestScheduler {
 					if(getter.preRegister(container, clientContext, true)) continue;
 				}
 				if(!getter.isCancelled(null))
-					schedTransient.innerRegister(getter, random, null, clientContext, getters);
+					schedTransient.innerRegister(getter, null, clientContext, getters);
 			}
 			starter.wakeUp();
 		}
@@ -434,7 +436,7 @@ public class ClientRequestScheduler implements RequestScheduler {
 	 * the above limit. So we have a higher limit before we complain that 
 	 * something odd is happening.. (e.g. leaking PersistentChosenRequest's). */
 	static final int WARNING_STARTER_QUEUE_SIZE = 800;
-	private static final long WAIT_AFTER_NOTHING_TO_START = 60*1000;
+	private static final long WAIT_AFTER_NOTHING_TO_START = SECONDS.toMillis(60);
 	
 	private final transient LinkedList<PersistentChosenRequest> starterQueue = new LinkedList<PersistentChosenRequest>();
 	
@@ -860,9 +862,9 @@ public class ClientRequestScheduler implements RequestScheduler {
 	}
 
 	public void reregisterAll(final ClientRequester request, ObjectContainer container, short oldPrio) {
-		schedTransient.reregisterAll(request, random, this, null, clientContext, oldPrio);
+		schedTransient.reregisterAll(request, this, null, clientContext, oldPrio);
 		if(schedCore != null)
-			schedCore.reregisterAll(request, random, this, container, clientContext, oldPrio);
+			schedCore.reregisterAll(request, this, container, clientContext, oldPrio);
 		starter.wakeUp();
 	}
 	

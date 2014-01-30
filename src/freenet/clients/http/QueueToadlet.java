@@ -45,7 +45,7 @@ import freenet.client.async.DatabaseDisabledException;
 import freenet.client.async.TooManyFilesInsertException;
 import freenet.client.filter.ContentFilter;
 import freenet.client.filter.KnownUnsafeContentTypeException;
-import freenet.client.filter.MIMEType;
+import freenet.client.filter.FilterMIMEType;
 import freenet.keys.FreenetURI;
 import freenet.l10n.NodeL10n;
 import freenet.node.DarknetPeerNode;
@@ -151,7 +151,7 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 	public void handleMethodPOST(URI uri, HTTPRequest request, final ToadletContext ctx) throws ToadletContextClosedException, IOException, RedirectException {
 
 		if(container.publicGatewayMode() && !ctx.isAllowedFullAccess()) {
-			super.sendErrorPage(ctx, 403, NodeL10n.getBase().getString("Toadlet.unauthorizedTitle"), NodeL10n.getBase().getString("Toadlet.unauthorized"));
+		    sendUnauthorizedPage(ctx);
 			return;
 		}
 
@@ -1063,7 +1063,7 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 		}
 
 		if(container.publicGatewayMode() && !ctx.isAllowedFullAccess()) {
-			super.sendErrorPage(ctx, 403, NodeL10n.getBase().getString("Toadlet.unauthorizedTitle"), NodeL10n.getBase().getString("Toadlet.unauthorized"));
+		    sendUnauthorizedPage(ctx);
 			return;
 		}
 
@@ -1228,17 +1228,7 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 			Logger.minor(this, "Request count: "+reqs.length);
 
 		if(reqs.length < 1){
-			PageNode page = pageMaker.getPageNode(l10n("title"+(uploads?"Uploads":"Downloads")), ctx);
-			HTMLNode pageNode = page.outer;
-			HTMLNode contentNode = page.content;
-			/* add alert summary box */
-			if(ctx.isAllowedFullAccess())
-				contentNode.addChild(ctx.getAlertManager().createSummary());
-			HTMLNode infoboxContent = pageMaker.getInfobox("infobox-information", l10n("globalQueueIsEmpty"), contentNode, "queue-empty", true);
-			infoboxContent.addChild("#", l10n("noTaskOnGlobalQueue"));
-			if(!uploads)
-				contentNode.addChild(createBulkDownloadForm(ctx, pageMaker));
-			return pageNode;
+		    return sendEmptyQueuePage(ctx, pageMaker);
 		}
 
 		short lowestQueuedPrio = RequestStarter.MINIMUM_PRIORITY_CLASS;
@@ -1246,6 +1236,7 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 		long totalQueuedDownloadSize = 0;
 		long totalQueuedUploadSize = 0;
 
+		boolean added = false;
 		for(RequestStatus req: reqs) {
 			if(req instanceof DownloadRequestStatus && !uploads) {
 				DownloadRequestStatus download = (DownloadRequestStatus)req;
@@ -1271,7 +1262,7 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 						list.add(download);
 					} else if(failureCode == FetchException.CONTENT_VALIDATION_BAD_MIME) {
 						mimeType = ContentFilter.stripMIMEType(mimeType);
-						MIMEType type = ContentFilter.getMIMEType(mimeType);
+						FilterMIMEType type = ContentFilter.getMIMEType(mimeType);
 						LinkedList<DownloadRequestStatus> list;
 						if(type == null) {
 							Logger.error(this, "Bad MIME failure code yet MIME is "+mimeType+" which does not have a handler!");
@@ -1300,6 +1291,7 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 					if(size > 0)
 						totalQueuedDownloadSize += size;
 				}
+				added = true;
 			} else if(req instanceof UploadFileRequestStatus && uploads) {
 				UploadFileRequestStatus upload = (UploadFileRequestStatus)req;
 				if(upload.hasSucceeded()) {
@@ -1315,6 +1307,7 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 				long size = upload.getDataSize();
 				if(size > 0)
 					totalQueuedUploadSize += size;
+				added = true;
 			} else if(req instanceof UploadDirRequestStatus && uploads) {
 				UploadDirRequestStatus upload = (UploadDirRequestStatus)req;
 				if(upload.hasSucceeded()) {
@@ -1330,7 +1323,11 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 				long size = upload.getTotalDataSize();
 				if(size > 0)
 					totalQueuedUploadSize += size;
+                added = true;
 			}
+		}
+		if(!added) {
+		    return sendEmptyQueuePage(ctx, pageMaker);
 		}
 		Logger.minor(this, "Total queued downloads: "+SizeUtil.formatSize(totalQueuedDownloadSize));
 		Logger.minor(this, "Total queued uploads: "+SizeUtil.formatSize(totalQueuedUploadSize));
@@ -1620,7 +1617,7 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 				LinkedList<DownloadRequestStatus> getters = failedBadMIMEType.get(type);
 				String atype = type.replace("-", "--").replace('/', '-');
 				contentNode.addChild("a", "id", "failedDownload-badtype-"+atype);
-				MIMEType typeHandler = ContentFilter.getMIMEType(type);
+				FilterMIMEType typeHandler = ContentFilter.getMIMEType(type);
 				HTMLNode failedContent = pageMaker.getInfobox("failed_requests", l10n("failedDBadMIME", new String[]{ "size", "type" }, new String[]{ String.valueOf(getters.size()), type }), contentNode, "download-failed-"+atype, false);
 				// FIXME add a class for easier styling.
 				KnownUnsafeContentTypeException e = new KnownUnsafeContentTypeException(typeHandler);
@@ -1699,7 +1696,21 @@ public class QueueToadlet extends Toadlet implements RequestCompletionCallback, 
 		return pageNode;
 	}
 
-	private HTMLNode createReasonCell(String failureReason) {
+	private HTMLNode sendEmptyQueuePage(ToadletContext ctx, PageMaker pageMaker) {
+        PageNode page = pageMaker.getPageNode(l10n("title"+(uploads?"Uploads":"Downloads")), ctx);
+        HTMLNode pageNode = page.outer;
+        HTMLNode contentNode = page.content;
+        /* add alert summary box */
+        if(ctx.isAllowedFullAccess())
+            contentNode.addChild(ctx.getAlertManager().createSummary());
+        HTMLNode infoboxContent = pageMaker.getInfobox("infobox-information", l10n("globalQueueIsEmpty"), contentNode, "queue-empty", true);
+        infoboxContent.addChild("#", l10n("noTaskOnGlobalQueue"));
+        if(!uploads)
+            contentNode.addChild(createBulkDownloadForm(ctx, pageMaker));
+        return pageNode;
+    }
+
+    private HTMLNode createReasonCell(String failureReason) {
 		HTMLNode reasonCell = new HTMLNode("td", "class", "request-reason");
 		if (failureReason == null) {
 			reasonCell.addChild("span", "class", "failure_reason_unknown", l10n("unknown"));
