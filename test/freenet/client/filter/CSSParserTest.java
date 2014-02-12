@@ -732,6 +732,7 @@ public class CSSParserTest extends TestCase {
 		propertyTests.put("body { background: url(\"banner.jpeg\") right top }", "body { background: url(\"banner.jpeg\") right top }");
 		propertyTests.put("body { background: url(\"banner.jpeg\") center }", "body { background: url(\"banner.jpeg\") center }");
 		propertyTests.put("P { background: url(\"chess.png\") gray 50% repeat fixed }", "P { background: url(\"chess.png\") gray 50% repeat fixed }");
+		propertyTests.put("p { color: tan }", "p { color: tan }");
 
 		// Text
 		propertyTests.put("p { text-indent: 3em }", "p { text-indent: 3em }");
