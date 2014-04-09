@@ -62,11 +62,6 @@ public class StoreCallbackStats implements DataStoreStats {
 	}
 
 	@Override
-	public double avgDist() throws StatsNotAvailableException {
-		return nodeStats.avgDist();
-	}
-
-	@Override
 	public double distanceStats() throws StatsNotAvailableException {
 		return nodeStats.distanceStats();
 	}

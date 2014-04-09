@@ -1,18 +1,5 @@
 package freenet.node;
 
-import static java.util.concurrent.TimeUnit.DAYS;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static java.util.concurrent.TimeUnit.MINUTES;
-import static java.util.concurrent.TimeUnit.SECONDS;
-
-import java.text.DecimalFormat;
-import java.text.NumberFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Hashtable;
-import java.util.Map;
-
 import freenet.config.InvalidConfigValueException;
 import freenet.config.NodeNeedRestartException;
 import freenet.config.SubConfig;
@@ -29,24 +16,22 @@ import freenet.node.SecurityLevels.NETWORK_THREAT_LEVEL;
 import freenet.node.stats.StatsNotAvailableException;
 import freenet.node.stats.StoreLocationStats;
 import freenet.store.StoreCallback;
-import freenet.support.HTMLNode;
-import freenet.support.Histogram2;
-import freenet.support.LogThresholdCallback;
-import freenet.support.Logger;
+import freenet.support.*;
 import freenet.support.Logger.LogLevel;
-import freenet.support.SimpleFieldSet;
-import freenet.support.StringCounter;
-import freenet.support.TimeUtil;
-import freenet.support.TokenBucket;
 import freenet.support.api.BooleanCallback;
 import freenet.support.api.IntCallback;
 import freenet.support.api.LongCallback;
 import freenet.support.io.NativeThread;
-import freenet.support.math.BootstrappingDecayingRunningAverage;
-import freenet.support.math.DecayingKeyspaceAverage;
-import freenet.support.math.RunningAverage;
-import freenet.support.math.TimeDecayingRunningAverage;
-import freenet.support.math.TrivialRunningAverage;
+import freenet.support.math.*;
+
+import java.text.DecimalFormat;
+import java.text.NumberFormat;
+import java.util.*;
+
+import static java.util.concurrent.TimeUnit.DAYS;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.MINUTES;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 /** Node (as opposed to NodeClientCore) level statistics. Includes shouldRejectRequest(), but not limited
  * to stuff required to implement that. */
@@ -96,7 +81,6 @@ public class NodeStats implements Persistable, BlockTimeCallback {
 	private int outgoingRequestsAccounted = 0;
 	private volatile long subMaxPingTime;
 	private volatile long maxPingTime;
-    private final double nodeLoc=0.0;
 
 	final Node node;
 	private MemoryChecker myMemoryChecker;
@@ -593,7 +577,7 @@ public class NodeStats implements Persistable, BlockTimeCallback {
 		requestInputThrottle =
 			new TokenBucket(Math.max(ibwLimit*60, 32768*20), SECONDS.toNanos(1) / ibwLimit, 0);
 
-		double nodeLoc=node.lm.getLocation();
+		final double nodeLoc=0.0;
 		this.avgCacheCHKLocation   = new DecayingKeyspaceAverage(nodeLoc, 10000, throttleFS == null ? null : throttleFS.subset("AverageCacheCHKLocation"));
 		this.avgStoreCHKLocation   = new DecayingKeyspaceAverage(nodeLoc, 10000, throttleFS == null ? null : throttleFS.subset("AverageStoreCHKLocation"));
 		this.avgSlashdotCacheCHKLocation = new DecayingKeyspaceAverage(nodeLoc, 10000, throttleFS == null ? null : throttleFS.subset("AverageSlashdotCacheCHKLocation"));
@@ -952,7 +936,6 @@ public class NodeStats implements Persistable, BlockTimeCallback {
 		 * according to the *SR totals, and only consider the non-SR requests when
 		 * deciding whether the peer is over the limit. The updated limits are 
 		 * sent to the downstream node so that it can send the right number of requests.
-		 * @param node We need this to count the requests.
 		 * @param source The peer we are interested in.
 		 * @param requestsToNode If true, count requests sent to the node and currently
 		 * running. If false, count requests originated by the node.
@@ -1569,7 +1552,6 @@ public class NodeStats implements Persistable, BlockTimeCallback {
 	 * limit. However, the node is only guaranteed its fair share, which is defined as its
 	 * fraction of the part of the total that is above the lower limit.
 	 * @param input
-	 * @param dontTellPeer
 	 * @param transfersPerInsert
 	 * @param realTimeFlag
 	 * @param peers
@@ -3278,11 +3260,6 @@ public class NodeStats implements Persistable, BlockTimeCallback {
 			}
 
 			@Override
-			public double avgDist() throws StatsNotAvailableException {
-				return Location.distance(nodeLoc, avgLocation());
-			}
-
-			@Override
 			public double distanceStats() throws StatsNotAvailableException {
 				return cappedDistance(avgStoreCHKLocation, node.getChkDatastore());
 			}
@@ -3309,11 +3286,6 @@ public class NodeStats implements Persistable, BlockTimeCallback {
 			@Override
 			public double furthestSuccess() throws StatsNotAvailableException {
 				return furthestCacheCHKSuccess;
-			}
-
-			@Override
-			public double avgDist() throws StatsNotAvailableException {
-				return Location.distance(nodeLoc, avgLocation());
 			}
 
 			@Override
@@ -3346,11 +3318,6 @@ public class NodeStats implements Persistable, BlockTimeCallback {
 			}
 
 			@Override
-			public double avgDist() throws StatsNotAvailableException {
-				return Location.distance(nodeLoc, avgLocation());
-			}
-
-			@Override
 			public double distanceStats() throws StatsNotAvailableException {
 				return cappedDistance(avgSlashdotCacheCHKLocation, node.getChkSlashdotCache());
 			}
@@ -3377,11 +3344,6 @@ public class NodeStats implements Persistable, BlockTimeCallback {
 			@Override
 			public double furthestSuccess() throws StatsNotAvailableException {
 				return furthestClientCacheCHKSuccess;
-			}
-
-			@Override
-			public double avgDist() throws StatsNotAvailableException {
-				return Location.distance(nodeLoc, avgLocation());
 			}
 
 			@Override
@@ -3414,11 +3376,6 @@ public class NodeStats implements Persistable, BlockTimeCallback {
 			}
 
 			@Override
-			public double avgDist() throws StatsNotAvailableException {
-				return Location.distance(nodeLoc, avgLocation());
-			}
-
-			@Override
 			public double distanceStats() throws StatsNotAvailableException {
 				return cappedDistance(avgStoreSSKLocation, node.getSskDatastore());
 			}
@@ -3445,11 +3402,6 @@ public class NodeStats implements Persistable, BlockTimeCallback {
 			@Override
 			public double furthestSuccess() throws StatsNotAvailableException {
 				return furthestCacheSSKSuccess;
-			}
-
-			@Override
-			public double avgDist() throws StatsNotAvailableException {
-				return Location.distance(nodeLoc, avgLocation());
 			}
 
 			@Override
@@ -3482,11 +3434,6 @@ public class NodeStats implements Persistable, BlockTimeCallback {
 			}
 
 			@Override
-			public double avgDist() throws StatsNotAvailableException {
-				return Location.distance(nodeLoc, avgLocation());
-			}
-
-			@Override
 			public double distanceStats() throws StatsNotAvailableException {
 				return cappedDistance(avgSlashdotCacheSSKLocation, node.getSskSlashdotCache());
 			}
@@ -3513,11 +3460,6 @@ public class NodeStats implements Persistable, BlockTimeCallback {
 			@Override
 			public double furthestSuccess() throws StatsNotAvailableException {
 				return furthestClientCacheSSKSuccess;
-			}
-
-			@Override
-			public double avgDist() throws StatsNotAvailableException {
-				return Location.distance(nodeLoc, avgLocation());
 			}
 
 			@Override

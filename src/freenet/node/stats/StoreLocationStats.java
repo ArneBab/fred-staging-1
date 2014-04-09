@@ -16,8 +16,6 @@ public interface StoreLocationStats {
 
 	double furthestSuccess() throws StatsNotAvailableException;
 
-	double avgDist() throws StatsNotAvailableException;
-
 	double distanceStats() throws StatsNotAvailableException;
 
 }

@@ -23,8 +23,6 @@ public interface DataStoreStats {
 
 	double furthestSuccess() throws StatsNotAvailableException;
 
-	double avgDist() throws StatsNotAvailableException;
-
 	double distanceStats() throws StatsNotAvailableException;
 	
 	StoreAccessStats getSessionAccessStats();
