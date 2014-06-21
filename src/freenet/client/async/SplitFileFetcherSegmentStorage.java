@@ -345,23 +345,32 @@ public class SplitFileFetcherSegmentStorage {
                 writeMetadata();
             return;
         }
-        boolean[] originalBlockSet = new boolean[totalBlocks()];
+        boolean[] dataBlocksPresent = new boolean[dataBlocks.length];
+        boolean[] checkBlocksPresent = new boolean[checkBlocks.length];
         for(int i=0;i<dataBlocks.length;i++) {
-            originalBlockSet[i] = (dataBlocks[i] != null);
+            if(dataBlocks[i] == null) {
+                dataBlocks[i] = new byte[CHKBlock.DATA_LENGTH];
+            } else {
+                dataBlocksPresent[i] = true;
+            }
         }
         for(int i=0;i<checkBlocks.length;i++) {
-            originalBlockSet[i+dataBlocks.length] = (checkBlocks[i] != null);
+            if(checkBlocks[i] == null) {
+                checkBlocks[i] = new byte[CHKBlock.DATA_LENGTH];
+            } else {
+                checkBlocksPresent[i] = true;
+            }
         }
         if(validDataBlocks < blocksForDecode()) {
             if(logMINOR) Logger.minor(this, "Decoding in memory for "+this);
-            parent.fecCodec.decode(dataBlocks, checkBlocks);
+            parent.fecCodec.decode(dataBlocks, checkBlocks, dataBlocksPresent, checkBlocksPresent, CHKBlock.DATA_LENGTH);
         }
         writeAllDataBlocks(dataBlocks);
         // Report success at this point.
         parent.finishedSuccess(this);
         triggerAllCrossSegmentCallbacks();
-        parent.fecCodec.encode(dataBlocks, checkBlocks);
-        queueHeal(dataBlocks, checkBlocks, originalBlockSet);
+        parent.fecCodec.encode(dataBlocks, checkBlocks, checkBlocksPresent, CHKBlock.DATA_LENGTH);
+        queueHeal(dataBlocks, checkBlocks, dataBlocksPresent, checkBlocksPresent);
         dataBlocks = null;
         checkBlocks = null;
         writeMetadata();
@@ -371,14 +380,14 @@ public class SplitFileFetcherSegmentStorage {
         }
     }
 
-    private void queueHeal(byte[][] dataBlocks, byte[][] checkBlocks, boolean[] originalBlockSet) throws IOException {
+    private void queueHeal(byte[][] dataBlocks, byte[][] checkBlocks, boolean[] dataBlocksPresent, boolean[] checkBlocksPresent) throws IOException {
         for(int i=0;i<dataBlocks.length;i++) {
-            if(originalBlockSet[i]) continue;
+            if(dataBlocksPresent[i]) continue;
             if(!tried[i]) continue;
             queueHeal(i, dataBlocks[i]);
         }
         for(int i=0;i<checkBlocks.length;i++) {
-            if(originalBlockSet[i+dataBlocks.length]) continue;
+            if(checkBlocksPresent[i]) continue;
             if(!tried[i+dataBlocks.length]) continue;
             queueHeal(i+dataBlocks.length, checkBlocks[i]);
         }

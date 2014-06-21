@@ -19,9 +19,10 @@ public abstract class NewFECCodec {
      * be filled with the data blocks in the correct order.
      * @param checkBlocks The byte[]'s for storing the check blocks. Which have valid contents is
      * indicated by checkBlocksPresent.
-     * @param dataBlocksPresent Indicates which data blocks are present. When we return, all data
-     * blocks will be present.
-     * @param checkBlocksPresent Indicates which check blocks are present.
+     * @param dataBlocksPresent Indicates which data blocks were present before decoding. (Will
+     * not be changed by this function).
+     * @param checkBlocksPresent Indicates which check blocks are present before decoding. (Will
+     * not be changed by this function).
      * @param blockLength The length of any and all blocks. Padding must be handled by the caller
      * if it is necessary.
      */
@@ -29,8 +30,12 @@ public abstract class NewFECCodec {
             boolean[] dataBlocksPresent, boolean[] checkBlocksPresent, int blockLength);
     
     /** Execute a FEC encode. On entering, we must have all the data blocks. On exiting, we will
-     * have all the check blocks as well. */
-    public abstract void encode(byte[][] dataBlocks, byte[][] checkBlocks);
+     * have all the check blocks as well.
+     * @param dataBlocks All the data blocks, which all have valid contents.
+     * @param checkBlocks The byte[]'s for storing the encoded check blocks. Must all be non-null.
+     * @param checkBlocksPresent Indicates which check blocks have already been encoded. */
+    public abstract void encode(byte[][] dataBlocks, byte[][] checkBlocks, boolean[] checkBlocksPresent,
+            int blockLength);
 
     public static NewFECCodec getInstance(short splitfileType) {
         switch(splitfileType) {

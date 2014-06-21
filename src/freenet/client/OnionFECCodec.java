@@ -16,21 +16,24 @@ public class OnionFECCodec extends NewFECCodec {
         PureCode codec = getCodec(k, n);
         int[] blockNumbers = new int[k];
         Buffer[] buffers = new Buffer[k];
-        int target = 0;
         // The data blocks are already in the correct positions in dataBlocks.
         for(int i=0;i<dataBlocks.length;i++) {
-            buffers[i] = new Buffer(dataBlocks[i], 0, blockLength);
-            if(!dataBlocksPresent[i]) continue;
-            blockNumbers[i] = i;
             if(dataBlocks[i].length != blockLength) throw new IllegalArgumentException();
+            if(!dataBlocksPresent[i]) continue;
+            buffers[i] = new Buffer(dataBlocks[i], 0, blockLength);
+            blockNumbers[i] = i;
         }
+        int target = 0;
         // Fill in the gaps with the check blocks.
         for(int i=0;i<checkBlocks.length;i++) {
             if(!checkBlocksPresent[i]) continue;
             if(checkBlocks[i].length != blockLength) throw new IllegalArgumentException();
-            while(dataBlocksPresent[target]) {
-                if(target > dataBlocks.length) break;
-            }
+            while(target < dataBlocks.length && buffers[target] != null) target++; // Scan for slot.
+            if(target >= dataBlocks.length) continue;
+            // Decode into the slot for the relevant data block.
+            buffers[target] = new Buffer(dataBlocks[target]);
+            // Provide the data from the check block.
+            blockNumbers[target] = i + dataBlocks.length;
             System.arraycopy(checkBlocks[i], 0, dataBlocks[target], 0, blockLength);
         }
         
@@ -104,22 +107,49 @@ public class OnionFECCodec extends NewFECCodec {
 
 
     @Override
-    public void encode(byte[][] dataBlocks, byte[][] checkBlocks) {
-        PureCode codec = getCodec(dataBlocks.length, checkBlocks.length);
-        // TODO Auto-generated method stub
-
+    public void encode(byte[][] dataBlocks, byte[][] checkBlocks, boolean[] checkBlocksPresent, 
+            int blockLength) {
+        int k = dataBlocks.length;
+        int n = dataBlocks.length + checkBlocks.length;
+        PureCode codec = getCodec(k, n);
+        Buffer[] data = new Buffer[dataBlocks.length];
+        for(int i=0;i<data.length;i++) {
+            if(dataBlocks[i] == null || dataBlocks[i].length != blockLength)
+                throw new IllegalArgumentException();
+            data[i] = new Buffer(dataBlocks[i]);
+        }
+        int mustEncode = 0;
+        for(int i=0;i<checkBlocks.length;i++) {
+            if(checkBlocks[i] == null || checkBlocks[i].length != blockLength)
+                throw new IllegalArgumentException();
+            if(!checkBlocksPresent[i]) mustEncode++;
+        }
+        Buffer[] check = new Buffer[mustEncode];
+        if(mustEncode == 0) return; // Done already.
+        int[] toEncode = new int[mustEncode];
+        int x = 0;
+        for(int i=0;i<checkBlocks.length;i++) {
+            if(checkBlocksPresent[i]) continue;
+            check[x] = new Buffer(checkBlocks[i]);
+            toEncode[x++] = i+dataBlocks.length;
+        }
+        codec.encode(data, check, toEncode);
     }
 
     @Override
     public long maxMemoryOverheadDecode(int dataBlocks, int checkBlocks) {
-        // TODO Auto-generated method stub
-        return 0;
+        int n = dataBlocks + checkBlocks;
+        int k = dataBlocks;
+        int matrixSize = n*k*2; // char[] of n*k
+        return matrixSize*3; // Very approximately, the last one absorbing some columns and fixed overhead.
     }
 
     @Override
     public long maxMemoryOverheadEncode(int dataBlocks, int checkBlocks) {
-        // TODO Auto-generated method stub
-        return 0;
+        int n = dataBlocks + checkBlocks;
+        int k = dataBlocks;
+        int matrixSize = n*k*2; // char[] of n*k
+        return matrixSize*3; // Very approximately, the last one absorbing some columns and fixed overhead.
     }
 
 }
