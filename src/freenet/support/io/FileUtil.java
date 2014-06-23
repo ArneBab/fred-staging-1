@@ -42,6 +42,41 @@ final public class FileUtil {
 
 	private static final int BUFFER_SIZE = 32*1024;
 
+	/**
+	 * Returns a line reading stream for the content of <code>logfile</code>. The stream will
+	 * contain at most <code>byteLimit</code> bytes. If <code>byteLimit</code> is less than the
+	 * size of <code>logfile</code>, the first part of the file will be skipped. If this leaves a
+	 * partial line at the beginning of the content to read, that partial line will also be
+	 * skipped.
+	 * @param logfile The file to open
+	 * @param byteLimit The maximum number of bytes to read
+	 * @return A line reader for the trailing portion of the file
+	 * @throws java.io.IOException if an I/O error occurs
+	 */
+	public static LineReadingInputStream getLogTailReader(File logfile, long byteLimit) throws IOException {
+	    long length = logfile.length();
+	    long skip = 0;
+	    if (length > byteLimit) {
+	        skip = length - byteLimit;
+	    }
+
+	    FileInputStream fis = null;
+	    LineReadingInputStream lis = null;
+	    try {
+	        fis = new FileInputStream(logfile);
+	        lis = new LineReadingInputStream(fis);
+	        if (skip > 0) {
+	            lis.skip(skip);
+	            lis.readLine(100000, 200, true);
+	        }
+	    } catch (IOException e) {
+	        Closer.close(lis);
+	        Closer.close(fis);
+	        throw e;
+	    }
+	    return lis;
+	}
+
 	public static enum OperatingSystem {
 		Unknown(false, false, false), // Special-cased in filename sanitising code.
 		MacOS(false, true, true), // OS/X in that it can run scripts.
@@ -59,13 +94,31 @@ final public class FileUtil {
 			this.isUnix = unix;
 		};
 	};
+	
+	public static enum CPUArchitecture {
+	    Unknown,
+	    X86,
+	    X86_64,
+	    PPC_32,
+	    PPC_64,
+	    ARM,
+	    SPARC,
+	    IA64
+	}
 
 	public static final OperatingSystem detectedOS;
+	
+	/** Caveat: Sometimes this may not be entirely accurate, e.g. we may not be able to distinguish
+	 * 32-bit from 64-bit, we may be using the wrong JVM for the platform, we may be using an x86 
+	 * wrapper or JVM on an IA64 system etc. This *should* be the version the JVM is running. */
+	public static final CPUArchitecture detectedArch;
 
 	private static final Charset fileNameCharset;
 
 	static {
 		detectedOS = detectOperatingSystem();
+		
+		detectedArch = detectCPUArchitecture();
 
 		// I did not find any way to detect the Charset of the file system so I'm using the file encoding charset.
 		// On Windows and Linux this is set based on the users configured system language which is probably equal to the filename charset.
@@ -121,6 +174,29 @@ final public class FileUtil {
 		}
 
 		return OperatingSystem.Unknown;
+	}
+	
+	private static CPUArchitecture detectCPUArchitecture() { // TODO Move to the proper class
+	    try {
+	        final String name = System.getProperty("os.arch").toLowerCase();
+	        if(name.equals("x86") || name.equals("i386") || name.matches("i[3-9]86"))
+	            return CPUArchitecture.X86;
+	        if(name.equals("amd64") || name.equals("x86-64") || name.equals("x86_64") ||
+	                name.equals("x86") || name.equals("em64t") || name.equals("x8664") ||
+	                name.equals("8664"))
+	            return CPUArchitecture.X86_64;
+	        if(name.startsWith("arm"))
+	            return CPUArchitecture.ARM; // FIXME arm64 support?
+	        if(name.equals("ppc") || name.equals("powerpc"))
+	            return CPUArchitecture.PPC_32;
+	        if(name.equals("ppc64"))
+	            return CPUArchitecture.PPC_64;
+	        if(name.startsWith("ia64"))
+	            return CPUArchitecture.IA64;
+	    } catch (Throwable t) {
+	        Logger.error(FileUtil.class, "CPU architecture detection failed", t);
+	    }
+	    return CPUArchitecture.Unknown;
 	}
 
 	/**
@@ -213,11 +289,26 @@ final public class FileUtil {
 		return result;
 	}
 
-        public static String readUTF(File file) throws FileNotFoundException, IOException {
-            return readUTF(file, 0);
-        }
+    /**
+     * Reads the entire content of a file as UTF-8 and returns it.
+     * @param file The file to read
+     * @return The content of <code>file</code>
+     * @throws FileNotFoundException if <code>file</code> cannot be opened
+     * @throws IOException if an I/O error occurs
+     */
+    public static StringBuilder readUTF(File file) throws FileNotFoundException, IOException {
+        return readUTF(file, 0);
+    }
 
-	public static String readUTF(File file, long offset) throws FileNotFoundException, IOException {
+    /**
+     * Reads the content of a file as UTF-8, starting at a specified offset, and returns it.
+     * @param file The file to read
+     * @param offset The point in <code>file</code> at which to start reading
+     * @return The content of <code>file</code>, starting at <code>offset</code>
+     * @throws FileNotFoundException if <code>file</code> cannot be opened
+     * @throws IOException if an I/O error occurs
+     */
+	public static StringBuilder readUTF(File file, long offset) throws FileNotFoundException, IOException {
 		StringBuilder result = new StringBuilder();
 		FileInputStream fis = null;
 		BufferedInputStream bis = null;
@@ -241,7 +332,41 @@ final public class FileUtil {
 			Closer.close(bis);
 			Closer.close(fis);
 		}
-		return result.toString();
+		return result;
+	}
+	
+	/**
+	 * Reads the entire content of a stream as UTF-8 and returns it.
+	 * @param stream The stream to read
+	 * @return The content of <code>stream</code>
+	 * @throws IOException if an I/O error occurs
+	 */
+	public static StringBuilder readUTF(InputStream stream) throws IOException {
+	    return readUTF(stream, 0);
+	}
+	
+	/**
+	 * Reads the content of a stream as UTF-8, starting at a specified offset, and returns it.
+	 * @param stream The stream to read
+	 * @param offset The point in <code>stream</code> at which to start reading
+	 * @return The content of <code>stream</code>, starting at <code>offset</code>
+	 * @throws IOException if an I/O error occurs
+	 */
+	public static StringBuilder readUTF(InputStream stream, long offset) throws IOException {
+	    StringBuilder result = new StringBuilder();
+	    skipFully(stream, offset);
+	    InputStreamReader reader = null;
+	    try {
+	        reader = new InputStreamReader(stream, "UTF-8");
+	        char[] buf = new char[4096];
+	        int length = 0;
+	        while((length = reader.read(buf)) > 0) {
+	            result.append(buf, 0, length);
+	        }
+	    } finally {
+	        Closer.close(reader);
+	    }
+	    return result;
 	}
 
 	/**
@@ -335,31 +460,9 @@ final public class FileUtil {
             		return false;
             	}
             }
-    		if(!orig.renameTo(dest)) {
-    			// Copy the data
-    			InputStream is = null;
-    			OutputStream os = null;
-    			try {
-    				is = new FileInputStream(orig);
-    				os = new FileOutputStream(dest);
-    				copy(is, os, orig.length());
-    				is.close();
-    				is = null;
-    				os.close();
-    				os = null;
-    				orig.delete();
-    				return true;
-    			} catch (IOException e) {
-    				dest.delete();
-    				Logger.error(FileUtil.class, "Move failed from "+orig+" to "+dest+" : "+e, e);
-    				System.err.println("Move failed from "+orig+" to "+dest+" : "+e);
-    				e.printStackTrace();
-    				return false;
-    			} finally {
-    				Closer.close(is);
-    				Closer.close(os);
-    			}
-    		} else return true;
+    		if(!orig.renameTo(dest))
+    		    return copyFile(orig, dest);
+    		else return true;
     	}
 
     /**
@@ -700,10 +803,17 @@ final public class FileUtil {
 
 	public static boolean copyFile(File copyFrom, File copyTo) {
 		copyTo.delete();
+		boolean executable = copyFrom.canExecute();
 		FileBucket outBucket = new FileBucket(copyTo, false, true, false, false, false);
 		FileBucket inBucket = new FileBucket(copyFrom, true, false, false, false, false);
 		try {
 			BucketTools.copy(inBucket, outBucket);
+			if(executable) {
+			    if(!(copyTo.setExecutable(true) || copyTo.canExecute())) {
+			        System.err.println("Unable to preserve executable bit when copying "+copyFrom+" to "+copyTo+" - you may need to make it executable!");
+			        // return false; ??? FIXME debatable.
+			    }
+			}
 			return true;
 		} catch (IOException e) {
 			System.err.println("Unable to copy from "+copyFrom+" to "+copyTo);

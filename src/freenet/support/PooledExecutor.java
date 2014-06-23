@@ -88,7 +88,6 @@ public class PooledExecutor implements Executor {
 					// Must create new thread
 					if(ticker != null && (!fromTicker) && NativeThread.usingNativeCode() && prio > Thread.currentThread().getPriority()) {
 						// Get the ticker to create a thread for it with the right priority, since we can't.
-						// j16sdiz (22-Dec-2008): should we queue it? the ticker is "PacketSender", but it keep busying on non-packet related works
 						ticker.queueTimedJob(runnable, jobName, 0, true, false);
 						return;
 					}
@@ -247,8 +246,6 @@ public class PooledExecutor implements Executor {
 				try {
 					setName(job.name + "(" + threadNo + ")");
 					job.runnable.run();
-				} catch (OutOfMemoryError e) {
-					OOMHandler.handleOOM(e);
 				} catch(Throwable t) {
 					Logger.error(this, "Caught " + t + " running job " + job, t);
 				}

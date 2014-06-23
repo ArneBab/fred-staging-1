@@ -9,18 +9,11 @@ import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 
-import freenet.clients.http.ExternalLinkToadlet;
-import freenet.io.comm.Peer;
 import freenet.l10n.NodeL10n;
-import freenet.node.useralerts.AbstractUserAlert;
-import freenet.node.useralerts.UserAlert;
-import freenet.support.HTMLNode;
 import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
-import freenet.support.OOMHandler;
 import freenet.support.TimeUtil;
 import freenet.support.io.NativeThread;
 import freenet.support.math.MersenneTwister;
@@ -130,9 +123,6 @@ public class PacketSender implements Runnable {
 			lastReceivedPacketFromAnyNode = lastReportedNoPackets;
 			try {
 				realRun();
-			} catch(OutOfMemoryError e) {
-				OOMHandler.handleOOM(e);
-				System.err.println("Will retry above failed operation...");
 			} catch(Throwable t) {
 				Logger.error(this, "Caught in PacketSender: " + t, t);
 				System.err.println("Caught in PacketSender: " + t);
@@ -166,7 +156,7 @@ public class PacketSender implements Runnable {
 		long nextActionTime = Long.MAX_VALUE;
 		long oldTempNow = now;
 
-		boolean canSendThrottled = false;
+		final boolean canSendThrottled;
 
 		int MAX_PACKET_SIZE = node.darknetCrypto.socket.getMaxPacketSize();
 		long count = node.outputThrottle.getCount();
@@ -178,10 +168,12 @@ public class PacketSender implements Runnable {
 			if(logMINOR)
 				Logger.minor(this, "Can send throttled packets in "+canSendAt+"ms");
 			nextActionTime = Math.min(nextActionTime, now + canSendAt);
+			canSendThrottled = false;
 		}
 		
 		/** The earliest time at which a peer needs to send a packet, which is before
-		 * now. Throttled if canSendThrottled, otherwise not throttled. */
+		 * now. Throttled if canSendThrottled, otherwise not throttled. 
+		 * Note: we only use it to sort the full-packed peers by priority, don't rely on it when setting nextActionTime!*/
 		long lowestUrgentSendTime = Long.MAX_VALUE;
 		/** The peer(s) which lowestUrgentSendTime is referring to */
 		ArrayList<PeerNode> urgentSendPeers = null;
@@ -359,63 +351,39 @@ public class PacketSender implements Runnable {
 		if(toSendPacket != null) {
 			try {
 				if(toSendPacket.maybeSendPacket(now, false)) {
-					count = node.outputThrottle.getCount();
-					if(count > MAX_PACKET_SIZE)
-						canSendThrottled = true;
-					else {
-						canSendThrottled = false;
-						long canSendAt = node.outputThrottle.getNanosPerTick() * (MAX_PACKET_SIZE - count);
-						canSendAt = MILLISECONDS.convert(canSendAt + MILLISECONDS.toNanos(1) - 1, NANOSECONDS);
-						if(logMINOR)
-							Logger.minor(this, "Can send throttled packets in "+canSendAt+"ms");
-						nextActionTime = Math.min(nextActionTime, now + canSendAt);
-					}
+					// Round-robin over the loop to update nextActionTime appropriately
+					nextActionTime = now;
 				}
 			} catch (BlockedTooLongException e) {
 				Logger.error(this, "Waited too long: "+TimeUtil.formatTime(e.delta)+" to allocate a packet number to send to "+toSendPacket+" : "+("(new packet format)")+" (version "+toSendPacket.getVersionNumber()+") - DISCONNECTING!");
 				toSendPacket.forceDisconnect();
 			}
-
-			if(canSendThrottled || !toSendPacket.shouldThrottle()) {
-				long urgentTime = toSendPacket.getNextUrgentTime(now);
-				// Should spam the logs, unless there is a deadlock
-				if(urgentTime < Long.MAX_VALUE && logMINOR)
-					Logger.minor(this, "Next urgent time: " + urgentTime + "(in "+(urgentTime - now)+") for " + toSendPacket);
-				nextActionTime = Math.min(nextActionTime, urgentTime);
-			} else {
-				nextActionTime = Math.min(nextActionTime, toSendPacket.timeCheckForLostPackets());
-			}
-
 		} else if(toSendAckOnly != null) {
 			try {
 				if(toSendAckOnly.maybeSendPacket(now, true)) {
-					count = node.outputThrottle.getCount();
-					if(count > MAX_PACKET_SIZE)
-						canSendThrottled = true;
-					else {
-						canSendThrottled = false;
-						long canSendAt = node.outputThrottle.getNanosPerTick() * (MAX_PACKET_SIZE - count);
-						canSendAt = MILLISECONDS.convert(canSendAt + MILLISECONDS.toNanos(1) - 1, NANOSECONDS);
-						if(logMINOR)
-							Logger.minor(this, "Can send throttled packets in "+canSendAt+"ms");
-						nextActionTime = Math.min(nextActionTime, now + canSendAt);
-					}
+                    // Round-robin over the loop to update nextActionTime appropriately
+                    nextActionTime = now;
 				}
 			} catch (BlockedTooLongException e) {
 				Logger.error(this, "Waited too long: "+TimeUtil.formatTime(e.delta)+" to allocate a packet number to send to "+toSendAckOnly+" : "+("(new packet format)")+" (version "+toSendAckOnly.getVersionNumber()+") - DISCONNECTING!");
 				toSendAckOnly.forceDisconnect();
 			}
-
-			if(canSendThrottled || !toSendAckOnly.shouldThrottle()) {
-				long urgentTime = toSendAckOnly.getNextUrgentTime(now);
-				// Should spam the logs, unless there is a deadlock
-				if(urgentTime < Long.MAX_VALUE && logMINOR)
-					Logger.minor(this, "Next urgent time: " + urgentTime + "(in "+(urgentTime - now)+") for " + toSendAckOnly);
-				nextActionTime = Math.min(nextActionTime, urgentTime);
-			} else {
-				nextActionTime = Math.min(nextActionTime, toSendAckOnly.timeCheckForLostPackets());
-			}
 		}
+		
+		/* Estimating of nextActionTime logic:
+		* FullPackets:
+		*  - A full packet available, bandwidth available  -->> now
+		*  - A full packet available for non-throttled peer -->> now
+		*  - A full packet available, no bandwidth -->> wait till bandwidth available
+		*  - No packet -->> don't care, will wake up anyway when one arrives, goto Nothing
+		* UrgentMessages: Only applies when there's enough bandwidth to send a full packet, Includes any urgent acks 
+		*  - There's an urgent message, deadline(urgentMessage) > now -->> deadline(urgentMessage)
+		*  - There's an urgent message, deadline(urgentMessage) <= now -->> now
+		*  - There's an urgent message, but there's not enough bandwidth for a full packet -->> wait till bandwidth available
+		*  - There's no urgent message -->> don't care, goto Nothing 
+		* Nothing:
+		*  -->> timeCheckForLostPackets 
+		*/
 		
 		if(toSendHandshake != null) {
 			// Send handshake if necessary

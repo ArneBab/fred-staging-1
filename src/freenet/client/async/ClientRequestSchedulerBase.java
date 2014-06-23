@@ -3,6 +3,8 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.client.async;
 
+import static java.lang.String.format;
+
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -27,7 +29,6 @@ import freenet.support.RandomGrabArray;
 import freenet.support.SectoredRandomGrabArray;
 import freenet.support.SectoredRandomGrabArrayWithInt;
 import freenet.support.SectoredRandomGrabArrayWithObject;
-import freenet.support.SortedVectorByNumber;
 import freenet.support.Logger.LogLevel;
 
 /**
@@ -386,11 +387,7 @@ abstract class ClientRequestSchedulerBase {
 					if(listener.handleBlock(key, saltedKey, block, container, context))
 						ret = true;
 				} catch (Throwable t) {
-					try {
-						Logger.error(this, "Caught "+t+" in handleBlock callback for "+listener, new Exception("error"));
-					} catch (Throwable t1) {
-						Logger.error(this, "Caught "+t+" in handleBlock callback", new Exception("error"));
-					}
+					Logger.error(this, format("Error in handleBlock callback for %s", listener), t);
 				}
 				if(listener.isEmpty()) {
 					synchronized(this) {

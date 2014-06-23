@@ -10,6 +10,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.WeakHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.tanukisoftware.wrapper.WrapperManager;
 
@@ -26,7 +28,6 @@ import freenet.client.async.ClientContext;
 import freenet.client.async.DBJob;
 import freenet.client.async.DatabaseDisabledException;
 import freenet.client.async.DownloadCache;
-import freenet.clients.http.SimpleToadletServer;
 import freenet.config.Config;
 import freenet.config.InvalidConfigValueException;
 import freenet.config.SubConfig;
@@ -43,7 +44,6 @@ import freenet.support.Base64;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
 import freenet.support.MutableBoolean;
-import freenet.support.OOMHandler;
 import freenet.support.api.BooleanCallback;
 import freenet.support.api.Bucket;
 import freenet.support.api.IntCallback;
@@ -160,8 +160,6 @@ public class FCPServer implements Runnable, DownloadCache {
 				realRun();
 			} catch (IOException e) {
 				if(logMINOR) Logger.minor(this, "Caught "+e, e);
-			} catch (OutOfMemoryError e) {
-				OOMHandler.handleOOM(e);
 			} catch (Throwable t) {
 				Logger.error(this, "Caught "+t, t);
 			}
@@ -522,10 +520,8 @@ public class FCPServer implements Runnable, DownloadCache {
 
 	public boolean removeGlobalRequestBlocking(final String identifier) throws MessageInvalidException, DatabaseDisabledException {
 		if(!globalRebootClient.removeByIdentifier(identifier, true, this, null, core.clientContext)) {
-			final Object sync = new Object();
-			final MutableBoolean done = new MutableBoolean();
-			final MutableBoolean success = new MutableBoolean();
-			done.value = false;
+			final CountDownLatch done = new CountDownLatch(1);
+			final AtomicBoolean success = new AtomicBoolean();
 			core.clientContext.jobRunner.queue(new DBJob() {
 
 				@Override
@@ -541,36 +537,28 @@ public class FCPServer implements Runnable, DownloadCache {
 					} catch (Throwable t) {
 						Logger.error(this, "Caught removing identifier "+identifier+": "+t, t);
 					} finally {
-						synchronized(sync) {
-							success.value = succeeded;
-							done.value = true;
-							sync.notifyAll();
-						}
+						success.set(succeeded);
+						done.countDown();
 					}
 					return true;
 				}
 
 			}, NativeThread.HIGH_PRIORITY, false);
-			synchronized(sync) {
-				while(!done.value) {
-					try {
-						sync.wait();
-					} catch (InterruptedException e) {
-						// Ignore
-					}
+			while (done.getCount() > 0) {
+				try {
+					done.await();
+				} catch (InterruptedException e) {
+					// Ignore
 				}
-				return success.value;
 			}
+			return success.get();
 		} else return true;
 	}
 
 	public boolean removeAllGlobalRequestsBlocking() throws DatabaseDisabledException {
 		globalRebootClient.removeAll(null, core.clientContext);
-
-		final Object sync = new Object();
-		final MutableBoolean done = new MutableBoolean();
-		final MutableBoolean success = new MutableBoolean();
-		done.value = false;
+		final CountDownLatch done = new CountDownLatch(1);
+		final AtomicBoolean success = new AtomicBoolean();
 		core.clientContext.jobRunner.queue(new DBJob() {
 
 			@Override
@@ -590,26 +578,21 @@ public class FCPServer implements Runnable, DownloadCache {
 					t.printStackTrace();
 					System.err.println("Your requests have not been deleted!");
 				} finally {
-					synchronized(sync) {
-						success.value = succeeded;
-						done.value = true;
-						sync.notifyAll();
-					}
+					success.set(succeeded);
+					done.countDown();
 				}
 				return true;
 			}
 
 		}, NativeThread.HIGH_PRIORITY, false);
-		synchronized(sync) {
-			while(!done.value) {
-				try {
-					sync.wait();
-				} catch (InterruptedException e) {
-					// Ignore
-				}
+		while (done.getCount() > 0) {
+			try {
+				done.await();
+			} catch (InterruptedException e) {
+				// Ignore
 			}
-			return success.value;
 		}
+		return success.get();
 	}
 
 	public void makePersistentGlobalRequestBlocking(final FreenetURI fetchURI, final boolean filterData,

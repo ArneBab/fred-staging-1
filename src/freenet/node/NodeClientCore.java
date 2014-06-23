@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.concurrent.CountDownLatch;
 
 import org.tanukisoftware.wrapper.WrapperManager;
 
@@ -73,8 +74,6 @@ import freenet.support.Executor;
 import freenet.support.ExecutorIdleCallback;
 import freenet.support.Logger;
 import freenet.support.MutableBoolean;
-import freenet.support.OOMHandler;
-import freenet.support.OOMHook;
 import freenet.support.PrioritizedSerialExecutor;
 import freenet.support.SimpleFieldSet;
 import freenet.support.SizeUtil;
@@ -90,12 +89,11 @@ import freenet.support.io.FilenameGenerator;
 import freenet.support.io.NativeThread;
 import freenet.support.io.PersistentTempBucketFactory;
 import freenet.support.io.TempBucketFactory;
-import freenet.support.math.MersenneTwister;
 
 /**
  * The connection between the node and the client layer.
  */
-public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, ExecutorIdleCallback {
+public class NodeClientCore implements Persistable, DBJobRunner, ExecutorIdleCallback {
 	private static volatile boolean logMINOR;
 
 	static {
@@ -500,7 +498,7 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 		toadletContainer.setBucketFactory(tempBucketFactory);
 		if(fecQueue == null) throw new NullPointerException();
 		fecQueue.init(RequestStarter.NUMBER_OF_PRIORITY_CLASSES, FEC_QUEUE_CACHE_SIZE, clientContext.jobRunner, node.executor, clientContext);
-		OOMHandler.addOOMHook(this);
+		
 		if(killedDatabase)
 			System.err.println("Database corrupted (leaving NodeClientCore)!");
 
@@ -700,7 +698,18 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 	}
 
 	private void migratePluginStores(ObjectContainer container) {
-	    pluginStores.migrateAllPluginStores(container, node.nodeDBHandle);
+	    try {
+	        pluginStores.migrateAllPluginStores(container, node.nodeDBHandle);
+	    } catch (Db4oException e) {
+	        System.err.println("Failed to migrate plugin stores due to database error: "+e+" - assuming node.db4o[.crypt] is corrupt.");
+	        Logger.error(this, "Failed to migrate plugin stores due to database error: "+e+" - assuming node.db4o[.crypt] is corrupt.", e);
+            killedDatabase = true;
+	    } catch (Throwable e) {
+	        // Yes this really is necessary. db4o corruption can throw all sorts of crap.
+            System.err.println("Failed to migrate plugin stores due to database error: "+e+" - assuming node.db4o[.crypt] is corrupt.");
+            Logger.error(this, "Failed to migrate plugin stores due to database error: "+e+" - assuming node.db4o[.crypt] is corrupt.", e);
+            killedDatabase = true;
+	    }
     }
 
     private void lateInitFECQueue(long nodeDBHandle, ObjectContainer container) {
@@ -1853,9 +1862,9 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 			if(killedDatabase) throw new DatabaseDisabledException();
 		}
 		if(checkDupes)
-			this.clientDatabaseExecutor.executeNoDupes(new DBJobWrapper(job), priority, ""+job);
+			this.clientDatabaseExecutor.executeNoDupes(new DBJobWrapper(job), priority, job.toString());
 		else
-			this.clientDatabaseExecutor.execute(new DBJobWrapper(job), priority, ""+job);
+			this.clientDatabaseExecutor.execute(new DBJobWrapper(job), priority, job.toString());
 	}
 
 	private boolean killedDatabase = false;
@@ -1926,15 +1935,10 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 					persistentTempBucketFactory.postCommit(node.db);
 				}
 			} catch (Throwable t) {
-				if(t instanceof OutOfMemoryError) {
-					synchronized(NodeClientCore.this) {
-						killedDatabase = true;
-					}
-					OOMHandler.handleOOM((OutOfMemoryError) t);
-				} else {
-					Logger.error(this, "Failed to run database job "+job+" : caught "+t, t);
-				}
-				boolean killed;
+				
+                                Logger.error(this, "Failed to run database job "+job+" : caught "+t, t);
+				
+                                boolean killed;
 				synchronized(NodeClientCore.this) {
 					killed = killedDatabase;
 				}
@@ -1973,22 +1977,6 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 		return clientDatabaseExecutor.getQueueSize(priority);
 	}
 
-	@Override
-	public void handleLowMemory() throws Exception {
-		// Ignore
-	}
-
-	@Override
-	public void handleOutOfMemory() throws Exception {
-		synchronized(this) {
-			killedDatabase = true;
-		}
-		WrapperManager.requestThreadDump();
-		System.err.println("Out of memory: Emergency shutdown to protect database integrity in progress...");
-		WrapperManager.restart();
-		System.exit(NodeInitException.EXIT_OUT_OF_MEMORY_PROTECTING_DATABASE);
-	}
-
 	/**
 	 * Queue a job to be run soon after startup. The job must delete itself.
 	 */
@@ -2013,7 +2001,7 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 		if(clientDatabaseExecutor.onThread()) {
 			job.run(node.db, clientContext);
 		} else {
-			final MutableBoolean finished = new MutableBoolean();
+			final CountDownLatch finished = new CountDownLatch(1);
 			queue(new DBJob() {
 
 				@Override
@@ -2021,10 +2009,7 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 					try {
 						return job.run(container, context);
 					} finally {
-						synchronized(finished) {
-							finished.value = true;
-							finished.notifyAll();
-						}
+						finished.countDown();
 					}
 				}
 
@@ -2034,13 +2019,11 @@ public class NodeClientCore implements Persistable, DBJobRunner, OOMHook, Execut
 				}
 
 			}, priority, false);
-			synchronized(finished) {
-				while(!finished.value) {
-					try {
-						finished.wait();
-					} catch (InterruptedException e) {
-						// Ignore
-					}
+			while (finished.getCount() > 0) {
+				try {
+					finished.await();
+				} catch (InterruptedException e) {
+					// Ignore
 				}
 			}
 		}

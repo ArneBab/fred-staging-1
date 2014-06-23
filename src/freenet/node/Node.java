@@ -12,7 +12,6 @@ import static freenet.node.stats.DataStoreType.CLIENT;
 import static freenet.node.stats.DataStoreType.SLASHDOT;
 import static freenet.node.stats.DataStoreType.STORE;
 import static java.util.concurrent.TimeUnit.DAYS;
-import static java.util.concurrent.TimeUnit.HOURS;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.MINUTES;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -151,7 +150,6 @@ import freenet.support.HexUtil;
 import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
-import freenet.support.OOMHandler;
 import freenet.support.PooledExecutor;
 import freenet.support.PrioritizedTicker;
 import freenet.support.ShortBuffer;
@@ -1212,7 +1210,6 @@ public class Node implements TimeSkewDetectorCallback {
 			f = null;
 		} else {
 			f = new File(value);
-			if (!f.isAbsolute()) { f = userDir.file(value); }
 
 			if(f.exists() && !(f.canWrite() && f.canRead()))
 				throw new NodeInitException(NodeInitException.EXIT_CANT_WRITE_MASTER_KEYS, "Cannot read from and write to master keys file "+f);
@@ -1607,30 +1604,34 @@ public class Node implements TimeSkewDetectorCallback {
 		// Bandwidth limit
 
 		nodeConfig.register("outputBandwidthLimit", "15K", sortOrder++, false, true, "Node.outBWLimit", "Node.outBWLimitLong", new IntCallback() {
-					@Override
-					public Integer get() {
-						//return BlockTransmitter.getHardBandwidthLimit();
-						return outputBandwidthLimit;
-					}
-					@Override
-					public void set(Integer obwLimit) throws InvalidConfigValueException {
-						if(obwLimit <= 0) throw new InvalidConfigValueException(l10n("bwlimitMustBePositive"));
-						if (obwLimit < minimumBandwidth) throw lowBandwidthLimit(obwLimit);
-						synchronized(Node.this) {
-							outputBandwidthLimit = obwLimit;
-						}
-						outputThrottle.changeNanosAndBucketSize(SECONDS.toNanos(1) / obwLimit, obwLimit/2);
-						nodeStats.setOutputLimit(obwLimit);
-					}
+			@Override
+			public Integer get() {
+				//return BlockTransmitter.getHardBandwidthLimit();
+				return outputBandwidthLimit;
+			}
+			@Override
+			public void set(Integer obwLimit) throws InvalidConfigValueException {
+				checkOutputBandwidthLimit(obwLimit);
+				try {
+					outputThrottle.changeNanosAndBucketSize(SECONDS.toNanos(1) / obwLimit, obwLimit/2);
+					nodeStats.setOutputLimit(obwLimit);
+				} catch (IllegalArgumentException e) {
+					throw new InvalidConfigValueException(e);
+				}
+				synchronized(Node.this) {
+					outputBandwidthLimit = obwLimit;
+				}
+			}
 		});
 
 		int obwLimit = nodeConfig.getInt("outputBandwidthLimit");
-		if(obwLimit <= 0)
-			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, "Invalid outputBandwidthLimit");
-		if (obwLimit < minimumBandwidth) {
-			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, lowBandwidthLimit(obwLimit).getMessage());
-		}
 		outputBandwidthLimit = obwLimit;
+		try {
+			checkOutputBandwidthLimit(outputBandwidthLimit);
+		} catch (InvalidConfigValueException e) {
+			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, e.getMessage());
+		}
+
 		// Bucket size of 0.5 seconds' worth of bytes.
 		// Add them at a rate determined by the obwLimit.
 		// Maximum forced bytes 80%, in other words, 20% of the bandwidth is reserved for
@@ -1639,41 +1640,50 @@ public class Node implements TimeSkewDetectorCallback {
 		// Must have at least space for ONE PACKET.
 		// FIXME: make compatible with alternate transports.
 		bucketSize = Math.max(bucketSize, 2048);
+		try {
 		outputThrottle = new TokenBucket(bucketSize, SECONDS.toNanos(1) / obwLimit, obwLimit/2);
+		} catch (IllegalArgumentException e) {
+			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, e.getMessage());
+		}
 
 		nodeConfig.register("inputBandwidthLimit", "-1", sortOrder++, false, true, "Node.inBWLimit", "Node.inBWLimitLong",	new IntCallback() {
-					@Override
-					public Integer get() {
-						if(inputLimitDefault) return -1;
-						return inputBandwidthLimit;
-					}
-					@Override
-					public void set(Integer ibwLimit) throws InvalidConfigValueException {
-						synchronized(Node.this) {
-							if(ibwLimit == -1) {
-								inputLimitDefault = true;
-								ibwLimit = outputBandwidthLimit * 4;
-							} else {
-								if(ibwLimit <= 1) throw new InvalidConfigValueException(l10n("bandwidthLimitMustBePositiveOrMinusOne"));
-								if (ibwLimit < minimumBandwidth) throw lowBandwidthLimit(ibwLimit);
-								inputLimitDefault = false;
-							}
-							inputBandwidthLimit = ibwLimit;
-						}
+			@Override
+			public Integer get() {
+				if(inputLimitDefault) return -1;
+				return inputBandwidthLimit;
+			}
+			@Override
+			public void set(Integer ibwLimit) throws InvalidConfigValueException {
+				synchronized(Node.this) {
+					checkInputBandwidthLimit(ibwLimit);
+					try {
 						nodeStats.setInputLimit(ibwLimit);
+					} catch (IllegalArgumentException e) {
+						throw new InvalidConfigValueException(e);
 					}
+
+					if(ibwLimit == -1) {
+						inputLimitDefault = true;
+						ibwLimit = outputBandwidthLimit * 4;
+					} else {
+						inputLimitDefault = false;
+					}
+					inputBandwidthLimit = ibwLimit;
+				}
+			}
 		});
 
 		int ibwLimit = nodeConfig.getInt("inputBandwidthLimit");
 		if(ibwLimit == -1) {
 			inputLimitDefault = true;
 			ibwLimit = obwLimit * 4;
-		} else if(ibwLimit <= 0)
-			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, "Invalid inputBandwidthLimit");
-		if (ibwLimit < minimumBandwidth) {
-			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, lowBandwidthLimit(ibwLimit).getMessage());
 		}
 		inputBandwidthLimit = ibwLimit;
+		try {
+			checkInputBandwidthLimit(inputBandwidthLimit);
+		} catch (InvalidConfigValueException e) {
+			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, e.getMessage());
+		}
 
 		nodeConfig.register("throttleLocalTraffic", false, sortOrder++, true, false, "Node.throttleLocalTraffic", "Node.throttleLocalTrafficLong", new BooleanCallback() {
 
@@ -2072,6 +2082,7 @@ public class Node implements TimeSkewDetectorCallback {
 		storeSaltHashResizeOnStart = nodeConfig.getBoolean("storeSaltHashResizeOnStart");
 
 		this.storeDir = setupProgramDir(installConfig, "storeDir", userDir().file("datastore").getPath(), "Node.storeDirectory", "Node.storeDirectoryLong", nodeConfig);
+		installConfig.finishedInitialization();
 
 		final String suffix = getStoreSuffix();
 
@@ -4139,19 +4150,34 @@ public class Node implements TimeSkewDetectorCallback {
 		}
 	}
 
-	public CHKStore getChkDatacache() {
+	CHKStore getChkDatacache() {
 		return chkDatacache;
 	}
-	public CHKStore getChkDatastore() {
+	CHKStore getChkDatastore() {
 		return chkDatastore;
 	}
-	public SSKStore getSskDatacache() {
+	SSKStore getSskDatacache() {
 		return sskDatacache;
 	}
-	public SSKStore getSskDatastore() {
+	SSKStore getSskDatastore() {
 		return sskDatastore;
 	}
 
+        CHKStore getChkSlashdotCache() {
+            return chkSlashdotcache;
+        }
+
+        CHKStore getChkClientCache() {
+            return chkClientcache;
+        }
+
+        SSKStore getSskSlashdotCache() {
+            return sskSlashdotcache;
+        }
+
+        SSKStore getSskClientCache() {
+            return sskClientcache;
+        }
 
 	/**
 	 * This method returns all statistics info for our data store stats table
@@ -4243,8 +4269,6 @@ public class Node implements TimeSkewDetectorCallback {
 				failureTable.onFound(block);
 		} catch (IOException e) {
 			Logger.error(this, "Cannot store data: "+e, e);
-		} catch (OutOfMemoryError e) {
-			OOMHandler.handleOOM(e);
 		} catch (Throwable t) {
 			System.err.println(t);
 			t.printStackTrace();
@@ -4293,8 +4317,6 @@ public class Node implements TimeSkewDetectorCallback {
 				failureTable.onFound(block);
 		} catch (IOException e) {
 			Logger.error(this, "Cannot store data: "+e, e);
-		} catch (OutOfMemoryError e) {
-			OOMHandler.handleOOM(e);
 		} catch (KeyCollisionException e) {
 			throw e;
 		} catch (Throwable t) {
@@ -5454,5 +5476,23 @@ public class Node implements TimeSkewDetectorCallback {
         else
             return null;
     }
+
+	private void checkOutputBandwidthLimit(int obwLimit) throws InvalidConfigValueException {
+		if(obwLimit <= 0) throw new InvalidConfigValueException(l10n("bwlimitMustBePositive"));
+		if (obwLimit < minimumBandwidth) throw lowBandwidthLimit(obwLimit);
+	}
+
+	private void checkInputBandwidthLimit(int ibwLimit) throws InvalidConfigValueException {
+		// Reserved value for limit based on output limit.
+		if (ibwLimit == -1) {
+			return;
+		}
+		if(ibwLimit <= 1) throw new InvalidConfigValueException(l10n("bandwidthLimitMustBePositiveOrMinusOne"));
+		if (ibwLimit < minimumBandwidth) throw lowBandwidthLimit(ibwLimit);
+	}
+
+	public PluginManager getPluginManager() {
+		return pluginManager;
+	}
 
 }
