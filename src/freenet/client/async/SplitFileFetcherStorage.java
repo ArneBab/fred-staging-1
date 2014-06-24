@@ -356,7 +356,7 @@ public class SplitFileFetcherStorage {
         byte[] encodedURI = encodeAndChecksumURI(thisKey);
         this.offsetBasicSettings = offsetOriginalURI + encodedURI.length;
         
-        byte[] encodedBasicSettings = encodeBasicSettings();
+        byte[] encodedBasicSettings = encodeBasicSettings(); // FIXME checksum???
         long totalLength = 
             offsetBasicSettings + // rest of file
             encodedBasicSettings.length + // basic settings
@@ -395,6 +395,7 @@ public class SplitFileFetcherStorage {
         }
     }
     
+    /** Encode the basic settings (number of blocks etc) to a byte array */
     private byte[] encodeBasicSettings() {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         DataOutputStream dos = new DataOutputStream(baos);
@@ -452,7 +453,8 @@ public class SplitFileFetcherStorage {
         return appendChecksum(data);
     }
 
-    private byte[] appendChecksum(byte[] data) {
+    /** Append a CRC32 to a (short) byte[] */
+    static private byte[] appendChecksum(byte[] data) {
         byte[] output = new byte[data.length+4];
         System.arraycopy(data, 0, output, 0, data.length);
         Checksum crc = new CRC32();
@@ -462,6 +464,7 @@ public class SplitFileFetcherStorage {
         return output;
     }
 
+    /** FIXME not used yet */
     private void allocateCrossDataBlock(SplitFileFetcherCrossSegmentStorage segment, Random random) {
         int x = 0;
         for(int i=0;i<10;i++) {
@@ -486,6 +489,7 @@ public class SplitFileFetcherStorage {
         throw new IllegalStateException("Unable to allocate cross data block!");
     }
 
+    /** FIXME not used yet */
     private void allocateCrossCheckBlock(SplitFileFetcherCrossSegmentStorage segment, Random random) {
         int x = 0;
         for(int i=0;i<10;i++) {
