@@ -162,6 +162,8 @@ public class NodeClientCore implements Persistable, DBJobRunner, ExecutorIdleCal
 	private RestartDBJob[] startupDatabaseJobs;
 	private boolean alwaysCommit;
 	private final PluginStores pluginStores;
+    /** Minimum amount of memory needed for FEC decodes */
+    public static final long MIN_MEMORY_ALLOCATION = 8*1024*1024;
 
 	NodeClientCore(Node node, Config config, SubConfig nodeConfig, SubConfig installConfig, int portNumber, int sortOrder, SimpleFieldSet oldConfig, SubConfig fproxyConfig, SimpleToadletServer toadlets, long nodeDBHandle, ObjectContainer container) throws NodeInitException {
 		this.node = node;
@@ -323,7 +325,7 @@ public class NodeClientCore implements Persistable, DBJobRunner, ExecutorIdleCal
 						0, 2, 0, 0, new SimpleEventProducer(),
 						false, Node.FORK_ON_CACHEABLE_DEFAULT, false, Compressor.DEFAULT_COMPRESSORDESCRIPTOR, 0, 0, InsertContext.CompatibilityMode.COMPAT_CURRENT), RequestStarter.PREFETCH_PRIORITY_CLASS, 512 /* FIXME make configurable */);
 
-		long memoryLimitedJobsMemoryLimit = FECQueue.MIN_MEMORY_ALLOCATION; // FIXME 
+		long memoryLimitedJobsMemoryLimit = MIN_MEMORY_ALLOCATION; // FIXME 
 		clientContext = new ClientContext(node.bootID, nodeDBHandle, this, fecQueue, node.executor, backgroundBlockEncoder, archiveManager, persistentTempBucketFactory, tempBucketFactory, persistentTempBucketFactory, healingQueue, uskManager, random, node.fastWeakRandom, node.getTicker(), tempFilenameGenerator, persistentFilenameGenerator, compressor, storeChecker, toadlets, memoryLimitedJobsMemoryLimit);
 		compressor.setClientContext(clientContext);
 		storeChecker.setContext(clientContext);
