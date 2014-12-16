@@ -4,6 +4,7 @@
 package freenet.client.filter;
 
 import freenet.client.FetchException;
+import freenet.client.FetchException.FetchExceptionMode;
 import freenet.l10n.NodeL10n;
 import freenet.support.HTMLEncoder;
 
@@ -36,16 +37,12 @@ public class UnknownContentTypeException extends UnsafeContentTypeException {
 		return l10n("explanation", "type", type);
 	}
 
-	private static String l10n(String key) {
-		return NodeL10n.getBase().getString("UnknownContentTypeException."+key);
-	}
-	
 	private static String l10n(String key, String pattern, String value) {
 		return NodeL10n.getBase().getString("UnknownContentTypeException."+key, pattern, value);
 	}
 
 	@Override
-	public int getFetchErrorCode() {
-		return FetchException.CONTENT_VALIDATION_UNKNOWN_MIME;
+	public FetchExceptionMode getFetchErrorCode() {
+		return FetchExceptionMode.CONTENT_VALIDATION_UNKNOWN_MIME;
 	}
 }

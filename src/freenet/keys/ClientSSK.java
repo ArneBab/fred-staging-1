@@ -8,8 +8,6 @@ import java.net.MalformedURLException;
 import java.security.MessageDigest;
 import java.util.Arrays;
 
-import com.db4o.ObjectContainer;
-
 import freenet.crypt.DSAPublicKey;
 import freenet.crypt.SHA256;
 import freenet.crypt.UnsupportedCipherException;
@@ -25,7 +23,8 @@ import freenet.support.Logger;
  */
 public class ClientSSK extends ClientKey {
 
-	/** Crypto type */
+    private static final long serialVersionUID = 1L;
+    /** Crypto type */
 	public final byte cryptoAlgorithm;
 	/** Document name */
 	public final String docName;
@@ -39,22 +38,19 @@ public class ClientSSK extends ClientKey {
 	public final byte[] ehDocname;
 	private final int hashCode;
 	
-	static final int CRYPTO_KEY_LENGTH = 32;
+	public static final int CRYPTO_KEY_LENGTH = 32;
 	public static final int EXTRA_LENGTH = 5;
 	
 	private ClientSSK(ClientSSK key) {
 		this.cryptoAlgorithm = key.cryptoAlgorithm;
-		this.docName = new String(key.docName);
+		this.docName = key.docName;
 		if(key.pubKey != null)
 			this.pubKey = key.pubKey.cloneKey();
 		else
 			this.pubKey = null;
-		pubKeyHash = new byte[key.pubKeyHash.length];
-		System.arraycopy(key.pubKeyHash, 0, pubKeyHash, 0, pubKeyHash.length);
-		cryptoKey = new byte[key.cryptoKey.length];
-		System.arraycopy(key.cryptoKey, 0, cryptoKey, 0, key.cryptoKey.length);
-		ehDocname = new byte[key.ehDocname.length];
-		System.arraycopy(key.ehDocname, 0, ehDocname, 0, key.ehDocname.length);
+		pubKeyHash = key.pubKeyHash.clone();
+		cryptoKey = key.cryptoKey.clone();
+		ehDocname = key.ehDocname.clone();
 		hashCode = Fields.hashCode(pubKeyHash) ^ Fields.hashCode(cryptoKey) ^ Fields.hashCode(ehDocname) ^ docName.hashCode();
 	}
 	
@@ -62,6 +58,8 @@ public class ClientSSK extends ClientKey {
 		this.docName = docName;
 		this.pubKey = pubKey;
 		this.pubKeyHash = pubKeyHash;
+		if(docName == null)
+			throw new MalformedURLException("No document name.");
 		if(extras == null)
 			throw new MalformedURLException("No extra bytes in SSK - maybe a 0.5 key?");
 		if(extras.length < 5)
@@ -111,6 +109,16 @@ public class ClientSSK extends ClientKey {
 		this(origURI.getDocName(), origURI.getRoutingKey(), origURI.getExtra(), null, origURI.getCryptoKey());
 		if(!origURI.getKeyType().equalsIgnoreCase("SSK"))
 			throw new MalformedURLException();
+	}
+	
+	protected ClientSSK() {
+	    // For serialization.
+	    this.cryptoAlgorithm = 0;
+	    this.docName = null;
+	    this.pubKeyHash = null;
+	    this.cryptoKey = null;
+	    this.ehDocname = null;
+	    this.hashCode = 0;
 	}
 	
 	public synchronized void setPublicKey(DSAPublicKey pubKey) {
@@ -187,11 +195,6 @@ public class ClientSSK extends ClientKey {
 		return new ClientSSK(this);
 	}
 
-	@Override
-	public void removeFrom(ObjectContainer container) {
-		container.delete(this);
-	}
-	
 	@Override
 	public int hashCode() {
 		return hashCode;

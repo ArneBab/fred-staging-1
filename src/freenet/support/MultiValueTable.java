@@ -4,6 +4,9 @@ import java.util.Hashtable;
 import java.util.Vector;
 /**
  * A hashtable that can store several values for each entry.
+ * 
+ * FIXME improve efficiency - map to Object internally and either use a single V or an 
+ * ArrayList of V. Then take over where we do this in the code e.g. PrioritizedTicker.
  *
  * @author oskar
  */
@@ -176,10 +179,12 @@ public class MultiValueTable<K,V> {
                 current = global.nextElement().elements();
         }
 
+        @Override
         public final boolean hasMoreElements() {
             return global.hasMoreElements(); // || current.hasMoreElements();
         }
         
+        @Override
         public final V nextElement() {
             V o = current.nextElement();
             step();

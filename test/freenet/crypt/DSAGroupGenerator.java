@@ -45,6 +45,8 @@ public class DSAGroupGenerator {
 		if(keyLength % hashLength != 0)
 			throw new IllegalArgumentException("Key length must be divisible by hash length (short cut taken here)");
 		while(!generate(r, keyLength, hashLength, md));
+		if(hashLength == 256)
+			SHA256.returnMessageDigest(md);
 	}
 
 	private static boolean generate(RandomSource r, int keyLength, int hashLength, MessageDigest md) {
@@ -91,7 +93,6 @@ public class DSAGroupGenerator {
 		// 6: Let counter = 0 and offset = 2
 		
 		int counter = 0;
-		int offset = 2;
 		
 		byte[] curSeed = seedPlus1;
 		
@@ -128,7 +129,6 @@ public class DSAGroupGenerator {
 			}
 			
 			counter++;
-			offset += n;
 			if(counter >= 4096) return false;
 		}		
 	}
@@ -149,7 +149,7 @@ public class DSAGroupGenerator {
     		g = (NativeBigInteger) h.modPow(e, p);
     	} while (g.equals(BigInteger.ONE));
     	DSAGroup group = new DSAGroup(p, q, g);
-    	System.out.println("g: "+g.toHexString()+" ("+g.bitLength()+ ')');
+    	System.out.println("g: "+HexUtil.toHexString(g)+" ("+g.bitLength()+ ')');
     	System.out.println("Group: "+group.verboseToString());
     	long totalSigTime = 0;
     	long totalVerifyTime = 0;

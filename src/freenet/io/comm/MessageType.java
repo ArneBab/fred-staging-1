@@ -24,6 +24,7 @@ import java.util.LinkedList;
 import java.util.Map;
 
 import freenet.support.Logger;
+import freenet.support.Serializer;
 import freenet.support.ShortBuffer;
 
 public class MessageType {
@@ -38,15 +39,18 @@ public class MessageType {
 	private final HashMap<String, Class<?>> _linkedListTypes = new HashMap<String, Class<?>>();
 	private final boolean internalOnly;
 	private final short priority;
+	private final boolean isLossyPacketMessage;
 
 	public MessageType(String name, short priority) {
-	    this(name, priority, false);
+	    this(name, priority, false, false);
 	}
 	
-	public MessageType(String name, short priority, boolean internal) {
+	public MessageType(String name, short priority, boolean internal, boolean isLossyPacketMessage) {
 		_name = name;
 		this.priority = priority;
+		this.isLossyPacketMessage = isLossyPacketMessage;
 		internalOnly = internal;
+		// XXX hashCode() is NOT required to be unique!
 		Integer id = Integer.valueOf(name.hashCode());
 		if (_specs.containsKey(id)) {
 			throw new RuntimeException("A message type by the name of " + name + " already exists!");
@@ -80,6 +84,10 @@ public class MessageType {
 			return false;
 		}
 		Class<?> defClass = _fields.get(fieldName);
+		if (defClass == null) {
+			throw new IllegalStateException("Cannot set field \"" + fieldName + "\" which is not defined" +
+			                                " in the message type \"" + getName() + "\".");
+		}
 		Class<?> valueClass = fieldValue.getClass();
 		if(defClass == valueClass) return true;
 		if(defClass.isAssignableFrom(valueClass)) return true;
@@ -105,12 +113,13 @@ public class MessageType {
 	    return _name.hashCode();
 	}
 	
-	public static MessageType getSpec(Integer specID) {
-		if (!_specs.containsKey(specID)) {
-			Logger.error(MessageType.class, "Unrecognised message type received (" + specID + ')');
-			return null;
+	public static MessageType getSpec(Integer specID, boolean dontLog) {
+		MessageType id = _specs.get(specID);
+		if (id == null) {
+			if(!dontLog)
+				Logger.error(MessageType.class, "Unrecognised message type received (" + specID + ')');
 		}
-		return _specs.get(specID);
+		return id;
 	}
 
 	public String getName() {
@@ -138,7 +147,25 @@ public class MessageType {
         return internalOnly;
     }
 	
-	public short getPriority() {
+    /** @return The default priority for the message type. Messages's don't necessarily
+     * use this: Message.boostPriority() can increase it for a realtime message, for 
+     * instance. */
+	public short getDefaultPriority() {
 		return priority;
+	}
+
+	/** Only works for simple messages!! */
+	public int getMaxSize(int maxStringLength) {
+		// This method mirrors Message.encodeToPacket.
+		int length = 0;
+		length += 4; // _spec.getName().hashCode()
+		for (Map.Entry<String, Class<?>> entry : _fields.entrySet()) {
+			length += Serializer.length(entry.getValue(), maxStringLength);
+		}
+		return length;
+	}
+
+	public boolean isLossyPacketMessage() {
+		return isLossyPacketMessage;
 	}
 }

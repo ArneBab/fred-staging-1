@@ -14,9 +14,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 
+import freenet.clients.fcp.FCPConnectionHandler;
 import freenet.l10n.NodeL10n;
 import freenet.node.NodeClientCore;
-import freenet.node.fcp.FCPConnectionHandler;
 import freenet.support.Base64;
 import freenet.support.HTMLNode;
 import freenet.support.Logger;
@@ -78,6 +78,7 @@ public class UserAlertManager implements Comparator<UserAlert> {
 		// Run off-thread, because of locking, and because client
 		// callbacks may take some time
 		core.clientContext.mainExecutor.execute(new Runnable() {
+			@Override
 			public void run() {
 				for (FCPConnectionHandler subscriber : subscribers)
 					subscriber.outputHandler.queue(alert.getFCPMessage());
@@ -119,8 +120,7 @@ public class UserAlertManager implements Comparator<UserAlert> {
 	 */
 	public void dismissAlert(int alertHashCode) {
 		UserAlert[] userAlerts = getAlerts();
-		for (int index = 0, count = userAlerts.length; index < count; index++) {
-			UserAlert userAlert = userAlerts[index];
+		for (UserAlert userAlert: userAlerts) {
 			if (userAlert.hashCode() == alertHashCode) {
 				if (userAlert.userCanDismiss()) {
 					if (userAlert.shouldUnregisterOnDismiss()) {
@@ -143,6 +143,7 @@ public class UserAlertManager implements Comparator<UserAlert> {
 		return a;
 	}
 
+	@Override
 	public int compare(UserAlert a0, UserAlert a1) {
 		if(a0 == a1) return 0; // common case, also we should be consistent with == even with proxyuseralert's
 		short prio0 = a0.getPriorityClass();
@@ -178,17 +179,25 @@ public class UserAlertManager implements Comparator<UserAlert> {
 	 */
 	public HTMLNode createAlerts(boolean showOnlyErrors) {
 		HTMLNode alertsNode = new HTMLNode("div");
-		UserAlert[] alerts = getAlerts();
 		int totalNumber = 0;
-		for (int i = 0; i < alerts.length; i++) {
-			UserAlert alert = alerts[i];
-			if(showOnlyErrors && alert.getPriorityClass() > alert.ERROR)
+		for (UserAlert alert: getAlerts()) {
+			if(showOnlyErrors && alert.getPriorityClass() > UserAlert.ERROR)
 				continue;
 			if (!alert.isValid())
 				continue;
 			totalNumber++;
 			alertsNode.addChild("a", "name", alert.anchor());
-			alertsNode.addChild(renderAlert(alert));
+			if(showOnlyErrors) {
+				// Paranoia. Don't break the web interface no matter what.
+				try {
+					alertsNode.addChild(renderAlert(alert));
+				} catch (Throwable t) {
+					Logger.error(this, "FAILED TO RENDER ALERT: "+alert+" : "+t, t);
+				}
+			} else {
+				// Alerts toadlet itself can error, that's OK.
+				alertsNode.addChild(renderAlert(alert));
+			}
 		}
 		if (totalNumber == 0) {
 			return new HTMLNode("#", "");
@@ -240,6 +249,8 @@ public class UserAlertManager implements Comparator<UserAlert> {
 		// a summary of alerts. With a status bar, we only show full errors here.
 		return createAlerts(true);
 	}
+	
+	static final HTMLNode ALERTS_LINK = new HTMLNode("a", "href", "/alerts/").setReadOnly();
 
 	/**
 	 * Write the alert summary as HTML to a StringBuilder
@@ -251,9 +262,7 @@ public class UserAlertManager implements Comparator<UserAlert> {
 		int numberOfWarning = 0;
 		int numberOfMinor = 0;
 		int totalNumber = 0;
-		UserAlert[] alerts = getAlerts();
-		for (int i = 0; i < alerts.length; i++) {
-			UserAlert alert = alerts[i];
+		for (UserAlert alert: getAlerts()) {
 			if (!alert.isValid())
 				continue;
 			short level = alert.getPriorityClass();
@@ -336,8 +345,7 @@ public class UserAlertManager implements Comparator<UserAlert> {
 		if(!oneLine) {
 			summaryContent.addChild("#", alertSummaryString.toString() + separator + " ");
 			NodeL10n.getBase().addL10nSubstitution(summaryContent, "UserAlertManager.alertsOnAlertsPage",
-				new String[] { "link", "/link" },
-				new String[] { "<a href=\"/alerts/\">", "</a>" });
+				new String[] { "link" }, new HTMLNode[] { ALERTS_LINK });
 		} else {
 			summaryContent.addChild("a", "href", "/alerts/", NodeL10n.getBase().getString("StatusBar.alerts") + " " + alertSummaryString.toString());
 		}
@@ -351,12 +359,11 @@ public class UserAlertManager implements Comparator<UserAlert> {
 
 	public void dumpEvents(HashSet<String> toDump) {
 		// An iterator might be faster, but we don't want to call methods on the alert within the lock.
-		UserAlert[] alerts = getAlerts();
-		for(int i=0;i<alerts.length;i++) {
-			if(!alerts[i].isEventNotification()) continue;
-			if(!toDump.contains(alerts[i].anchor())) continue;
-			unregister(alerts[i]);
-			alerts[i].onDismiss();
+		for(UserAlert alert: getAlerts()) {
+			if(!alert.isEventNotification()) continue;
+			if(!toDump.contains(alert.anchor())) continue;
+			unregister(alert);
+			alert.onDismiss();
 		}
 	}
 
@@ -365,6 +372,7 @@ public class UserAlertManager implements Comparator<UserAlert> {
 		// Run off-thread, because of locking, and because client
 		// callbacks may take some time
 		core.clientContext.mainExecutor.execute(new Runnable() {
+			@Override
 			public void run() {
 				for (UserAlert alert : getAlerts())
                                         if(alert.isValid())
@@ -398,7 +406,7 @@ public class UserAlertManager implements Comparator<UserAlert> {
 		sb.append("  <link href=\"").append(feedURI).append("\" rel=\"self\"/>\n");
 		sb.append("  <link href=\"").append(startURI).append("\"/>\n");
 		sb.append("  <updated>").append(formatTime(lastUpdated)).append("</updated>\n");
-		sb.append("  <id>urn:node:").append(Base64.encode(core.node.getDarknetIdentity())).append("</id>\n");
+		sb.append("  <id>urn:node:").append(Base64.encode(core.node.getDarknetPubKeyHash())).append("</id>\n");
 		sb.append("  <logo>").append("/favicon.ico").append("</logo>\n");
 		UserAlert[] alerts = getAlerts();
 		for(int i = alerts.length - 1; i >= 0; i--) {

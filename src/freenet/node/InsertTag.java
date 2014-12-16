@@ -16,16 +16,38 @@ public class InsertTag extends UIDTag {
 		REMOTE
 	}
 	
-	START start;
+	final START start;
 	private Throwable handlerThrew;
+	private boolean senderStarted;
+	private boolean senderFinished;
 	
-	InsertTag(boolean ssk, START start) {
-		super();
+	InsertTag(boolean ssk, START start, PeerNode source, boolean realTimeFlag, long uid, Node node) {
+		super(source, realTimeFlag, uid, node);
 		this.start = start;
 		this.ssk = ssk;
 	}
+	
+	public synchronized void startedSender() {
+		senderStarted = true;
+	}
+	
+	public void finishedSender() {
+		boolean noRecordUnlock;
+		synchronized(this) {
+			senderFinished = true;
+			if(!mustUnlock()) return;
+			noRecordUnlock = this.noRecordUnlock;
+		}
+		innerUnlock(noRecordUnlock);
+	}
 
-	public void handlerThrew(Throwable t) {
+	@Override
+	protected synchronized boolean mustUnlock() {
+		if(senderStarted && !senderFinished) return false;
+		return super.mustUnlock();
+	}
+	
+	public synchronized void handlerThrew(Throwable t) {
 		handlerThrew = t;
 	}
 
@@ -36,10 +58,42 @@ public class InsertTag extends UIDTag {
 		sb.append(" : ").append(uid).append(" : start=").append(start);
 		sb.append(" ssk=").append(ssk);
 		sb.append(" thrown=").append(handlerThrew);
+		sb.append(" : ");
+		sb.append(super.toString());
 		if(handlerThrew != null)
 			Logger.error(this, sb.toString(), handlerThrew);
 		else
 			Logger.error(this, sb.toString());
+	}
+
+	@Override
+	public synchronized int expectedTransfersIn(boolean ignoreLocalVsRemote,
+			int outwardTransfersPerInsert, boolean forAccept) {
+		if(!accepted) return 0;
+		return ((!isLocal()) || ignoreLocalVsRemote) ? 1 : 0;
+	}
+
+	@Override
+	public synchronized int expectedTransfersOut(boolean ignoreLocalVsRemote,
+			int outwardTransfersPerInsert, boolean forAccept) {
+		if(!accepted) return 0;
+		if(notRoutedOnwards) return 0;
+		else return outwardTransfersPerInsert;
+	}
+
+	@Override
+	public boolean isSSK() {
+		return ssk;
+	}
+
+	@Override
+	public boolean isInsert() {
+		return true;
+	}
+
+	@Override
+	public boolean isOfferReply() {
+		return false;
 	}
 
 }

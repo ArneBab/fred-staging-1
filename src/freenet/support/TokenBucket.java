@@ -1,5 +1,8 @@
 package freenet.support;
 
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
+
 import freenet.support.Logger.LogLevel;
 
 /**
@@ -9,6 +12,9 @@ import freenet.support.Logger.LogLevel;
 public class TokenBucket {
 
 	private static boolean logMINOR;
+	static {
+		LoggerHook.registerClass(TokenBucket.class);
+	}
 	protected long current;
 	protected long max;
 	protected long timeLastTick;
@@ -28,8 +34,9 @@ public class TokenBucket {
 		}
 		this.nanosPerTick = nanosPerTick;
 		long now = System.currentTimeMillis();
-		this.timeLastTick = now * (1000 * 1000);
-		logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
+		this.timeLastTick = NANOSECONDS.convert(now, MILLISECONDS);
+		if(nanosPerTick <= 0) throw new IllegalArgumentException();
+		if(max <= 0) throw new IllegalArgumentException();
 	}
 	
 	/**
@@ -135,7 +142,7 @@ public class TokenBucket {
 		}
 		
 		long minDelayNS = nanosPerTick * (-current);
-		long minDelayMS = minDelayNS / (1000*1000) + (minDelayNS % (1000*1000) == 0 ? 0 : 1);
+		long minDelayMS = MILLISECONDS.convert(minDelayNS + MILLISECONDS.toNanos(1) - 1, NANOSECONDS);
 		long now = System.currentTimeMillis();
 		long wakeAt = now + minDelayMS;
 		
@@ -212,7 +219,14 @@ public class TokenBucket {
 	}
 	
 	synchronized long tokensToAdd() {
-		long nowNS = System.currentTimeMillis() * (1000 * 1000);
+		long nowNS = NANOSECONDS.convert(System.currentTimeMillis(), MILLISECONDS);
+		if(timeLastTick > nowNS) {
+			System.err.println("CLOCK SKEW DETECTED! CLOCK WENT BACKWARDS BY AT LEAST "+TimeUtil.formatTime(MILLISECONDS.convert(timeLastTick - nowNS, NANOSECONDS), 2, true));
+			System.err.println("FREENET WILL BREAK SEVERELY IF THIS KEEPS HAPPENING!");
+			Logger.error(this, "CLOCK SKEW DETECTED! CLOCK WENT BACKWARDS BY AT LEAST "+TimeUtil.formatTime(MILLISECONDS.convert(timeLastTick - nowNS, NANOSECONDS), 2, true));
+			timeLastTick = nowNS;
+			return 0;
+		}
 		long nextTick = timeLastTick + nanosPerTick;
 		if(nextTick > nowNS) {
 			return 0;

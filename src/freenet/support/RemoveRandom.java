@@ -1,16 +1,29 @@
 package freenet.support;
 
-import com.db4o.ObjectContainer;
-
 import freenet.client.async.ClientContext;
+import freenet.client.async.RequestSelectionTreeNode;
 
-public interface RemoveRandom {
+public interface RemoveRandom extends RequestSelectionTreeNode {
 
-	/** Remove and return a random RandomGrabArrayItem. Should be fast. */
-	public RandomGrabArrayItem removeRandom(RandomGrabArrayItemExclusionList excluding, ObjectContainer container, ClientContext context);
-
-	/** Just for consistency checking */
-	public boolean persistent();
+	// OPTIMISE: Would a stack-trace-less exception be faster?
+	/** Either a RandomGrabArrayItem or the time at which we should try again. */
+	public static final class RemoveRandomReturn {
+		public final RandomGrabArrayItem item;
+		public final long wakeupTime;
+		RemoveRandomReturn(RandomGrabArrayItem item) {
+			this.item = item;
+			this.wakeupTime = -1;
+		}
+		RemoveRandomReturn(long wakeupTime) {
+			this.item = null;
+			this.wakeupTime = wakeupTime;
+		}
+	}
 	
-	public void removeFrom(ObjectContainer container);
+	/** Return a random RandomGrabArrayItem, or a time at which there will be one, or null
+	 * if the RGA is empty and should be removed by the parent. */
+	public RemoveRandomReturn removeRandom(RandomGrabArrayItemExclusionList excluding, ClientContext context, long now);
+
+	public void setParent(RemoveRandomParent newTopLevel);
+
 }

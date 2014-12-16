@@ -2,13 +2,17 @@ package freenet.support.io;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.Serializable;
+import java.util.Arrays;
 
-import com.db4o.ObjectContainer;
-
+import freenet.client.async.ClientContext;
 import freenet.support.api.Bucket;
+import freenet.support.api.LockableRandomAccessBuffer;
+import freenet.support.api.RandomAccessBucket;
 
 /**
  * A bucket that stores data in the memory.
@@ -17,10 +21,12 @@ import freenet.support.api.Bucket;
  * 
  * @author oskar
  */
-public class ArrayBucket implements Bucket {
-	private volatile byte[] data;
+public class ArrayBucket implements Bucket, Serializable, RandomAccessBucket {
+    private static final long serialVersionUID = 1L;
+    private volatile byte[] data;
 	private String name;
 	private boolean readOnly;
+	private boolean freed;
 
 	public ArrayBucket() {
 		this("ArrayBucket");
@@ -36,12 +42,16 @@ public class ArrayBucket implements Bucket {
 		this.name = name;
 	}
 
+	@Override
 	public OutputStream getOutputStream() throws IOException {
 		if(readOnly) throw new IOException("Read only");
+		if(freed) throw new IOException("Already fred");
 		return new ArrayBucketOutputStream();
 	}
-
-	public InputStream getInputStream() {
+	
+	@Override
+	public InputStream getInputStream() throws IOException {
+        if(freed) throw new IOException("Already fred");
 		return new ByteArrayInputStream(data);
 	}
 
@@ -50,10 +60,12 @@ public class ArrayBucket implements Bucket {
 		return new String(data);
 	}
 
+	@Override
 	public long size() {
 		return data.length;
 	}
 
+	@Override
 	public String getName() {
 		return name;
 	}
@@ -75,38 +87,60 @@ public class ArrayBucket implements Bucket {
 		}
 	}
 
+	@Override
 	public boolean isReadOnly() {
 		return readOnly;
 	}
 
+	@Override
 	public void setReadOnly() {
 		readOnly = true;
 	}
 
+	@Override
 	public void free() {
-		data = new byte[0];
+	    freed = true;
+		data = null;
 		// Not much else we can do.
 	}
 
-	public byte[] toByteArray() {
+	public byte[] toByteArray() throws IOException {
+	    if(freed) throw new IOException("Already freed");
 		long sz = size();
 		int size = (int)sz;
-		byte[] buf = new byte[size];
-		System.arraycopy(data, 0, buf, 0, size);
-		return buf;
+		return Arrays.copyOf(data, size);
 	}
 
-	public void storeTo(ObjectContainer container) {
-		container.store(data);
-		container.store(this);
-	}
-
-	public void removeFrom(ObjectContainer container) {
-		container.delete(data);
-		container.delete(this);
-	}
-
-	public Bucket createShadow() throws IOException {
+	@Override
+	public RandomAccessBucket createShadow() {
 		return null;
 	}
+
+    @Override
+    public void onResume(ClientContext context) {
+        // Do nothing.
+    }
+
+    @Override
+    public void storeTo(DataOutputStream dos) {
+        // Should not be used for persistent requests.
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public LockableRandomAccessBuffer toRandomAccessBuffer() {
+        readOnly = true;
+        LockableRandomAccessBuffer raf = new ByteArrayRandomAccessBuffer(data, 0, data.length, true);
+        return raf;
+    }
+
+    @Override
+    public InputStream getInputStreamUnbuffered() throws IOException {
+        return getInputStream();
+    }
+
+    @Override
+    public OutputStream getOutputStreamUnbuffered() throws IOException {
+        return getOutputStream();
+    }
 }

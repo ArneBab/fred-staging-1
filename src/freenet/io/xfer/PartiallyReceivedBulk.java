@@ -4,13 +4,15 @@
 package freenet.io.xfer;
 
 import java.io.IOException;
+import java.util.Arrays;
 
 import freenet.io.comm.MessageCore;
 import freenet.io.comm.RetrievalException;
 import freenet.support.BitArray;
+import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
-import freenet.support.io.RandomAccessThing;
+import freenet.support.api.RandomAccessBuffer;
 
 /**
  * Equivalent of PartiallyReceivedBlock, for large(ish) file transfers.
@@ -25,7 +27,7 @@ public class PartiallyReceivedBulk {
 	final long size;
 	/** The size of the blocks sent as packets. */
 	final int blockSize;
-	private final RandomAccessThing raf;
+	private final RandomAccessBuffer raf;
 	/** Which blocks have been received and written? */
 	private final BitArray blocksReceived;
 	final int blocks;
@@ -38,6 +40,16 @@ public class PartiallyReceivedBulk {
 	boolean _aborted;
 	int _abortReason;
 	String _abortDescription;
+
+        private static volatile boolean logMINOR;
+	static {
+		Logger.registerLogThresholdCallback(new LogThresholdCallback(){
+			@Override
+			public void shouldUpdate(){
+				logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
+			}
+		});
+	}
 	
 	/**
 	 * Construct a PartiallyReceivedBulk.
@@ -47,12 +59,12 @@ public class PartiallyReceivedBulk {
 	 * @param initialState If true, assume all blocks have been received. If false, assume no blocks have
 	 * been received.
 	 */
-	public PartiallyReceivedBulk(MessageCore usm, long size, int blockSize, RandomAccessThing raf, boolean initialState) {
+	public PartiallyReceivedBulk(MessageCore usm, long size, int blockSize, RandomAccessBuffer raf, boolean initialState) {
 		this.size = size;
 		this.blockSize = blockSize;
 		this.raf = raf;
 		this.usm = usm;
-		long blocks = size / blockSize + (size % blockSize > 0 ? 1 : 0);
+		long blocks = (size + blockSize - 1) / blockSize;
 		if(blocks > Integer.MAX_VALUE)
 			throw new IllegalArgumentException("Too big");
 		this.blocks = (int)blocks;
@@ -61,6 +73,7 @@ public class PartiallyReceivedBulk {
 			blocksReceived.setAllOnes();
 			blocksReceivedCount = this.blocks;
 		}
+		assert(raf.size() >= size);
 	}
 
 	/**
@@ -81,10 +94,8 @@ public class PartiallyReceivedBulk {
 		if(transmitters == null)
 			transmitters = new BulkTransmitter[] { bt };
 		else {
-			BulkTransmitter[] t = new BulkTransmitter[transmitters.length+1];
-			System.arraycopy(transmitters, 0, t, 0, transmitters.length);
-			t[transmitters.length] = bt;
-			transmitters = t;
+			transmitters = Arrays.copyOf(transmitters, transmitters.length+1);
+			transmitters[transmitters.length-1] = bt;
 		}
 	}
 	
@@ -99,7 +110,7 @@ public class PartiallyReceivedBulk {
 			Logger.error(this, "Received block "+blockNum+" of "+blocks+" !");
 			return;
 		}
-		if(Logger.shouldLog(LogLevel.MINOR, this))
+		if(logMINOR)
 			Logger.minor(this, "Received block "+blockNum);
 		BulkTransmitter[] notifyBTs;
 		long fileOffset = (long)blockNum * (long)blockSize;
@@ -123,15 +134,15 @@ public class PartiallyReceivedBulk {
 			abort(RetrievalException.IO_ERROR, t.toString());
 		}
 		if(notifyBTs == null) return;
-		for(int i=0;i<notifyBTs.length;i++) {
+		for(BulkTransmitter notifyBT: notifyBTs) {
 			// Not a generic callback, so no catch{} guard
-			notifyBTs[i].blockReceived(blockNum);
+			notifyBT.blockReceived(blockNum);
 		}
 	}
 
 	public void abort(int errCode, String why) {
-		if(Logger.shouldLog(LogLevel.NORMAL, this))
-			Logger.normal(this, "Aborting "+this+": "+errCode+" : "+why, new Exception("debug"));
+		if(logMINOR)
+			Logger.normal(this, "Aborting "+this+": "+errCode+" : "+why+" first missing is "+blocksReceived.firstZero(0), new Exception("debug"));
 		BulkTransmitter[] notifyBTs;
 		BulkReceiver notifyBR;
 		synchronized(this) {
@@ -142,8 +153,8 @@ public class PartiallyReceivedBulk {
 			notifyBR = recv;
 		}
 		if(notifyBTs != null) {
-			for(int i=0;i<notifyBTs.length;i++) {
-				notifyBTs[i].onAborted();
+			for(BulkTransmitter notifyBT: notifyBTs) {
+				notifyBT.onAborted();
 			}
 		}
 		if(notifyBR != null)
@@ -175,14 +186,13 @@ public class PartiallyReceivedBulk {
 
 	public synchronized void remove(BulkTransmitter remove) {
 		boolean found = false;
-		for(int i=0;i<transmitters.length;i++) {
-			if(transmitters[i] == remove) found = true;
+		for(BulkTransmitter t: transmitters) {
+			if(t == remove) found = true;
 		}
 		if(!found) return;
 		BulkTransmitter[] newTrans = new BulkTransmitter[transmitters.length-1];
 		int j = 0;
-		for(int i=0;i<transmitters.length;i++) {
-			BulkTransmitter t = transmitters[i];
+		for(BulkTransmitter t: transmitters) {
 			if(t == remove) continue;
 			newTrans[j++] = t;
 		}

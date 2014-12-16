@@ -3,6 +3,9 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.node;
 
+import static java.util.concurrent.TimeUnit.MINUTES;
+import static java.util.concurrent.TimeUnit.SECONDS;
+
 import java.net.InetAddress;
 import java.util.ArrayList;
 
@@ -79,11 +82,12 @@ public class SeedServerPeerNode extends PeerNode {
 		final OpennetManager om = node.getOpennet();
 		if(om == null) {
 			Logger.normal(this, "Opennet turned off while connecting to seednodes");
-			node.peers.disconnect(this, true, true, true);
+			node.peers.disconnectAndRemove(this, true, true, true);
 		} else {
 			// Wait 5 seconds. Another node may connect first, we don't want all the
 			// announcements to go to the node which we connect to most quickly.
 			node.getTicker().queueTimedJob(new Runnable() {
+				@Override
 				public void run() {
 					try {
 						om.announcer.maybeSendAnnouncement();
@@ -91,15 +95,14 @@ public class SeedServerPeerNode extends PeerNode {
 						Logger.error(this, "Caught "+t, t);
 					}
 				}
-			}, 5*1000);
+			}, SECONDS.toMillis(5));
 		}
 	}
 
 	public InetAddress[] getInetAddresses() {
-		Peer[] peers = getHandshakeIPs();
 		ArrayList<InetAddress> v = new ArrayList<InetAddress>();
-		for(int i=0;i<peers.length;i++) {
-			FreenetInetAddress fa = peers[i].getFreenetAddress().dropHostname();
+		for(Peer peer: getHandshakeIPs()) {
+			FreenetInetAddress fa = peer.getFreenetAddress().dropHostname();
 			if(fa == null) continue;
 			InetAddress ia = fa.getAddress();
 			if(v.contains(ia)) continue;
@@ -124,7 +127,7 @@ public class SeedServerPeerNode extends PeerNode {
 	@Override
 	public boolean disconnected(boolean dumpMessageQueue, boolean dumpTrackers) {
 		boolean ret = super.disconnected(dumpMessageQueue, dumpTrackers);
-		node.peers.disconnect(this, false, false, false);
+		node.peers.disconnectAndRemove(this, false, false, false);
 		return ret;
 	}
 
@@ -140,7 +143,7 @@ public class SeedServerPeerNode extends PeerNode {
 		if(!om.announcer.enoughPeers()) return false;
 		// We have enough peers, but we might fluctuate a bit.
 		// Drop the connection once we have consistently had enough opennet peers for 5 minutes.
-		return System.currentTimeMillis() - om.announcer.timeGotEnoughPeers() > 5*60*1000;
+		return System.currentTimeMillis() - om.announcer.timeGotEnoughPeers() > MINUTES.toMillis(5);
 	}
 
 	@Override
@@ -157,6 +160,22 @@ public class SeedServerPeerNode extends PeerNode {
 	@Override
 	protected void maybeClearPeerAddedTimeOnRestart(long now) {
 		// Do nothing.
+	}
+
+	@Override
+	public void fatalTimeout() {
+		// Disconnect.
+		forceDisconnect();
+	}
+	
+	@Override
+	public boolean shallWeRouteAccordingToOurPeersLocation() {
+		return false; // Irrelevant
+	}
+
+	@Override
+	boolean dontKeepFullFieldSet() {
+		return false;
 	}
 
 }

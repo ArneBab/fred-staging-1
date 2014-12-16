@@ -20,12 +20,17 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.net.ServerSocket;
 import java.security.Key;
+import java.security.KeyManagementException;
 import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
+import java.security.UnrecoverableKeyException;
 import java.security.cert.Certificate;
+import java.security.cert.CertificateException;
 
 import javax.net.ServerSocketFactory;
 import javax.net.ssl.KeyManagerFactory;
@@ -37,16 +42,16 @@ import freenet.support.Logger;
 import freenet.support.api.BooleanCallback;
 import freenet.support.api.StringCallback;
 import freenet.support.io.Closer;
+import java.net.ServerSocket;
 
 public class SSL {
 
-	private static boolean enable;
+	private static volatile boolean enable;
 	private static KeyStore keystore;
 	private static ServerSocketFactory ssf;
 	private static String keyStore;
 	private static String keyStorePass;
 	private static String keyPass;
-	private static String version;
 
 	/**
 	 * Call this function before ask ServerSocket
@@ -168,35 +173,10 @@ public class SSL {
 				}
 			});
 
-		sslConfig.register("sslVersion", "SSLv3", configItemOrder++, true, true, "SSL.version", "SSL.versionLong",
-			new StringCallback() {
-
-				@Override
-				public String get() {
-					return version;
-				}
-
-				@Override
-				public void set(String newVersion) throws InvalidConfigValueException {
-					if(!newVersion.equals(get())) {
-						String oldVersion = version;
-						version = newVersion;
-						try {
-							createSSLContext();
-						} catch(Exception e) {
-							version = oldVersion;
-							e.printStackTrace(System.out);
-							throw new InvalidConfigValueException("Cannot change ssl version, wrong value");
-						}
-					}
-				}
-			});
-
 		enable = sslConfig.getBoolean("sslEnable");
 		keyStore = sslConfig.getString("sslKeyStore");
 		keyStorePass = sslConfig.getString("sslKeyStorePass");
 		keyPass = sslConfig.getString("sslKeyPass");
-		version = sslConfig.getString("sslVersion");
 
 		try {
 			keystore = KeyStore.getInstance("PKCS12");
@@ -205,6 +185,7 @@ public class SSL {
 		} catch(Exception e) {
 			Logger.error(SSL.class, "Cannot load keystore, ssl is disable", e);
 		}
+		sslConfig.finishedInitialization();
 
 	}
 
@@ -219,7 +200,7 @@ public class SSL {
 		return ssf.createServerSocket();
 	}
 
-	private static void loadKeyStore() throws Exception {
+	private static void loadKeyStore() throws NoSuchAlgorithmException, CertificateException, IOException, IllegalArgumentException, InstantiationException, IllegalAccessException, InvocationTargetException, KeyStoreException, UnrecoverableKeyException, KeyManagementException {
 		if(enable) {
 			// A keystore is where keys and certificates are kept
 			// Both the keystore and individual private keys should be password protected
@@ -233,7 +214,7 @@ public class SSL {
 				try {
 					Class<?> certAndKeyGenClazz = Class.forName("sun.security.x509.CertAndKeyGen");
 					Constructor<?> certAndKeyGenCtor = certAndKeyGenClazz.getConstructor(String.class, String.class);
-					Object keypair = certAndKeyGenCtor.newInstance("DSA", "SHA1WithDSA");
+					Object keypair = certAndKeyGenCtor.newInstance("RSA", "SHA1WithRSA");
 
 					Class<?> x500NameClazz = Class.forName("sun.security.x509.X500Name");
 					Constructor<?> x500NameCtor = x500NameClazz.getConstructor(String.class, String.class,
@@ -241,7 +222,7 @@ public class SSL {
 					Object x500Name = x500NameCtor.newInstance("Freenet", "Freenet", "Freenet", "", "", "");
 					
 					Method certAndKeyGenGenerate = certAndKeyGenClazz.getMethod("generate", int.class);
-					certAndKeyGenGenerate.invoke(keypair, 1024);
+					certAndKeyGenGenerate.invoke(keypair, 2048);
 					
 					Method certAndKeyGetPrivateKey = certAndKeyGenClazz.getMethod("getPrivateKey");
 					PrivateKey privKey = (PrivateKey) certAndKeyGetPrivateKey.invoke(keypair);
@@ -266,7 +247,7 @@ public class SSL {
 		}
 	}
 
-	private static void storeKeyStore() throws Exception {
+	private static void storeKeyStore() throws KeyStoreException, NoSuchAlgorithmException, CertificateException, IOException {
 		if(enable) {
 			FileOutputStream fos = null;
 			try {
@@ -278,7 +259,7 @@ public class SSL {
 		}
 	}
 
-	private static void createSSLContext() throws Exception {
+	private static void createSSLContext() throws NoSuchAlgorithmException, UnrecoverableKeyException, KeyStoreException, KeyManagementException {
 		if(enable) {
 			// A KeyManagerFactory is used to create key managers
 			KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
@@ -286,8 +267,9 @@ public class SSL {
 			kmf.init(keystore, keyPass.toCharArray());
 			// An SSLContext is an environment for implementing JSSE
 			// It is used to create a ServerSocketFactory
-			SSLContext sslc = SSLContext.getInstance(version);
+			SSLContext sslc = SSLContext.getInstance("TLSv1");
 			// Initialize the SSLContext to work with our key managers
+			// FIXME: should we pass yarrow in here?
 			sslc.init(kmf.getKeyManagers(), null, null);
 			ssf = sslc.getServerSocketFactory();
 		}

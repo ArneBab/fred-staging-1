@@ -6,11 +6,11 @@ package freenet.keys;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.Serializable;
 import java.net.MalformedURLException;
 import java.util.Arrays;
 import java.util.HashSet;
-
-import com.db4o.ObjectContainer;
+import java.util.Random;
 
 import freenet.support.Base64;
 import freenet.support.ByteArrayWrapper;
@@ -21,9 +21,10 @@ import freenet.support.compress.Compressor.COMPRESSOR_TYPE;
  * Client level CHK. Can be converted into a FreenetURI, can be used to decrypt
  * a CHKBlock, can be produced by a CHKBlock. 
  */
-public class ClientCHK extends ClientKey {
+public class ClientCHK extends ClientKey implements Serializable {
     
-	/** Lazily constructed: the NodeCHK */
+    private static final long serialVersionUID = 1L;
+    /** Lazily constructed: the NodeCHK */
     transient NodeCHK nodeKey;
     /** Routing key */
     final byte[] routingKey;
@@ -40,16 +41,25 @@ public class ClientCHK extends ClientKey {
     /* We use EXTRA_LENGTH above for consistency, rather than dis.read etc. Some code depends on this
      * being accurate. Change those uses if you like. */
     /** The length of the "extra" bytes in the key */
-    static final short EXTRA_LENGTH = 5;
+    public static final short EXTRA_LENGTH = 5;
     /** The length of the decryption key */
-    static final short CRYPTO_KEY_LENGTH = 32;
+    public static final short CRYPTO_KEY_LENGTH = 32;
+    
+    /** Useful for e.g. length checks */
+    public static final ClientCHK TEST_KEY;
+    
+    static {
+        try {
+            TEST_KEY = new ClientCHK(FreenetURI.generateRandomCHK(new Random()));
+        } catch (MalformedURLException e) {
+            throw new Error(e);
+        }
+    }
     
     private ClientCHK(ClientCHK key) {
-    	this.routingKey = new byte[key.routingKey.length];
-    	System.arraycopy(key.routingKey, 0, routingKey, 0, key.routingKey.length);
+    	this.routingKey = key.routingKey.clone();
     	this.nodeKey = null;
-    	this.cryptoKey = new byte[key.cryptoKey.length];
-    	System.arraycopy(key.cryptoKey, 0, cryptoKey, 0, key.cryptoKey.length);
+    	this.cryptoKey = key.cryptoKey.clone();
     	this.controlDocument = key.controlDocument;
     	this.cryptoAlgorithm = key.cryptoAlgorithm;
     	this.compressionAlgorithm = key.compressionAlgorithm;
@@ -80,6 +90,20 @@ public class ClientCHK extends ClientKey {
         hashCode = Fields.hashCode(routingKey) ^ Fields.hashCode(encKey) ^ compressionAlgorithm;
     }
 
+    public ClientCHK(byte[] routingKey, byte[] encKey, byte[] extra) throws MalformedURLException {
+    	this.routingKey = routingKey;
+    	this.cryptoKey = encKey;
+        if((extra == null) || (extra.length < 5))
+            throw new MalformedURLException("No extra bytes in CHK - maybe a 0.5 key?");
+        // byte 0 is reserved, for now
+        cryptoAlgorithm = extra[1];
+		if(!(cryptoAlgorithm == Key.ALGO_AES_PCFB_256_SHA256 || cryptoAlgorithm == Key.ALGO_AES_CTR_256_SHA256))
+			throw new MalformedURLException("Invalid crypto algorithm");
+        controlDocument = (extra[2] & 0x02) != 0;
+        compressionAlgorithm = (short)(((extra[3] & 0xff) << 8) + (extra[4] & 0xff));
+        hashCode = Fields.hashCode(routingKey) ^ Fields.hashCode(cryptoKey) ^ compressionAlgorithm;
+    }
+    
     /**
      * Create from a URI.
      */
@@ -93,7 +117,7 @@ public class ClientCHK extends ClientKey {
             throw new MalformedURLException("No extra bytes in CHK - maybe a 0.5 key?");
         // byte 0 is reserved, for now
         cryptoAlgorithm = extra[1];
-		if(cryptoAlgorithm != Key.ALGO_AES_PCFB_256_SHA256)
+		if(!(cryptoAlgorithm == Key.ALGO_AES_PCFB_256_SHA256 || cryptoAlgorithm == Key.ALGO_AES_CTR_256_SHA256))
 			throw new MalformedURLException("Invalid crypto algorithm");
         controlDocument = (extra[2] & 0x02) != 0;
         compressionAlgorithm = (short)(((extra[3] & 0xff) << 8) + (extra[4] & 0xff));
@@ -105,12 +129,12 @@ public class ClientCHK extends ClientKey {
      * in as few bytes as possible.
      * @throws IOException 
      */
-	private ClientCHK(DataInputStream dis) throws IOException {
+	public ClientCHK(DataInputStream dis) throws IOException {
 		byte[] extra = new byte[EXTRA_LENGTH];
 		dis.readFully(extra);
 		// byte 0 is reserved, for now
         cryptoAlgorithm = extra[1];
-		if(cryptoAlgorithm != Key.ALGO_AES_PCFB_256_SHA256)
+		if(!(cryptoAlgorithm == Key.ALGO_AES_PCFB_256_SHA256 || cryptoAlgorithm == Key.ALGO_AES_CTR_256_SHA256))
 			throw new MalformedURLException("Invalid crypto algorithm");
         compressionAlgorithm = (short)(((extra[3] & 0xff) << 8) + (extra[4] & 0xff));
         controlDocument = (extra[2] & 0x02) != 0;
@@ -119,6 +143,16 @@ public class ClientCHK extends ClientKey {
 		cryptoKey = new byte[CRYPTO_KEY_LENGTH];
 		dis.readFully(cryptoKey);
         hashCode = Fields.hashCode(routingKey) ^ Fields.hashCode(cryptoKey) ^ compressionAlgorithm;
+	}
+	
+	protected ClientCHK() {
+	    // Only for serialization.
+	    routingKey = null;
+	    cryptoKey = null;
+	    controlDocument = false;
+	    cryptoAlgorithm = 0;
+	    compressionAlgorithm = 0;
+	    hashCode = 0;
 	}
 
 	/**
@@ -147,16 +181,22 @@ public class ClientCHK extends ClientKey {
 		byte[] last = lastExtra;
 		// No synchronization required IMHO
 		if(Arrays.equals(last, extra)) return last;
+		assert(extra.length == EXTRA_LENGTH);
 		lastExtra = extra;
 		return extra;
 	}
 	
+	public static byte getCryptoAlgorithmFromExtra(byte[] extra) {
+		return extra[1];
+	}
+	
 	static HashSet<ByteArrayWrapper> standardExtras = new HashSet<ByteArrayWrapper>();
 	static {
-		for(short compressionAlgorithm = -1; compressionAlgorithm <= (short)(COMPRESSOR_TYPE.countCompressors()); compressionAlgorithm++) {
-			byte cryptoAlgorithm = Key.ALGO_AES_PCFB_256_SHA256;
-			standardExtras.add(new ByteArrayWrapper(getExtra(cryptoAlgorithm, compressionAlgorithm, true)));
-			standardExtras.add(new ByteArrayWrapper(getExtra(cryptoAlgorithm, compressionAlgorithm, false)));
+		for(byte cryptoAlgorithm = Key.ALGO_AES_PCFB_256_SHA256; cryptoAlgorithm <= Key.ALGO_AES_CTR_256_SHA256; cryptoAlgorithm++) {
+			for(short compressionAlgorithm = -1; compressionAlgorithm <= (short)(COMPRESSOR_TYPE.countCompressors()); compressionAlgorithm++) {
+				standardExtras.add(new ByteArrayWrapper(getExtra(cryptoAlgorithm, compressionAlgorithm, true)));
+				standardExtras.add(new ByteArrayWrapper(getExtra(cryptoAlgorithm, compressionAlgorithm, false)));
+			}
 		}
 	}
 	
@@ -219,11 +259,6 @@ public class ClientCHK extends ClientKey {
 	}
 
 	@Override
-	public void removeFrom(ObjectContainer container) {
-		container.delete(this);
-	}
-	
-	@Override
 	public int hashCode() {
 		return hashCode;
 	}
@@ -244,11 +279,11 @@ public class ClientCHK extends ClientKey {
 		return routingKey;
 	}
 	
-	public boolean objectCanNew(ObjectContainer container) {
-		if(routingKey == null)
-			throw new NullPointerException("Storing a ClientCHK with no routingKey!: stored="+container.ext().isStored(this)+" active="+container.ext().isActive(this));
-		if(cryptoKey == null)
-			throw new NullPointerException("Storing a ClientCHK with no cryptoKey!");
-		return true;
+	public byte[] getCryptoKey() {
+		return cryptoKey;
 	}
+	
+    public byte getCryptoAlgorithm() {
+        return cryptoAlgorithm;
+    }
 }

@@ -46,13 +46,14 @@ public class MeaningfulNodeNameUserAlert extends AbstractUserAlert {
 		textNode.addChild("#", l10n("noNodeNick"));
 		HTMLNode formNode = alertNode.addChild("form", new String[] { "action", "method" }, new String[] { "/config/"+sc.getPrefix(), "post" });
 		formNode.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "formPassword", node.clientCore.formPassword });
+		formNode.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "subconfig", sc.getPrefix() });
 		HTMLNode listNode = formNode.addChild("ul", "class", "config");
 		HTMLNode itemNode = listNode.addChild("li");
 		itemNode.addChild("span", new String[]{ "class", "title", "style" },
 				new String[]{ "configshortdesc", NodeL10n.getBase().getString("ConfigToadlet.defaultIs", new String[] { "default" }, new String[] { o.getDefault() }), 
-				"cursor: help;" }).addChild(NodeL10n.getBase().getHTMLNode(o.getShortDesc()));
-		itemNode.addChild("input", new String[] { "type", "class", "alt", "name", "value" }, new String[] { "text", "config", o.getShortDesc(), "node.name", o.getValueString() });
-		itemNode.addChild("span", "class", "configlongdesc").addChild(NodeL10n.getBase().getHTMLNode(o.getLongDesc()));
+				"cursor: help;" }).addChild(o.getShortDescNode());
+		itemNode.addChild("input", new String[] { "type", "class", "alt", "name", "value" }, new String[] { "text", "config", o.getShortDesc(), "node.name", o.getValueDisplayString() });
+		itemNode.addChild("span", "class", "configlongdesc").addChild(o.getLongDescNode());
 		formNode.addChild("input", new String[] { "type", "value" }, new String[] { "submit", NodeL10n.getBase().getString("UserAlert.apply") });
 		formNode.addChild("input", new String[] { "type", "value" }, new String[] { "reset", NodeL10n.getBase().getString("UserAlert.reset") });
 

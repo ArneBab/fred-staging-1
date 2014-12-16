@@ -12,7 +12,7 @@ import freenet.support.Logger.LogLevel;
  * Simple running average: linear mean of the last N reports.
  * @author amphibian
  */
-public class SimpleRunningAverage implements RunningAverage {
+public final class SimpleRunningAverage implements RunningAverage, Cloneable {
 	private static final long serialVersionUID = -1;
     final double[] refs;
     int nextSlotPtr=0;
@@ -23,7 +23,8 @@ public class SimpleRunningAverage implements RunningAverage {
     private boolean logDEBUG = Logger.shouldLog(LogLevel.DEBUG, this);
 
     @Override
-	public final Object clone() {
+	public final SimpleRunningAverage clone() {
+    	// Deep copy needed. Implement Cloneable to shut up findbugs.
         return new SimpleRunningAverage(this);
     }
     
@@ -66,11 +67,13 @@ public class SimpleRunningAverage implements RunningAverage {
      *
      * @return
      */
+    @Override
     public synchronized double currentValue() {
         if(curLen == 0) return initValue;
         return total/curLen;
     }
 
+    @Override
     public synchronized double valueIfReported(double r) {
         if(curLen < refs.length) {
             return (total+r)/(curLen+1);
@@ -84,6 +87,7 @@ public class SimpleRunningAverage implements RunningAverage {
      *
      * @param d
      */
+    @Override
     public synchronized void report(double d) {
         totalReports++;
 		if (logDEBUG)
@@ -124,6 +128,7 @@ public class SimpleRunningAverage implements RunningAverage {
      *
      * @param d
      */
+    @Override
     public void report(long d) {
         report((double)d);
     }
@@ -136,6 +141,7 @@ public class SimpleRunningAverage implements RunningAverage {
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public synchronized long countReports() {
         return totalReports;
     }

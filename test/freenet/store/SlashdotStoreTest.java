@@ -33,14 +33,16 @@ public class SlashdotStoreTest extends TestCase {
 	private TempBucketFactory tbf;
 	private File tempDir;
 
+	@Override
 	protected void setUp() throws java.lang.Exception {
 		tempDir = new File("tmp-slashdotstoretest");
 		tempDir.mkdir();
 		fg = new FilenameGenerator(weakPRNG, true, tempDir, "temp-");
-		tbf = new TempBucketFactory(exec, fg, 4096, 65536, strongPRNG, weakPRNG, false);
+		tbf = new TempBucketFactory(exec, fg, 4096, 65536, weakPRNG, false, 2*1024*1024, null);
 		exec.start();
 	}
 	
+	@Override
 	protected void tearDown() {
 		FileUtil.removeAll(tempDir);
 	}
@@ -52,11 +54,11 @@ public class SlashdotStoreTest extends TestCase {
 		// Encode a block
 		String test = "test";
 		ClientCHKBlock block = encodeBlock(test);
-		store.put(block, false);
+		store.put(block.getBlock(), false);
 		
 		ClientCHK key = block.getClientKey();
 		
-		CHKBlock verify = store.fetch(key.getNodeCHK(), false, null);
+		CHKBlock verify = store.fetch(key.getNodeCHK(), false, false, null);
 		String data = decodeBlock(verify, key);
 		assertEquals(test, data);
 	}
@@ -68,13 +70,13 @@ public class SlashdotStoreTest extends TestCase {
 		// Encode a block
 		String test = "test";
 		ClientCHKBlock block = encodeBlock(test);
-		store.put(block, false);
+		store.put(block.getBlock(), false);
 		
 		Thread.sleep(2000);
 		
 		ClientCHK key = block.getClientKey();
 		
-		CHKBlock verify = store.fetch(key.getNodeCHK(), false, null);
+		CHKBlock verify = store.fetch(key.getNodeCHK(), false, false, null);
 		if(verify == null) return; // Expected outcome
 		String data = decodeBlock(verify, key);
 		System.err.println("Got data: "+data+" but should have been deleted!");

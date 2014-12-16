@@ -175,7 +175,7 @@ public class HexUtilTest extends TestCase {
 		BigInteger methodBigInteger = new BigInteger("999999999999999");
 		String expectedHexValue = "038d7ea4c67fff";
 		assertEquals(HexUtil.biToHex(methodBigInteger),expectedHexValue);
-		methodBigInteger = new BigInteger("0");
+		methodBigInteger = BigInteger.ZERO;
 		expectedHexValue = "00";
 		assertEquals(HexUtil.biToHex(methodBigInteger),expectedHexValue);
 		methodBigInteger = new BigInteger("72057594037927935");
@@ -367,5 +367,12 @@ public class HexUtilTest extends TestCase {
 		/* 0x89 & 0xff == 0x89 */
 		outputArray = HexUtil.bitsToBytes(methodBitSet,8);
 		assertTrue(Arrays.equals(expectedByteArray,outputArray));
+	}
+
+	/* Checks that offset == array length is allowed, which is needed for
+	 * handling zero length arrays */
+	public void testBytesToHexZeroLength() {
+		assertEquals("", HexUtil.bytesToHex(new byte[0], 0, 0));
+		assertEquals("", HexUtil.bytesToHex(new byte[2], 2, 0));
 	}
 }

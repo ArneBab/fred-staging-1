@@ -3,17 +3,21 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.support;
 
+import java.io.Serializable;
+
 /**
  * Contains uptime statistics.
  *
  * @author Artefact2
  */
-public class UptimeContainer {
-	public long creationTime = 0;
+public class UptimeContainer implements Serializable {
+    private static final long serialVersionUID = 1L;
+    public long creationTime = 0;
 	public long totalUptime = 0;
 
 	@Override
 	public boolean equals(Object o) {
+		if(o == null) return false;
 	if(o.getClass() == UptimeContainer.class) {
 		UptimeContainer oB = (UptimeContainer) o;
 		return (oB.creationTime == this.creationTime) &&
@@ -28,4 +32,9 @@ public class UptimeContainer {
 		hash = 29 * hash + (int) (this.totalUptime ^ (this.totalUptime >>> 32));
 		return hash;
 	}
+
+    public void addFrom(UptimeContainer latestUptime) {
+        this.creationTime = latestUptime.creationTime;
+        this.totalUptime += latestUptime.totalUptime;
+    }
 }

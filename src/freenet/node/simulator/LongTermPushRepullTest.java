@@ -2,20 +2,15 @@ package freenet.node.simulator;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.PrintStream;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
-import java.util.Locale;
-import java.util.TimeZone;
 
 import freenet.client.ClientMetadata;
 import freenet.client.FetchException;
+import freenet.client.FetchException.FetchExceptionMode;
 import freenet.client.HighLevelSimpleClient;
 import freenet.client.InsertBlock;
 import freenet.client.InsertException;
@@ -24,11 +19,10 @@ import freenet.keys.FreenetURI;
 import freenet.node.Node;
 import freenet.node.NodeStarter;
 import freenet.node.Version;
-import freenet.support.Fields;
 import freenet.support.Logger;
-import freenet.support.PooledExecutor;
 import freenet.support.Logger.LogLevel;
-import freenet.support.api.Bucket;
+import freenet.support.PooledExecutor;
+import freenet.support.api.RandomAccessBucket;
 import freenet.support.io.FileUtil;
 
 /**
@@ -37,12 +31,8 @@ import freenet.support.io.FileUtil;
  * Unlike LongTermPushPullTest, this only inserts one key per day. That key
  * is then re-pulled at increasing intervals.
  */
-public class LongTermPushRepullTest {
+public class LongTermPushRepullTest extends LongTermTest {
 	private static final int TEST_SIZE = 64 * 1024;
-
-	private static final int EXIT_NO_SEEDNODES = 257;
-	private static final int EXIT_FAILED_TARGET = 258;
-	private static final int EXIT_THREW_SOMETHING = 261;
 
 	private static final int DARKNET_PORT1 = 5010;
 	private static final int OPENNET_PORT1 = 5011;
@@ -50,9 +40,6 @@ public class LongTermPushRepullTest {
 	private static final int OPENNET_PORT2 = 5013;
 
 	private static final int MAX_N = 8;
-
-	private static final DateFormat dateFormat = new SimpleDateFormat("yyyy.MM.dd", Locale.US);
-	private static final Calendar today = Calendar.getInstance(TimeZone.getTimeZone("GMT"));
 
 	public static void main(String[] args) {
 		if (args.length != 1) {
@@ -107,8 +94,8 @@ public class LongTermPushRepullTest {
 
 			// Push one block only.
 			
-			Bucket data = randomData(node);
-			HighLevelSimpleClient client = node.clientCore.makeClient((short) 0);
+			RandomAccessBucket data = randomData(node);
+			HighLevelSimpleClient client = node.clientCore.makeClient((short) 0, false, false);
 			FreenetURI uri = new FreenetURI("KSK@" + uid + "-" + dateFormat.format(today.getTime()));
 			System.out.println("PUSHING " + uri);
 			
@@ -151,7 +138,7 @@ public class LongTermPushRepullTest {
 
 			// PULL N+1 BLOCKS
 			for (int i = 0; i <= MAX_N; i++) {
-				client = node2.clientCore.makeClient((short) 0);
+				client = node2.clientCore.makeClient((short) 0, false, false);
 				Calendar targetDate = (Calendar) today.clone();
 				targetDate.add(Calendar.DAY_OF_MONTH, -((1 << i) - 1));
 
@@ -166,8 +153,8 @@ public class LongTermPushRepullTest {
 					System.out.println("PULL-TIME-" + i + ":" + (t2 - t1));
 					csvLine.add(String.valueOf(t2 - t1));
 				} catch (FetchException e) {
-					if (e.getMode() != FetchException.ALL_DATA_NOT_FOUND
-					        && e.getMode() != FetchException.DATA_NOT_FOUND)
+					if (e.getMode() != FetchExceptionMode.ALL_DATA_NOT_FOUND
+					        && e.getMode() != FetchExceptionMode.DATA_NOT_FOUND)
 						e.printStackTrace();
 					csvLine.add(FetchException.getShortMessage(e.getMode()));
 				}
@@ -187,27 +174,17 @@ public class LongTermPushRepullTest {
 			} catch (Throwable t1) {
 			}
 
-			try {
-				File file = new File(uid + ".csv");
-				FileOutputStream fos = new FileOutputStream(file, true);
-				PrintStream ps = new PrintStream(fos);
-
-				ps.println(Fields.commaList(csvLine.toArray()));
-
-				ps.close();
-				fos.close();
-			} catch (IOException e) {
-				e.printStackTrace();
-				exitCode = EXIT_THREW_SOMETHING;
-			}
+			File file = new File(uid + ".csv");
+			writeToStatusLog(file, csvLine);
 			
 			System.exit(exitCode);
 		}
 	}
 
-	private static Bucket randomData(Node node) throws IOException {
-		Bucket data = node.clientCore.tempBucketFactory.makeBucket(TEST_SIZE);
+	private static RandomAccessBucket randomData(Node node) throws IOException {
+	    RandomAccessBucket data = node.clientCore.tempBucketFactory.makeBucket(TEST_SIZE);
 		OutputStream os = data.getOutputStream();
+		try {
 		byte[] buf = new byte[4096];
 		for (long written = 0; written < TEST_SIZE;) {
 			node.fastWeakRandom.nextBytes(buf);
@@ -215,7 +192,9 @@ public class LongTermPushRepullTest {
 			os.write(buf, 0, toWrite);
 			written += toWrite;
 		}
+		} finally {
 		os.close();
+		}
 		return data;
 	}
 }

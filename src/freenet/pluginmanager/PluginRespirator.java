@@ -1,28 +1,25 @@
 package freenet.pluginmanager;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.HashMap;
-
-import com.db4o.ObjectContainer;
-import com.db4o.ObjectSet;
+import java.util.ArrayList;
 
 import freenet.client.HighLevelSimpleClient;
-import freenet.client.async.ClientContext;
-import freenet.client.async.DBJob;
-import freenet.client.async.DatabaseDisabledException;
+import freenet.client.async.PersistenceDisabledException;
 import freenet.client.filter.FilterCallback;
 import freenet.clients.http.PageMaker;
 import freenet.clients.http.SessionManager;
 import freenet.clients.http.ToadletContainer;
+import freenet.config.SubConfig;
 import freenet.node.Node;
+import freenet.node.NodeClientCore;
 import freenet.node.RequestStarter;
 import freenet.support.HTMLNode;
 import freenet.support.URIPreEncoder;
-import freenet.support.io.NativeThread;
 
 public class PluginRespirator {
-	private static final HashMap<URI, SessionManager> sessionManagers = new HashMap<URI, SessionManager>();
+	private static final ArrayList<SessionManager> sessionManagers = new ArrayList<SessionManager>(4);
 	
 	/** For accessing Freenet: simple fetches and inserts, and the data you
 	 * need (FetchContext etc) to start more complex ones. */
@@ -30,15 +27,17 @@ public class PluginRespirator {
 	/** For accessing the node. */
 	private final Node node;
 	private final FredPlugin plugin;
-	private final PluginManager pluginManager;
+	private final PluginInfoWrapper pi;
+	private final PluginStores stores;
 
 	private PluginStore store;
 	
-	public PluginRespirator(Node node, PluginManager pm, FredPlugin plug) {
+	public PluginRespirator(Node node, PluginInfoWrapper pi) {
 		this.node = node;
-		this.hlsc = node.clientCore.makeClient(RequestStarter.INTERACTIVE_PRIORITY_CLASS);
-		this.plugin = plug;
-		this.pluginManager = pm;
+		this.hlsc = node.clientCore.makeClient(RequestStarter.INTERACTIVE_PRIORITY_CLASS, false, false);
+		this.plugin = pi.getPlugin();
+		this.pi = pi;
+		stores = node.clientCore.getPluginStores();
 	}
 	
 	//public HighLevelSimpleClient getHLSimpleClient() throws PluginSecurityException {
@@ -46,7 +45,7 @@ public class PluginRespirator {
 		return hlsc;
 	}
 	
-	/** Get the node. Use this if you need access to low-level stuff, config
+	/** Get the node. Use this if you need access to low-level stuff, node config
 	 * etc. */
 	public Node getNode(){
 		return node;
@@ -72,7 +71,15 @@ public class PluginRespirator {
 		return container.getPageMaker();
 	}
 	
-	/** Add a valid form including the form password. 
+	/**
+	 * Add a valid form including the {@link NodeClientCore#formPassword}. See the JavaDoc there for an explanation of the purpose of this mechanism. 
+	 * 
+	 * <p><b>ATTENTION</b>: It is critically important to validate the form password when processing requests which "change the server state".
+	 * Other words for this would be requests which change your database or "write" requests.
+	 * Requests which only read values from the server don't have to validate the form password.</p>
+	 * 
+	 * <p>To validate that the right password was received, use {@link WebInterfaceToadlet#isFormPassword(HTTPRequest)}.</p> 
+	 * 
 	 * @param parentNode The parent HTMLNode.
 	 * @param target Where to post to.
 	 * @param name The id/name of the form.
@@ -98,8 +105,8 @@ public class PluginRespirator {
 	public ToadletContainer getToadletContainer() {
 		return node.clientCore.getToadletContainer();
 	}
-
-	/**
+	
+    /**
 	 * Get a PluginStore that can be used by the plugin to put data in a database.
 	 * The database used is the node's database, so all the encrypt/decrypt part
 	 * is already automatically handled according to the physical security level.
@@ -107,26 +114,14 @@ public class PluginRespirator {
 	 * @return PluginStore
 	 * @throws DatabaseDisabledException
 	 */
-	public PluginStore getStore() throws DatabaseDisabledException {
-		final PluginStoreContainer example = new PluginStoreContainer();
-		example.nodeDBHandle = this.node.nodeDBHandle;
-		example.storeIdentifier = this.plugin.getClass().getCanonicalName();
-		example.pluginStore = null;
-
-		this.node.clientCore.runBlocking(new DBJob() {
-
-			public boolean run(ObjectContainer container, ClientContext context) {
-				ObjectSet<PluginStoreContainer> stores = container.queryByExample(example);
-				if(stores.size() == 0) store = new PluginStore();
-				else {
-					store = stores.get(0).pluginStore;
-					container.activate(store, Integer.MAX_VALUE);
-				}
-				return false;
-			}
-		}, NativeThread.HIGH_PRIORITY);
-
-		return this.store;
+	public PluginStore getStore() throws PersistenceDisabledException {
+	    synchronized(this) {
+	        if(store != null) return store;
+	        store = stores.loadPluginStore(this.plugin.getClass().getCanonicalName());
+	        if(store == null)
+	            store = new PluginStore();
+	        return store;
+	    }
 	}
 
 	/**
@@ -136,41 +131,77 @@ public class PluginRespirator {
 	 * @param storeIdentifier Some string to identify the store, basically the plugin's name.
 	 * @throws DatabaseDisabledException
 	 */
-	public void putStore(final PluginStore store) throws DatabaseDisabledException {
-		final PluginStoreContainer storeC = new PluginStoreContainer();
-		storeC.nodeDBHandle = this.node.nodeDBHandle;
-		storeC.pluginStore = null;
-		storeC.storeIdentifier = this.plugin.getClass().getCanonicalName();
-
-		this.node.clientCore.queue(new DBJob() {
-
-			public boolean run(ObjectContainer container, ClientContext context) {
-				// cascadeOnDelete(true) will make the calls to store() delete
-				// any precedent stored instance of PluginStore.
-
-				if(container.queryByExample(storeC).size() == 0) {
-					// Let's store the whole container.
-					storeC.pluginStore = store;
-					container.ext().store(storeC, Integer.MAX_VALUE);
-				} else {
-					// Only update the PluginStore.
-					// Check all subStores for changes, not only the top-level store.
-					storeC.pluginStore = store;
-					container.ext().store(storeC.pluginStore, Integer.MAX_VALUE);
-				}
-				return true;
-			}
-		}, NativeThread.NORM_PRIORITY, false);
+	public void putStore(final PluginStore store) throws PersistenceDisabledException {
+	    String name = this.plugin.getClass().getCanonicalName();
+	    try {
+            stores.writePluginStore(name, store);
+        } catch (IOException e) {
+            System.err.println("Unable to write plugin data for "+name+" : "+e);
+            return;
+        }
 	}
-	
+
+	/**
+	 * Get a new session manager for use with the specified path.
+	 * 	See {@link SessionManager} for a detailed explanation of what cookie paths are.
+	 * 
+	 * The usage of the global "/" path is not allowed. You must use {@link getSessionManager(String cookieNamespace)}
+	 * if you want your cookie to be valid in the "/" path.
+	 * 
+	 * This function is synchronized  on the SessionManager-list and therefore concurrency-proof.
+	 * 
+	 * @Deprecated We want cookies to be valid in the "/" path for menus to work even if the user is not in the menu of the given
+	 * 				plugin. Therefore, we should use cookie namespaces instead.
+	 */
+	@Deprecated
 	public SessionManager getSessionManager(URI cookiePath) {
-		SessionManager session = sessionManagers.get(cookiePath);
-		
-		if (session == null) {
-			session = new SessionManager(cookiePath);
-			sessionManagers.put(cookiePath, session);
+		synchronized(sessionManagers) {
+		for(SessionManager m : sessionManagers) {
+			if(m.getCookiePath().equals(cookiePath))
+				return m;
 		}
 		
-		return session;
+		final SessionManager m = new SessionManager(cookiePath);
+		sessionManagers.add(m);
+		return m;
+		}
+	}
+	
+	/**
+	 * Get a new session manager for use with the global "/" cookie path and the given cookie namespace.
+	 * See {@link SessionManager} for a detailed explanation of what cookie namespaces are.
+	 * 
+	 * This function is synchronized  on the SessionManager-list and therefore concurrency-proof.
+	 * 
+	 * @param myCookieNamespace The name of the client application which uses this cookie. 
+	 */
+	public SessionManager getSessionManager(String cookieNamespace) {
+		synchronized(sessionManagers) {
+		for(SessionManager m : sessionManagers) {
+			if(m.getCookieNamespace().equals(cookieNamespace))
+				return m;
+		}
+		
+		final SessionManager m = new SessionManager(cookieNamespace);
+		sessionManagers.add(m);
+		return m;
+		}
+	}
+
+	/**
+	 * Get the plugin's SubConfig. If the plugin does not implement
+	 * FredPluginConfigurable, this will return null.
+	 */
+	public SubConfig getSubConfig() {
+		return pi.getSubConfig();
+	}
+
+	/**
+	 * Force a write of the plugin's config file. If the plugin does
+	 * not implement FredPluginConfigurable, don't expect magic to
+	 * happen.
+	 */
+	public void storeConfig() {
+		pi.getConfig().store();
 	}
 }

@@ -22,7 +22,7 @@ public abstract class LoggerHook extends Logger {
 	}
 
 	LoggerHook(String thresh) throws InvalidThresholdException{
-		this.threshold = LogLevel.valueOf(thresh.toUpperCase());
+		this.threshold = parseThreshold(thresh.toUpperCase());
 	}
 
 	public DetailedThreshold[] detailedThresholds = new DetailedThreshold[0];
@@ -116,10 +116,19 @@ public abstract class LoggerHook extends Logger {
 	public LogLevel getThresholdNew() {
 		return threshold;
 	}
+	
+	private LogLevel parseThreshold(String threshold) throws InvalidThresholdException {
+		if(threshold == null) throw new InvalidThresholdException(threshold);
+		try {
+			return LogLevel.valueOf(threshold.toUpperCase());
+		} catch (IllegalArgumentException e) {
+			throw new InvalidThresholdException(threshold);
+		}
+	}
 
 	@Override
 	public void setThreshold(String symbolicThreshold) throws InvalidThresholdException {
-		setThreshold(LogLevel.valueOf(symbolicThreshold.toUpperCase()));
+		setThreshold(parseThreshold(symbolicThreshold));
 	}
 
 	@Override
@@ -139,14 +148,14 @@ public abstract class LoggerHook extends Logger {
 				continue;
 			String section = token.substring(0, x);
 			String value = token.substring(x + 1, token.length());
-			stuff.add(new DetailedThreshold(section, LogLevel.valueOf(value.toUpperCase())));
+			stuff.add(new DetailedThreshold(section, parseThreshold(value.toUpperCase())));
 		}
 		DetailedThreshold[] newThresholds = new DetailedThreshold[stuff.size()];
 		stuff.toArray(newThresholds);
 		synchronized(this) {
 			detailedThresholds = newThresholds;
-			notifyLogThresholdCallbacks();
 		}
+		notifyLogThresholdCallbacks();
 	}
 
 	public String getDetailedThresholds() {
@@ -154,14 +163,18 @@ public abstract class LoggerHook extends Logger {
 		synchronized(this) {
 			thresh = detailedThresholds;
 		}
+		if (thresh.length == 0)
+			return "";
 		StringBuilder sb = new StringBuilder();
-		for(int i=0;i<thresh.length;i++) {
-			if(i != 0)
-				sb.append(',');
-			sb.append(thresh[i].section);
+		for(DetailedThreshold t: thresh) {
+			sb.append(t.section);
 			sb.append(':');
-			sb.append(thresh[i].dThreshold);
+			sb.append(t.dThreshold);
+			sb.append(',');
 		}
+		// assert(sb.length() > 0); -- always true as thresh.length != 0
+		// remove last ','
+		sb.deleteCharAt(sb.length() - 1);
 		return sb.toString();
 	}
 
@@ -209,7 +222,7 @@ public abstract class LoggerHook extends Logger {
 		thresholdsCallbacks.remove(ltc);
 	}
 
-	private final void notifyLogThresholdCallbacks() {
+	private void notifyLogThresholdCallbacks() {
 		for(LogThresholdCallback ltc : thresholdsCallbacks)
 			ltc.shouldUpdate();
 	}

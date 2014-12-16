@@ -10,13 +10,13 @@ import freenet.clients.http.LinkEnabledCallback;
 import freenet.clients.http.Toadlet;
 import freenet.clients.http.ToadletContext;
 import freenet.keys.FreenetURI;
+import freenet.node.NodeClientCore;
+import freenet.pluginmanager.PluginRespirator;
 import freenet.support.HTMLNode;
 import freenet.support.api.HTTPRequest;
 
 public abstract class WebInterfaceToadlet extends Toadlet implements LinkEnabledCallback {
 
-	private final String _pluginURL;
-	private final String _pageName;
 	protected final PluginContext pluginContext;
 
 	private final String _path;
@@ -24,9 +24,7 @@ public abstract class WebInterfaceToadlet extends Toadlet implements LinkEnabled
 	protected WebInterfaceToadlet(PluginContext pluginContext2, String pluginURL, String pageName) {
 		super(pluginContext2.hlsc);
 		pluginContext = pluginContext2;
-		_pageName = pageName;
-		_pluginURL = pluginURL;
-		_path = _pluginURL + "/" + _pageName;
+		_path = pluginURL + "/" + pageName;
 	}
 
 	@Override
@@ -34,6 +32,7 @@ public abstract class WebInterfaceToadlet extends Toadlet implements LinkEnabled
 		return _path;
 	}
 
+	@Override
 	public boolean isEnabled(ToadletContext ctx) {
 		return true;
 	}
@@ -57,13 +56,21 @@ public abstract class WebInterfaceToadlet extends Toadlet implements LinkEnabled
 	}
 
 	/**
-	 * @param req
+	 * Validates whether the request contains a formPassword which matches {@link NodeClientCore#formPassword}. See the JavaDoc there for an explanation
+	 * of the purpose of this mechanism.
+	 * 
+	 * <p><b>ATTENTION</b>: It is critically important to use this function when processing requests which "change the server state". Other words for this
+	 * would be requests which change your database or "write" requests.
+	 * Requests which only read values from the server don't have to validate the form password.</p>
+	 * 
+	 * <p>To produce a form which already contains the password, use {@link PluginRespirator#addFormChild(freenet.support.HTMLNode, String, String)}.</p>
+	 * 
 	 * @return true if the form password is valid
 	 */
 	protected boolean isFormPassword(HTTPRequest req) {
 		String passwd = req.getParam("formPassword", null);
 		if (passwd == null)
-			passwd = req.getPartAsString("formPassword", 32);
+			passwd = req.getPartAsStringFailsafe("formPassword", 32);
 		return (passwd != null) && passwd.equals(pluginContext.clientCore.formPassword);
 	}
 

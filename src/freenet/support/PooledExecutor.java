@@ -3,11 +3,12 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.support;
 
+import static java.util.concurrent.TimeUnit.MINUTES;
+
 import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 
 import freenet.node.PrioRunnable;
-import freenet.node.Ticker;
 import freenet.support.Logger.LogLevel;
 import freenet.support.io.NativeThread;
 
@@ -19,8 +20,7 @@ import freenet.support.io.NativeThread;
 public class PooledExecutor implements Executor {
 
 	/** All threads running or waiting */
-	@SuppressWarnings("unchecked")
-	private final ArrayList<MyThread>[] runningThreads = new ArrayList[NativeThread.JAVA_PRIORITY_RANGE + 1];
+	private final int[] runningThreads = new int[NativeThread.JAVA_PRIORITY_RANGE + 1];
 	/** Threads waiting for a job */
 	@SuppressWarnings("unchecked")
 	private final ArrayList<MyThread>[] waitingThreads = new ArrayList[runningThreads.length];
@@ -38,27 +38,30 @@ public class PooledExecutor implements Executor {
 
 	public PooledExecutor() {
 		for(int i = 0; i < runningThreads.length; i++) {
-			runningThreads[i] = new ArrayList<MyThread>();
+			/* runningThreads[i] = 0; */
 			waitingThreads[i] = new ArrayList<MyThread>();
 			threadCounter[i] = new AtomicLong();
 		}
 		waitingThreadsCount = 0;
 	}
 	/** Maximum time a thread will wait for a job */
-	static final int TIMEOUT = 1 * 60 * 1000;
+	static final long TIMEOUT = MINUTES.toMillis(1);
 
 	public void start() {
 		logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
 	}
 
+	@Override
 	public void execute(Runnable job) {
 		execute(job, "<noname>");
 	}
 
+	@Override
 	public void execute(Runnable job, String jobName) {
 		execute(job, jobName, false);
 	}
 
+	@Override
 	public void execute(Runnable runnable, String jobName, boolean fromTicker) {
 		int prio = NativeThread.NORM_PRIORITY;
 		if(runnable instanceof PrioRunnable)
@@ -85,7 +88,6 @@ public class PooledExecutor implements Executor {
 					// Must create new thread
 					if(ticker != null && (!fromTicker) && NativeThread.usingNativeCode() && prio > Thread.currentThread().getPriority()) {
 						// Get the ticker to create a thread for it with the right priority, since we can't.
-						// j16sdiz (22-Dec-2008): should we queue it? the ticker is "PacketSender", but it keep busying on non-packet related works
 						ticker.queueTimedJob(runnable, jobName, 0, true, false);
 						return;
 					}
@@ -101,7 +103,7 @@ public class PooledExecutor implements Executor {
 				t.setDaemon(true);
 
 				synchronized(this) {
-					runningThreads[prio - 1].add(t);
+					runningThreads[prio - 1]++;
 					jobMisses++;
 
 					if(logMINOR)
@@ -134,13 +136,15 @@ public class PooledExecutor implements Executor {
 		}
 	}
 
+	@Override
 	public synchronized int[] runningThreads() {
 		int[] result = new int[runningThreads.length];
 		for(int i = 0; i < result.length; i++)
-			result[i] = runningThreads[i].size() - waitingThreads[i].size();
+			result[i] = runningThreads[i] - waitingThreads[i].size();
 		return result;
 	}
 
+	@Override
 	public synchronized int[] waitingThreads() {
 		int[] result = new int[waitingThreads.length];
 		for(int i = 0; i < result.length; i++)
@@ -148,13 +152,14 @@ public class PooledExecutor implements Executor {
 		return result;
 	}
 
+	@Override
 	public int getWaitingThreadsCount() {
 		return waitingThreadsCount;
 	}
 
 	private static class Job {
-		private Runnable runnable;
-		private String name;
+		private final Runnable runnable;
+		private final String name;
 
 		Job(Runnable runnable, String name) {
 			this.runnable = runnable;
@@ -167,6 +172,7 @@ public class PooledExecutor implements Executor {
 		volatile boolean alive = true;
 		Job nextJob;
 		final long threadNo;
+		private boolean removed = false;
 
 		public MyThread(String defaultName, Job firstJob, long threadCounter, int prio, boolean dontCheckRenice) {
 			super(defaultName, prio, dontCheckRenice);
@@ -174,11 +180,23 @@ public class PooledExecutor implements Executor {
 			threadNo = threadCounter;
 			nextJob = firstJob;
 		}
-
+		
 		@Override
 		public void realRun() {
-			long ranJobs = 0;
 			int nativePriority = getNativePriority();
+			try {
+				innerRun(nativePriority);
+			} finally {
+				if(!removed) {
+					synchronized(PooledExecutor.this) {
+						runningThreads[nativePriority - 1]--;
+					}
+				}
+			}
+		}
+		
+		private void innerRun(int nativePriority) {
+			long ranJobs = 0;
 			while(true) {
 				Job job;
 
@@ -209,14 +227,16 @@ public class PooledExecutor implements Executor {
 						synchronized(this) {
 							job = nextJob;
 							nextJob = null;
+							// FIXME Fortify thinks this is double-checked locking. IMHO this is a false alarm.
 							if(job == null)
 								alive = false;
 						}
 
 						if(!alive) {
-							runningThreads[nativePriority - 1].remove(this);
+							runningThreads[nativePriority - 1]--;
 							if(logMINOR)
 								Logger.minor(this, "Exiting having executed " + ranJobs + " jobs : " + this);
+							removed = true;
 							return;
 						}
 					}
@@ -226,8 +246,6 @@ public class PooledExecutor implements Executor {
 				try {
 					setName(job.name + "(" + threadNo + ")");
 					job.runnable.run();
-				} catch (OutOfMemoryError e) {
-					OOMHandler.handleOOM(e);
 				} catch(Throwable t) {
 					Logger.error(this, "Caught " + t + " running job " + job, t);
 				}

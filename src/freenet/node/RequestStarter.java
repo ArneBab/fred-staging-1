@@ -3,15 +3,17 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.node;
 
-import com.db4o.ObjectContainer;
+import static java.util.concurrent.TimeUnit.MINUTES;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 import freenet.client.async.ChosenBlock;
 import freenet.client.async.ClientContext;
-import freenet.client.async.TransientChosenBlock;
+import freenet.client.async.RequestSelectionTreeNode;
+import freenet.client.async.ChosenBlockImpl;
 import freenet.keys.Key;
+import freenet.node.NodeStats.RejectReason;
 import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
-import freenet.support.OOMHandler;
 import freenet.support.RandomGrabArrayItem;
 import freenet.support.RandomGrabArrayItemExclusionList;
 import freenet.support.TokenBucket;
@@ -52,16 +54,18 @@ public class RequestStarter implements Runnable, RandomGrabArrayItemExclusionLis
 	/** Prefetch */
 	public static final short PREFETCH_PRIORITY_CLASS = 5;
 	/** Anything less important than prefetch (redundant??) */
-	public static final short MINIMUM_PRIORITY_CLASS = 6;
+	public static final short PAUSED_PRIORITY_CLASS = 6;
 	
-	public static final short NUMBER_OF_PRIORITY_CLASSES = MINIMUM_PRIORITY_CLASS - MAXIMUM_PRIORITY_CLASS + 1; // include 0 and max !!
+	public static final short NUMBER_OF_PRIORITY_CLASSES = PAUSED_PRIORITY_CLASS - MAXIMUM_PRIORITY_CLASS + 1; // include 0 and max !!
 	
+    public static final short MINIMUM_FETCHABLE_PRIORITY_CLASS = PREFETCH_PRIORITY_CLASS;
+    
 	/** If true, local requests are subject to shouldRejectRequest(). If false, they are only subject to the token
 	 * buckets and the thread limit. FIXME make configurable. */
-	private static final boolean LOCAL_REQUESTS_COMPETE_FAIRLY = true;
+	static final boolean LOCAL_REQUESTS_COMPETE_FAIRLY = true;
 	
 	public static boolean isValidPriorityClass(int prio) {
-		return !((prio < MAXIMUM_PRIORITY_CLASS) || (prio > MINIMUM_PRIORITY_CLASS));
+		return !((prio < MAXIMUM_PRIORITY_CLASS) || (prio > PAUSED_PRIORITY_CLASS));
 	}
 	
 	final BaseRequestThrottle throttle;
@@ -72,22 +76,25 @@ public class RequestStarter implements Runnable, RandomGrabArrayItemExclusionLis
 	RequestScheduler sched;
 	final NodeClientCore core;
 	final NodeStats stats;
-	private long sentRequestTime;
 	private final boolean isInsert;
 	private final boolean isSSK;
+	final boolean realTime;
+	
+	static final int MAX_WAITING_FOR_SLOTS = 50;
 	
 	public RequestStarter(NodeClientCore node, BaseRequestThrottle throttle, String name, TokenBucket outputBucket, TokenBucket inputBucket,
-			RunningAverage averageOutputBytesPerRequest, RunningAverage averageInputBytesPerRequest, boolean isInsert, boolean isSSK) {
+			RunningAverage averageOutputBytesPerRequest, RunningAverage averageInputBytesPerRequest, boolean isInsert, boolean isSSK, boolean realTime) {
 		this.core = node;
 		this.stats = core.nodeStats;
 		this.throttle = throttle;
-		this.name = name;
+		this.name = name + (realTime ? " (realtime)" : " (bulk)");
 		this.outputBucket = outputBucket;
 		this.inputBucket = inputBucket;
 		this.averageOutputBytesPerRequest = averageOutputBytesPerRequest;
 		this.averageInputBytesPerRequest = averageInputBytesPerRequest;
 		this.isInsert = isInsert;
 		this.isSSK = isSSK;
+		this.realTime = realTime;
 	}
 
 	void setScheduler(RequestScheduler sched) {
@@ -95,9 +102,7 @@ public class RequestStarter implements Runnable, RandomGrabArrayItemExclusionLis
 	}
 	
 	void start() {
-		sched.start(core);
 		core.getExecutor().execute(this, name);
-		sched.queueFillRequestStarterQueue();
 	}
 	
 	final String name;
@@ -109,14 +114,13 @@ public class RequestStarter implements Runnable, RandomGrabArrayItemExclusionLis
 	
 	void realRun() {
 		ChosenBlock req = null;
-		sentRequestTime = System.currentTimeMillis();
 		// The last time at which we sent a request or decided not to
-		long cycleTime = sentRequestTime;
+		long cycleTime = System.currentTimeMillis();
 		while(true) {
 			// Allow 5 minutes before we start killing requests due to not connecting.
 			OpennetManager om;
 			if(core.node.peers.countConnectedPeers() < 3 && (om = core.node.getOpennet()) != null &&
-					System.currentTimeMillis() - om.getCreationTime() < 5*60*1000) {
+					System.currentTimeMillis() - om.getCreationTime() < MINUTES.toMillis(5)) {
 				try {
 					synchronized(this) {
 						wait(1000);
@@ -134,7 +138,8 @@ public class RequestStarter implements Runnable, RandomGrabArrayItemExclusionLis
 				if(logMINOR) Logger.minor(this, "Running "+req+" priority "+req.getPriority());
 				if(!req.localRequestOnly) {
 					// Wait
-					long delay = throttle.getDelay();
+					long delay;
+					delay = throttle.getDelay();
 					if(logMINOR) Logger.minor(this, "Delay="+delay+" from "+throttle);
 					long sleepUntil = cycleTime + delay;
 					if(!LOCAL_REQUESTS_COMPETE_FAIRLY) {
@@ -153,9 +158,30 @@ public class RequestStarter implements Runnable, RandomGrabArrayItemExclusionLis
 							}
 					} while(now < sleepUntil);
 				}
-				String reason;
+//				if(!doAIMD) {
+//					// Arbitrary limit on number of local requests waiting for slots.
+//					// Firstly, they use threads. This could be a serious problem for faster nodes.
+//					// Secondly, it may help to prevent wider problems:
+//					// If all queues are full, the network will die.
+//					int[] waiting = core.node.countRequestsWaitingForSlots();
+//					int localRequestsWaitingForSlots = waiting[0];
+//					int maxWaitingForSlots = MAX_WAITING_FOR_SLOTS;
+//					// FIXME calibrate this by the number of local timeouts.
+//					// FIXME consider an AIMD, or some similar mechanism.
+//					// Local timeout-waiting-for-slots is largely dependant on
+//					// the number of requests running, due to strict round-robin,
+//					// so we can probably do something even simpler than an AIMD.
+//					// For now we'll just have a fixed number.
+//					// This should partially address the problem.
+//					// Note that while waitFor() is blocking, we need such a limit anyway.
+//					if(localRequestsWaitingForSlots > maxWaitingForSlots) continue;
+//				}
+				RejectReason reason;
+				assert(req.realTimeFlag == realTime);
 				if(LOCAL_REQUESTS_COMPETE_FAIRLY && !req.localRequestOnly) {
-					if((reason = stats.shouldRejectRequest(true, isInsert, isSSK, true, false, null, false, isInsert && Node.PREFER_INSERT_DEFAULT)) != null) {
+					reason = stats.shouldRejectRequest(true, isInsert, isSSK, true, false, null, false, 
+							Node.PREFER_INSERT_DEFAULT && isInsert, req.realTimeFlag, null);
+					if(reason != null) {
 						if(logMINOR)
 							Logger.minor(this, "Not sending local request: "+reason);
 						// Wait one throttle-delay before trying again
@@ -173,7 +199,7 @@ public class RequestStarter implements Runnable, RandomGrabArrayItemExclusionLis
 					req = sched.grabRequest();
 					if(req == null) {
 						try {
-							wait(1*1000); // this can happen when most but not all stuff is already running but there is still stuff to fetch, so don't wait *too* long.
+							wait(SECONDS.toMillis(1)); // this can happen when most but not all stuff is already running but there is still stuff to fetch, so don't wait *too* long.
 							// FIXME increase when we can be *sure* there is nothing left in the queue (especially for transient requests).
 						} catch (InterruptedException e) {
 							// Ignore
@@ -188,7 +214,7 @@ public class RequestStarter implements Runnable, RandomGrabArrayItemExclusionLis
 					Logger.normal(this, "No requests to start on "+req);
 			}
 			if(!req.localRequestOnly)
-				cycleTime = sentRequestTime = System.currentTimeMillis();
+				cycleTime = System.currentTimeMillis();
 			req = null;
 		}
 	}
@@ -203,8 +229,8 @@ public class RequestStarter implements Runnable, RandomGrabArrayItemExclusionLis
 				req.onDumped();
 				return false;
 			}
-		} else if((!req.isPersistent()) && ((TransientChosenBlock)req).request instanceof SendableInsert) {
-			if(!sched.addTransientInsertFetching((SendableInsert)(((TransientChosenBlock)req).request), req.token)) {
+		} else if(((ChosenBlockImpl)req).request instanceof SendableInsert) {
+			if(!sched.addRunningInsert((SendableInsert)(((ChosenBlockImpl)req).request), req.token.getKey())) {
 				req.onDumped();
 				return false;
 			}
@@ -214,17 +240,16 @@ public class RequestStarter implements Runnable, RandomGrabArrayItemExclusionLis
 		return true;
 	}
 
+	@Override
 	public void run() {
 	    freenet.support.Logger.OSThread.logPID(this);
-		while(true) {
-			try {
-				realRun();
-            } catch (OutOfMemoryError e) {
-				OOMHandler.handleOOM(e);
-			} catch (Throwable t) {
-				Logger.error(this, "Caught "+t, t);
-			}
-		}
+            while(true) {
+                try {
+                    realRun();
+                } catch (Throwable t) {
+                        Logger.error(this, "Caught "+t, t);
+                }
+            }
 	}
 	
 	private class SenderThread implements Runnable {
@@ -237,8 +262,8 @@ public class RequestStarter implements Runnable, RandomGrabArrayItemExclusionLis
 			this.key = key;
 		}
 
+		@Override
 		public void run() {
-			try {
 		    freenet.support.Logger.OSThread.logPID(this);
 		    // FIXME ? key is not known for inserts here
 		    if (key != null)
@@ -251,37 +276,33 @@ public class RequestStarter implements Runnable, RandomGrabArrayItemExclusionLis
 			}
 			if(logMINOR) 
 				Logger.minor(this, "Finished "+req);
-			} finally {
-				if(key != null) sched.removeFetchingKey(key);
-				else if((!req.isPersistent()) && ((TransientChosenBlock)req).request instanceof SendableInsert)
-					sched.removeTransientInsertFetching((SendableInsert)(((TransientChosenBlock)req).request), req.token);
-
-			}
 		}
 		
 	}
 
+	/** LOCKING: Caller must avoid locking while calling this function. In particular,
+	 * if the RequestStarter lock is held we will get a deadlock. */
 	public void wakeUp() {
 		synchronized(this) {
 			notifyAll();
 		}
 	}
 
-	public boolean exclude(RandomGrabArrayItem item, ObjectContainer container, ClientContext context) {
+	/** Can this item be excluded, based on e.g. already running requests?
+	 */
+	@Override
+	public long exclude(RandomGrabArrayItem item, ClientContext context, long now) {
 		if(sched.isRunningOrQueuedPersistentRequest((SendableRequest)item)) {
 			Logger.normal(this, "Excluding already-running request: "+item, new Exception("debug"));
-			return true;
+			return Long.MAX_VALUE;
 		}
-		if(isInsert) return false;
+		if(isInsert) return -1;
 		if(!(item instanceof BaseSendableGet)) {
 			Logger.error(this, "On a request scheduler, exclude() called with "+item, new Exception("error"));
-			return false;
+			return -1;
 		}
 		BaseSendableGet get = (BaseSendableGet) item;
-		if(get.hasValidKeys(sched.fetchingKeys(), container, context))
-			return false;
-		Logger.normal(this, "Excluding (no valid keys): "+get);
-		return true;
+		return get.getWakeupTime(context, now);
 	}
 
 }

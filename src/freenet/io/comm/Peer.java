@@ -46,11 +46,6 @@ public class Peer implements WritableToDataOutputStream {
     private final FreenetInetAddress addr;
 	private final int _port;
 
-	// Create a null peer
-	public Peer() throws Exception {
-		this(InetAddress.getLocalHost(), 0);
-	}
-
 	public Peer(DataInput dis) throws IOException {
 		addr = new FreenetInetAddress(dis);
 		_port = dis.readInt();
@@ -111,7 +106,7 @@ public class Peer implements WritableToDataOutputStream {
 	 * lookup fails.
 	 * @param checkHostnameOrIPSyntax If true, validate the syntax of the given DNS hostname or IPv4
 	 * IP address
-	 * @throws HostSyntaxException If the string is not formatted as a proper DNS hostname
+	 * @throws HostnameSyntaxException If the string is not formatted as a proper DNS hostname
 	 * or IPv4 IP address
 	 * @throws PeerParseException If the string is not valid e.g. if it doesn't contain a 
 	 * port.
@@ -120,7 +115,8 @@ public class Peer implements WritableToDataOutputStream {
 	 */
     public Peer(String physical, boolean allowUnknown, boolean checkHostnameOrIPSyntax) throws HostnameSyntaxException, PeerParseException, UnknownHostException {
         int offset = physical.lastIndexOf(':'); // ipv6
-        if(offset < 0) throw new PeerParseException();
+        if(offset < 0) 
+        	throw new PeerParseException("No port number: \""+physical+"\"");
         String host = physical.substring(0, offset);
         addr = new FreenetInetAddress(host, allowUnknown, checkHostnameOrIPSyntax);
         String strport = physical.substring(offset+1);
@@ -142,7 +138,27 @@ public class Peer implements WritableToDataOutputStream {
 	public boolean isNull() {
 		return _port == 0;
 	}
+	
+	// FIXME same issues as with FreenetInetAddress.laxEquals/equals/strictEquals
+	public boolean laxEquals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (!(o instanceof Peer)) {
+			return false;
+		}
 
+		final Peer peer = (Peer) o;
+
+		if (_port != peer._port) {
+			return false;
+		}
+		if(!addr.laxEquals(peer.addr))
+			return false;
+		return true;
+	}
+
+	// FIXME same issues as with FreenetInetAddress.laxEquals/equals/strictEquals
 	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
@@ -229,6 +245,7 @@ public class Peer implements WritableToDataOutputStream {
 		return addr.toString() + ':' + _port;
 	}
 
+	@Override
 	public void writeToDataOutputStream(DataOutputStream dos) throws IOException {
 		addr.writeToDataOutputStream(dos);
 		dos.writeInt(_port);
@@ -255,5 +272,11 @@ public class Peer implements WritableToDataOutputStream {
 		if(addr != newAddr) {
 			return new Peer(newAddr, _port);
 		} else return this;
+	}
+
+	/** Is this peer using IPv6? */
+	public boolean isIPv6(boolean defaultValue) {
+		if(addr == null) return defaultValue;
+		return addr.isIPv6(defaultValue);
 	}
 }

@@ -7,6 +7,7 @@ import java.util.Calendar;
 import java.util.TimeZone;
 
 import freenet.support.Fields;
+import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
 
@@ -49,18 +50,31 @@ public class Version {
 	public static final String protocolVersion = "1.0";
 
 	/** The build number of the current revision */
-	private static final int buildNumber = 1261;
+	private static final int buildNumber = 1466;
 
-	/** Oldest build of Fred we will talk to */
-	private static final int oldLastGoodBuild = 1255;
-	private static final int newLastGoodBuild = 1260;
+	/** Oldest build of fred we will talk to *before* _cal */
+	private static final int oldLastGoodBuild = 1465;
+	/** Oldest build of fred we will talk to *after* _cal */
+	private static final int newLastGoodBuild = 1466;
 	static final long transitionTime;
 
 	static {
 		final Calendar _cal = Calendar.getInstance(TimeZone.getTimeZone("GMT"));
 		// year, month - 1 (or constant), day, hour, minute, second
-		_cal.set( 2010, Calendar.JULY, 19, 0, 0, 0 );
+		_cal.set( 2014, Calendar.NOVEMBER, 16, 0, 0, 0 );
 		transitionTime = _cal.getTimeInMillis();
+	}
+
+        private static volatile boolean logMINOR;
+        private static volatile boolean logDEBUG;
+	static {
+		Logger.registerLogThresholdCallback(new LogThresholdCallback(){
+			@Override
+			public void shouldUpdate(){
+				logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
+                                logDEBUG = Logger.shouldLog(LogLevel.DEBUG, this);
+			}
+		});
 	}
 
 	/**
@@ -74,21 +88,21 @@ public class Version {
 	 *
 	 * @return The build number (not SVN revision number) of this node.
 	 */
-	public static final int buildNumber() {
+	public static int buildNumber() {
 		return buildNumber;
 	}
 
 	/**
 	 * Analogous to {@link #buildNumber()} but for {@link #publicVersion}.
 	 */
-	public static final String publicVersion() {
+	public static String publicVersion() {
 		return publicVersion;
 	}
 
 	/**
 	 * Analogous to {@link #buildNumber()} but for {@link #transitionTime}.
 	 */
-	public static final long transitionTime() {
+	public static long transitionTime() {
 		return transitionTime;
 	}
 
@@ -98,7 +112,7 @@ public class Version {
 	 * @return The lowest build number with which the node will connect and exchange
 	 * data normally.
 	 */
-	public static final int lastGoodBuild() {
+	public static int lastGoodBuild() {
 		if(System.currentTimeMillis() >= transitionTime)
 			return newLastGoodBuild;
 		else
@@ -106,7 +120,7 @@ public class Version {
 	}
 
 	/** The highest reported build of fred */
-	public static int highestSeenBuild = buildNumber;
+	private static int highestSeenBuild = buildNumber;
 
 	/** The current stable tree version */
 	public static final String stableNodeVersion = "0.7";
@@ -123,38 +137,36 @@ public class Version {
 	/**
 	 * Analogous to {@link #buildNumber()} but for {@link #cvsRevision}.
 	 */
-	public static final String cvsRevision() {
+	public static String cvsRevision() {
 		return cvsRevision;
 	}
-
-	private static boolean logDEBUG = Logger.shouldLog(LogLevel.DEBUG,Version.class);
 
 	/**
 	 * @return the node's version designators as an array
 	 */
-	public static final String[] getVersion() {
+	public static String[] getVersion() {
 		String[] ret =
-			{ nodeName, nodeVersion, protocolVersion, "" + buildNumber };
+			{ nodeName, nodeVersion, protocolVersion,  String.valueOf(buildNumber) };
 		return ret;
 	}
 
-	public static final String[] getLastGoodVersion() {
+	public static String[] getLastGoodVersion() {
 		String[] ret =
-			{ nodeName, nodeVersion, protocolVersion, "" + lastGoodBuild() };
+			{ nodeName, nodeVersion, protocolVersion,  String.valueOf(lastGoodBuild()) };
 		return ret;
 	}
 
 	/**
 	 * @return the version string that should be presented in the NodeReference
 	 */
-	public static final String getVersionString() {
+	public static String getVersionString() {
 		return Fields.commaList(getVersion());
 	}
 
 	/**
 	 * @return is needed for the freeviz
 	 */
-	public static final String getLastGoodVersionString() {
+	public static String getLastGoodVersionString() {
 		return Fields.commaList(getLastGoodVersion());
 	}
 
@@ -175,7 +187,7 @@ public class Version {
 	 * @return true if requests should be accepted from nodes brandishing this
 	 *         version string
 	 */
-	public static final boolean checkGoodVersion(
+	public static boolean checkGoodVersion(
 		String version) {
 	    if(version == null) {
 	        Logger.error(Version.class, "version == null!",
@@ -202,7 +214,7 @@ public class Version {
 					return false;
 				}
 			} catch (NumberFormatException e) {
-				if(Logger.shouldLog(LogLevel.MINOR, Version.class))
+				if(logMINOR)
 					Logger.minor(Version.class,
 							"Not accepting (" + e + ") from " + version);
 				return false;
@@ -237,7 +249,7 @@ public class Version {
 	 * @return true if requests should be accepted from nodes brandishing this
 	 *         version string, given an arbitrary lastGoodVersion
 	 */
-	public static final boolean checkArbitraryGoodVersion(
+	public static boolean checkArbitraryGoodVersion(
 		String version, String lastGoodVersion) {
 	    if(version == null) {
 	        Logger.error(Version.class, "version == null!",
@@ -273,7 +285,7 @@ public class Version {
 					return false;
 				}
 			} catch (NumberFormatException e) {
-				if(Logger.shouldLog(LogLevel.MINOR, Version.class))
+				if(logMINOR)
 					Logger.minor(Version.class,
 							"Not accepting (" + e + ") from " + version + " and/or " + lastGoodVersion);
 				return false;
@@ -307,7 +319,7 @@ public class Version {
 	/**
 	 * @return string explaining why a version string is rejected
 	 */
-	public static final String explainBadVersion(String version) {
+	public static String explainBadVersion(String version) {
 		String[] v = Fields.commaList(version);
 
 		if ((v.length < 3) || !goodProtocol(v[2])) {
@@ -342,7 +354,7 @@ public class Version {
 	/**
 	 * @return the build number of an arbitrary version string
 	 */
-	public static final int getArbitraryBuildNumber(
+	public static int getArbitraryBuildNumber(
 		String version ) throws VersionParseException {
 	    if(version == null) {
 	        Logger.error(Version.class, "version == null!",
@@ -361,7 +373,7 @@ public class Version {
 		}
 	}
 
-	public static final int getArbitraryBuildNumber(
+	public static int getArbitraryBuildNumber(
 			String version, int defaultValue ) {
 		try {
 			return getArbitraryBuildNumber(version);
@@ -373,7 +385,7 @@ public class Version {
 	 * Update static variable highestSeenBuild anytime we encounter
 	 * a new node with a higher version than we've seen before
 	 */
-	public static final void seenVersion(String version) {
+	public static void seenVersion(String version) {
 		String[] v = Fields.commaList(version);
 
 		if ((v == null) || (v.length < 3))
@@ -388,7 +400,7 @@ public class Version {
 				return;
 			}
 			if (buildNo > highestSeenBuild) {
-				if (Logger.shouldLog(LogLevel.MINOR, Version.class)) {
+				if (logMINOR) {
 					Logger.minor(
 						Version.class,
 						"New highest seen build: " + buildNo);
@@ -396,6 +408,10 @@ public class Version {
 				highestSeenBuild = buildNo;
 			}
 		}
+	}
+	
+	public static int getHighestSeenBuild() {
+		return highestSeenBuild;
 	}
 
 	/**

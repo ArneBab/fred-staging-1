@@ -22,11 +22,18 @@ public class DHGroup extends CryptoKey {
 		this.p = p;
 		this.g = g;
 	}
+	
+	protected DHGroup() {
+	    // For serialization.
+	    p = null;
+	    g = null;
+	}
 
 //	public void write(OutputStream out) throws IOException {
 //		super.write(out, getClass().getName());
 //	}
 //
+	@Override
 	public String toLongString() {
 		String pStr = HexUtil.biToHex(p);
 		String gStr = HexUtil.biToHex(g);

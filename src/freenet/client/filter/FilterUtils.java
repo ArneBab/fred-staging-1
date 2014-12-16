@@ -1,9 +1,17 @@
 package freenet.client.filter;
 
+import freenet.support.Logger;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 
 public class FilterUtils {
+	private static volatile boolean logDEBUG;
+	static {
+	    Logger.registerClass(FilterUtils.class);
+	}
+	
+	private final static int MAX_NTH = 999999;  // Limit range of numbers allowed in isNth, due to incorrect behavior found in webkit based browsers.
 
 	//Basic Data types
 	public static boolean isInteger(String strValue)
@@ -285,6 +293,8 @@ public class FilterUtils {
 		CSScolorKeywords.add("teal");
 		CSScolorKeywords.add("white");
 		CSScolorKeywords.add("yellow");
+		// as of CSS3 this is valid: http://www.w3.org/TR/css3-color/#transparent-def
+		CSScolorKeywords.add("transparent");
 	}
 	private final static HashSet<String> CSSsystemColorKeywords=new HashSet<String>();
 	static {
@@ -319,20 +329,18 @@ public class FilterUtils {
 	}
 	public static boolean isValidCSSShape(String value)
 	{
-		if(value.indexOf("rect(")==0 && value.indexOf(")")==value.length()-1)
+		if(value.indexOf("rect(")==0 && value.indexOf(')')==value.length()-1)
 		{
 			String[] shapeParts=value.substring(5,value.length()-1).split(",");
 			if(shapeParts.length==4)
 			{
-				boolean isValidShapeParts=true;
 				for(String s : shapeParts)
 				{
 					s = s.trim();
 					if(!(s.equalsIgnoreCase("auto") || isLength(s, false)))
 						return false;
 				}
-				if(isValidShapeParts)
-					return true;
+				return true;
 			}
 		}
 		return false;
@@ -340,25 +348,18 @@ public class FilterUtils {
 	}
 	private final static HashSet<String> cssMedia = new HashSet<String>();
 	static {
-		for(String s : new String[] {"all","aural","braille","embossed","handheld","print","projection","screen","speech","tty","tv"})
-			cssMedia.add(s);
+	    cssMedia.addAll(Arrays.asList("all", "aural", "braille", "embossed", "handheld", "print", "projection", "screen", "speech", "tty", "tv"));
 	}
 	public static boolean isMedia(String media) {
 		return cssMedia.contains(media);
 	}
-	public static boolean isColor(String value,boolean isSVG)
+	public static boolean isColor(String value)
 	{
 		value=value.trim();
-		if(isSVG)
-		{
-		if(SVGcolorKeywords.contains(value))
+
+		if(CSScolorKeywords.contains(value) || CSSsystemColorKeywords.contains(value) || SVGcolorKeywords.contains(value))
 			return true;
-		}
-		else
-		{
-			if(CSScolorKeywords.contains(value) || CSSsystemColorKeywords.contains(value))
-				return true;
-		}
+
 		if(value.indexOf('#')==0)
 		{
 
@@ -389,12 +390,12 @@ public class FilterUtils {
 				}
 			}
 		}
-		if(value.indexOf("rgb(")==0 && value.indexOf(")")==value.length()-1)
+		if(value.indexOf("rgb(")==0 && value.indexOf(')')==value.length()-1)
 		{
 			String[] colorParts=value.substring(4,value.length()-1).split(",");
 			if(colorParts.length!=3)
 				return false;
-			boolean isValidColorParts=true;;
+			boolean isValidColorParts=true;
 			for(int i=0; i<colorParts.length && isValidColorParts;i++)
 			{
 				if(!(isPercentage(colorParts[i].trim()) || isInteger(colorParts[i].trim())))
@@ -403,8 +404,171 @@ public class FilterUtils {
 			if(isValidColorParts)
 				return true;
 		}
+		if(value.indexOf("rgba(")==0 && value.indexOf(')')==value.length()-1)
+		{
+			String[] colorParts=value.substring(5,value.length()-1).split(",");
+			if(colorParts.length!=4)
+				return false;
+			boolean isValidColorParts=true;
+			for(int i=0; i<colorParts.length-1 && isValidColorParts;i++)
+			{
+				if(!(isPercentage(colorParts[i].trim()) || isInteger(colorParts[i].trim())))
+					isValidColorParts = false;
+			}
+			if(isValidColorParts && isNumber(colorParts[3]))
+				return true;
+		}
+
+		if(value.indexOf("hsl(")==0 && value.indexOf(')')==value.length()-1)
+		{
+			String[] colorParts = value.substring(4, value.length() - 1).split(",");
+			if (colorParts.length != 3) {
+			    return false;
+			}
+
+			if(isNumber(colorParts[0]) && isPercentage(colorParts[1]) && isPercentage(colorParts[2]))
+			    return true;
+		}
+
+		if(value.indexOf("hsla(")==0 && value.indexOf(')')==value.length()-1)
+		{
+			String[] colorParts = value.substring(5, value.length() - 1).split(",");
+			if (colorParts.length != 4) {
+			    return false;
+			}
+
+			if(isNumber(colorParts[0]) && isPercentage(colorParts[1]) && isPercentage(colorParts[2]) && isNumber(colorParts[3]))
+			    return true;
+		}
+
 		return false;
 	}
+	
+	public static boolean isCSSTransform(String value) {
+	    value = value.trim();
+	    if(logDEBUG) Logger.debug(FilterUtils.class, "isCSSTransform(\""+value+"\")");
+	    
+	    if(value.indexOf("matrix(")==0 && value.indexOf(')')==value.length()-1)
+	    {
+		String[] parts = value.substring(7, value.length() - 1).split(",");
+		if (parts.length != 6) {
+		    return false;
+		}
+
+		boolean isValid = true;
+		for (int i = 0; i < parts.length && isValid; i++) {
+		    if (!isNumber(parts[i].trim())) {
+			isValid = false;
+		    }
+		}
+		if (isValid) {
+		    if(logDEBUG) Logger.debug(FilterUtils.class, "isCSSTransform found a matrix()");
+		    return true;
+		}
+	    }
+
+	    if(value.indexOf("translateX(")==0 && value.indexOf(')')==value.length()-1)
+	    {
+		String part = value.substring(11, value.length() - 1);
+		if (isPercentage(part.trim()) || isLength(part.trim(), false)) {
+		    if(logDEBUG) Logger.debug(FilterUtils.class, "isCSSTransform found a translateX()");
+		    return true;
+		}
+	    }
+
+	    if(value.indexOf("translateY(")==0 && value.indexOf(')')==value.length()-1)
+	    {
+		String part = value.substring(11, value.length() - 1);
+		if (isPercentage(part.trim()) || isLength(part.trim(), false)) {
+		    if(logDEBUG) Logger.debug(FilterUtils.class, "isCSSTransform found a translateY()");
+		    return true;
+		}
+	    }
+
+	    if(value.indexOf("translate(")==0 && value.indexOf(')')==value.length()-1)
+	    {
+		String[] parts = value.substring(10, value.length() - 1).split(",");
+		if (parts.length == 1 && (isPercentage(parts[0].trim()) || isLength(parts[0].trim(), false))) {
+		    if(logDEBUG) Logger.debug(FilterUtils.class, "isCSSTransform found a translate()");
+		    return true;
+		}else if (parts.length == 2 && (isPercentage(parts[0].trim()) || isLength(parts[0].trim(), false)) && (isPercentage(parts[1].trim()) || isLength(parts[1].trim(), false))) {
+		    if(logDEBUG) Logger.debug(FilterUtils.class, "isCSSTransform found a translate()");
+		    return true;
+		}
+	    }
+
+	    if(value.indexOf("scale(")==0 && value.indexOf(')')==value.length()-1)
+	    {
+		String[] parts = value.substring(6, value.length() - 1).split(",");
+		if (parts.length == 1 && isNumber(parts[0].trim())) {
+		    if(logDEBUG) Logger.debug(FilterUtils.class, "isCSSTransform found a scale()");
+		    return true;
+		}else if (parts.length == 2 && isNumber(parts[0].trim()) && isNumber(parts[1].trim())) {
+		    if(logDEBUG) Logger.debug(FilterUtils.class, "isCSSTransform found a scale()");
+		    return true;
+		}
+	    }
+	    
+	    if(value.indexOf("scaleX(")==0 && value.indexOf(')')==value.length()-1)
+	    {
+		String part = value.substring(7, value.length() - 1);
+		if (isNumber(part.trim())) {
+		    if(logDEBUG) Logger.debug(FilterUtils.class, "isCSSTransform found a scaleX()");
+		    return true;
+		}
+	    }
+
+	    if(value.indexOf("scaleY(")==0 && value.indexOf(')')==value.length()-1)
+	    {
+		String part = value.substring(7, value.length() - 1);
+		if (isNumber(part.trim())) {
+		    if(logDEBUG) Logger.debug(FilterUtils.class, "isCSSTransform found a scaleY()");
+		    return true;
+		}
+	    }
+
+	    if(value.indexOf("rotate(")==0 && value.indexOf(')')==value.length()-1)
+	    {
+		String part = value.substring(7, value.length() - 1);
+		if (isAngle(part.trim())) {
+		    if(logDEBUG) Logger.debug(FilterUtils.class, "isCSSTransform found a rotate()");
+		    return true;
+		}
+	    }
+
+	    if(value.indexOf("skewX(")==0 && value.indexOf(')')==value.length()-1)
+	    {
+		String part = value.substring(6, value.length() - 1);
+		if (isNumber(part.trim()) || isAngle(part.trim())) {
+		    if(logDEBUG) Logger.debug(FilterUtils.class, "isCSSTransform found a skewX()");
+		    return true;
+		}
+	    }
+
+	    if(value.indexOf("skewY(")==0 && value.indexOf(')')==value.length()-1)
+	    {
+		String part = value.substring(6, value.length() - 1);
+		if (isNumber(part.trim()) || isAngle(part.trim())) {
+		    if(logDEBUG) Logger.debug(FilterUtils.class, "isCSSTransform found a skewY()");
+		    return true;
+		}
+	    }
+
+	    if(value.indexOf("skew(")==0 && value.indexOf(')')==value.length()-1)
+	    {
+		String[] parts = value.substring(5, value.length() - 1).split(",");
+		if (parts.length == 1 && (isNumber(parts[0].trim()) || isAngle(parts[0].trim()))) {
+		    if(logDEBUG) Logger.debug(FilterUtils.class, "isCSSTransform found a skew()");
+		    return true;
+		}else if (parts.length == 2 && (isNumber(parts[0].trim()) || isAngle(parts[0].trim())) && (isNumber(parts[1].trim()) || isAngle(parts[0].trim()))) {
+		    if(logDEBUG) Logger.debug(FilterUtils.class, "isCSSTransform found a skew()");
+		    return true;
+		}
+	    }
+
+	    return false;
+	}
+
 	public static boolean isFrequency(String value)
 	{
 		String firstPart;
@@ -452,7 +616,7 @@ public class FilterUtils {
 		String intValue;
 		if(value.indexOf("ms")>-1 && value.length()>2)
 			intValue=value.substring(0,value.length()-2);
-		else if(value.indexOf("s")>-1 && value.length()>1)
+		else if(value.indexOf('s')>-1 && value.length()>1)
 			intValue=value.substring(0,value.length()-1);
 		else
 			return false;
@@ -524,9 +688,9 @@ public class FilterUtils {
 	public static boolean isPointPair(String value)
 	{
 		String[] pointPairs=splitOnCharArray(value," \n\t");
-		for(int i=0;i<pointPairs.length;i++)
+		for(String pointPair: pointPairs)
 		{
-			String[] strParts=pointPairs[i].split(",");
+			String[] strParts=pointPair.split(",");
 			if(strParts.length!=2)
 				return false;
 			try
@@ -540,6 +704,50 @@ public class FilterUtils {
 			}
 		}
 		return true;
+	}
+	public static boolean isIntegerInRange(String strValue, int min, int max)
+	{
+		try
+		{
+			// Strip any leading '+' character, because Integer.parseInt handles it differently between Java 6 (fails) and 7 (succeeds).
+			if(strValue.length()>1 && strValue.charAt(0)=='+' && Character.isDigit(strValue.charAt(1)))
+			{
+				strValue = strValue.substring(1,strValue.length());
+			}
+			
+			int value = Integer.parseInt(strValue);
+			return (value>=min && value<=max);
+		}
+		catch(Exception e)
+		{
+			return false;
+		}
+	}
+	public static boolean isNth(String value)
+	{
+		if(value.equals("odd") || value.equals("even") || isIntegerInRange(value, -MAX_NTH, MAX_NTH))
+		{
+			return true;
+		}
+		else
+		{
+			// Check if value has the form "an+b" - where a and b can be any in range integer.
+			int nIndex=value.indexOf('n');
+			if(nIndex!=-1)
+			{
+				int aLength=nIndex;
+				if(aLength==0 || (aLength==1 && value.charAt(0)=='-') || isIntegerInRange(value.substring(0,aLength), -MAX_NTH, MAX_NTH))
+				{
+					int bIndex=nIndex+1;
+					int bLength=value.length()-bIndex;
+					if(bLength==0 || ((value.charAt(bIndex)=='+' || value.charAt(bIndex)=='-') && isIntegerInRange(value.substring(bIndex,value.length()), -MAX_NTH, MAX_NTH)))
+					{
+						return true;
+					}
+				}
+			}
+		}
+		return false;
 	}
 //	public static HTMLNode getHTMLNodeFromElement(Element node)
 //	{

@@ -7,6 +7,7 @@ import java.awt.font.FontRenderContext;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.URI;
 import java.sql.Date;
 import java.text.ParseException;
@@ -18,7 +19,7 @@ import freenet.support.MultiValueTable;
 import freenet.support.api.Bucket;
 import freenet.support.api.HTTPRequest;
 
-/** This toadlet creates a png image with the specified text. */
+/** This toadlet creates a PNG image with the specified text. */
 public class ImageCreatorToadlet extends Toadlet {
 
 	/** The default width */
@@ -28,7 +29,9 @@ public class ImageCreatorToadlet extends Toadlet {
 	public static final int		DEFAULT_HEIGHT	= 100;
 
 	/**
-	 * The last modification time of the class, it is required for the client-side cache. If anyone makes modifications to this class, this needs to be updated
+	 * The last modification time of the class, it is required for the
+	 * client-side cache.
+	 * If anyone makes modifications to this class, this needs to be updated.
 	 */
 	public static final Date	LAST_MODIFIED	= new Date(1248256659000l);
 
@@ -44,7 +47,7 @@ public class ImageCreatorToadlet extends Toadlet {
 				// If the received date is equal to the last modification of this class, then it doesn't need regeneration
 				if (ToadletContextImpl.parseHTTPDate(ctx.getHeaders().get("if-modified-since")).compareTo(LAST_MODIFIED) == 0) {
 					// So we just send the NOT_MODIFIED response, and skip the generation
-					ctx.sendReplyHeaders(304, "Not Modified", null, "image/png", 0, LAST_MODIFIED);
+					ctx.sendReplyHeadersStatic(304, "Not Modified", null, "image/png", 0, LAST_MODIFIED);
 					needsGeneration = false;
 				}
 			} catch (ParseException pe) {
@@ -87,9 +90,14 @@ public class ImageCreatorToadlet extends Toadlet {
 
 			// Write the data, and send the modification data to let the client cache it
 			Bucket data = ctx.getBucketFactory().makeBucket(-1);
-			ImageIO.write(buffer, "png", data.getOutputStream());
+			OutputStream os = data.getOutputStream();
+			try {
+				ImageIO.write(buffer, "png", os);
+			} finally {
+				os.close();
+			}
 			MultiValueTable<String, String> headers=new MultiValueTable<String, String>();
-			ctx.sendReplyHeaders(200, "OK", headers, "image/png", data.size(), LAST_MODIFIED);
+			ctx.sendReplyHeadersStatic(200, "OK", headers, "image/png", data.size(), LAST_MODIFIED);
 			ctx.writeData(data);
 		}
 	}

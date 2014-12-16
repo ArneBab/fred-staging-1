@@ -12,6 +12,8 @@ import freenet.node.Node;
 import freenet.node.NodeInitException;
 import freenet.node.NodeStarter;
 import freenet.node.PeerNode;
+import freenet.node.DarknetPeerNode.FRIEND_TRUST;
+import freenet.node.DarknetPeerNode.FRIEND_VISIBILITY;
 import freenet.support.Executor;
 import freenet.support.Logger;
 import freenet.support.PooledExecutor;
@@ -30,8 +32,12 @@ import freenet.support.LoggerHook.InvalidThresholdException;
  */
 public class RealNodePingTest {
 	
-	public static final int DARKNET_PORT1 = RealNodeNetworkColoringTest.DARKNET_PORT_END;
-	public static final int DARKNET_PORT2 = RealNodeNetworkColoringTest.DARKNET_PORT_END+1;
+	public static final int DARKNET_PORT1 = RealNodeBusyNetworkTest.DARKNET_PORT_END;
+	public static final int DARKNET_PORT2 = RealNodeBusyNetworkTest.DARKNET_PORT_END+1;
+	public static final int DARKNET_PORT_END = DARKNET_PORT2+1;
+	
+	static final FRIEND_TRUST trust = FRIEND_TRUST.LOW;
+	static final FRIEND_VISIBILITY visibility = FRIEND_VISIBILITY.NO;
 
     public static void main(String[] args) throws FSParseException, PeerParseException, InterruptedException, ReferenceSignatureVerificationException, NodeInitException, InvalidThresholdException {
         RandomSource random = NodeStarter.globalTestInit("pingtest", false, LogLevel.ERROR, "", true);
@@ -40,8 +46,8 @@ public class RealNodePingTest {
         Node node1 = NodeStarter.createTestNode(DARKNET_PORT1, 0, "pingtest", true, Node.DEFAULT_MAX_HTL, 0, random, executor, 1000, 65536, true, false, false, false, false, false, true, 0, false, false, true, false, null);
         Node node2 = NodeStarter.createTestNode(DARKNET_PORT2, 0, "pingtest", true, Node.DEFAULT_MAX_HTL, 0, random, executor, 1000, 65536, true, false, false, false, false, false, true, 0, false, false, true, false, null);
         // Connect
-        node1.connect(node2);
-        node2.connect(node1);
+        node1.connect(node2, trust, visibility);
+        node2.connect(node1, trust, visibility);
         // No swapping
         node1.start(true);
         node2.start(true);
@@ -51,18 +57,18 @@ public class RealNodePingTest {
         Thread.sleep(20000);
         //node1.usm.setDropProbability(4);
         while(true) {
-            Logger.minor(RealNodePingTest.class, "Sending PING "+pingID);
+            Logger.error(RealNodePingTest.class, "Sending PING "+pingID);
             boolean success;
             try {
                 success = pn.ping(pingID);
             } catch (NotConnectedException e1) {
-                Logger.normal(RealNodePingTest.class, "Not connected");
+                Logger.error(RealNodePingTest.class, "Not connected");
                 continue;
             }
             if(success)
-                Logger.normal(RealNodePingTest.class, "PING "+pingID+" successful");
+                Logger.error(RealNodePingTest.class, "PING "+pingID+" successful");
             else
-                Logger.normal(RealNodePingTest.class, "PING FAILED: "+pingID);
+                Logger.error(RealNodePingTest.class, "PING FAILED: "+pingID);
             try {
                 Thread.sleep(2000);
             } catch (InterruptedException e) {

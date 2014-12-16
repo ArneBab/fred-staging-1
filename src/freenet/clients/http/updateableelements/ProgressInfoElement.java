@@ -43,9 +43,10 @@ public class ProgressInfoElement extends BaseUpdateableElement {
 		children.clear();
 
 		FProxyFetchWaiter waiter = tracker.makeWaiterForFetchInProgress(key, maxSize, fctx);
-		FProxyFetchResult fr = waiter.getResult();
+		FProxyFetchResult fr = waiter == null ? null : waiter.getResult();
 		if (fr == null) {
 			addChild("div", "No fetcher found");
+			return;
 		}
 		
 		addChild("#", FProxyToadlet.l10n("filenameLabel")+ " ");
@@ -59,8 +60,8 @@ public class ProgressInfoElement extends BaseUpdateableElement {
 		}
 		long elapsed = System.currentTimeMillis() - fr.timeStarted;
 		addChild("br");
-		addChild(new SecondCounterNode(System.currentTimeMillis() - fr.timeStarted, true, FProxyToadlet.l10n("timeElapsedLabel") + " "));
-		long eta = fr.eta;
+		addChild(new SecondCounterNode(elapsed, true, FProxyToadlet.l10n("timeElapsedLabel") + " "));
+		long eta = fr.eta - elapsed;
 		if (eta > 0) {
 			addChild("br");
 			addChild(new SecondCounterNode(eta, false, "ETA: "));
@@ -92,7 +93,7 @@ public class ProgressInfoElement extends BaseUpdateableElement {
 	}
 
 	public static String getId(FreenetURI uri) {
-		return Base64.encodeStandard(("progressinfo[URI:" + uri.toString() + "]").getBytes());
+		return Base64.encodeStandardUTF8(("progressinfo[URI:" + uri.toString() + "]"));
 	}
 
 	@Override

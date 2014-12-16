@@ -6,8 +6,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import freenet.node.Ticker;
 import freenet.support.Logger;
+import freenet.support.Ticker;
 
 /** A manager class that manages all the pushing. All it's public method must be synchronized to maintain consistency. */
 public class PushDataManager {
@@ -320,6 +320,11 @@ public class PushDataManager {
 			}
 			return false;
 		}
+		
+		@Override
+		public int hashCode() {
+			return requestId.hashCode() + elementId.hashCode();
+		}
 
 		@Override
 		public String toString() {
@@ -329,6 +334,7 @@ public class PushDataManager {
 
 	/** A task for the Cleaner, that periodically checks for failed requests. */
 	private class CleanerTimerTask implements Runnable {
+		@Override
 		public void run() {
 			synchronized (PushDataManager.this) {
 				if (logMINOR) {
@@ -348,7 +354,7 @@ public class PushDataManager {
 						isKeepaliveReceived.put(entry.getKey(), false);
 					}
 				}
-				if (isKeepaliveReceived.size() != 0 && isScheduled == false) {
+				if (isKeepaliveReceived.size() != 0) {
 					if (logMINOR) {
 						Logger.minor(this, "Cleaner is queued(2) time:" + System.currentTimeMillis());
 					}

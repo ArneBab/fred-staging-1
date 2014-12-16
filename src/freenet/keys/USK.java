@@ -3,10 +3,11 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.keys;
 
+import java.io.Serializable;
 import java.net.MalformedURLException;
 import java.util.Arrays;
-
-import com.db4o.ObjectContainer;
+import java.util.Comparator;
+import java.util.regex.Pattern;
 
 import freenet.support.Fields;
 import freenet.support.Logger;
@@ -19,11 +20,14 @@ import freenet.support.Logger;
  * - Enough information to produce a real SSK.
  * - Site name.
  * - Site edition number.
+ * 
+ * WARNING: Changing non-transient members on classes that are Serializable can result in 
+ * restarting downloads or losing uploads.
  */
-// WARNING: THIS CLASS IS STORED IN DB4O -- THINK TWICE BEFORE ADD/REMOVE/RENAME FIELDS
-public class USK extends BaseClientKey {
+public class USK extends BaseClientKey implements Comparable<USK>, Serializable {
 
-	/* The character to separate the site name from the edition number in its SSK form.
+    private static final long serialVersionUID = 1L;
+    /* The character to separate the site name from the edition number in its SSK form.
 	 * I chose "-", because it makes it ludicrously easy to go from the USK form to the
 	 * SSK form, and we don't need to go vice versa.
 	 */
@@ -31,9 +35,9 @@ public class USK extends BaseClientKey {
 	/** Encryption type */
 	public final byte cryptoAlgorithm;
 	/** Public key hash */
-	public final byte[] pubKeyHash;
+	protected final byte[] pubKeyHash;
 	/** Encryption key */
-	public final byte[] cryptoKey;
+	protected final byte[] cryptoKey;
 	// Extra must be verified on creation, and is fixed for now. FIXME if it becomes changeable, need to keep values here.
 	
 	public final String siteName;
@@ -77,6 +81,21 @@ public class USK extends BaseClientKey {
 		hashCode = Fields.hashCode(pubKeyHash) ^ Fields.hashCode(cryptoKey) ^
 			siteName.hashCode() ^ (int)suggestedEdition ^ (int)(suggestedEdition >> 32);
 	}
+	
+	protected USK() {
+	    // For serialization.
+        pubKeyHash = null;
+        cryptoKey = null;
+        siteName = null;
+	    suggestedEdition = 0;
+	    cryptoAlgorithm = 0;
+	    hashCode = 0;
+	}
+
+	private static final Pattern badDocNamePattern;
+	static {
+		badDocNamePattern = Pattern.compile(".*\\-[0-9]+(\\/.*)?$");
+	}
 
 	// FIXME: Be careful with this constructor! There must not be an edition in the ClientSSK!
 	public USK(ClientSSK ssk, long myARKNumber) {
@@ -86,7 +105,7 @@ public class USK extends BaseClientKey {
 		this.suggestedEdition = myARKNumber;
 		this.cryptoAlgorithm = ssk.cryptoAlgorithm;
 
-		if (siteName.matches(".*\\-[0-9]+(\\/.*)?$"))	// not error -- just "possible" bug
+		if (badDocNamePattern.matcher(siteName).matches())	// not error -- just "possible" bug
 			Logger.normal(this, "POSSIBLE BUG: edition in ClientSSK " + ssk, new Exception("debug"));
 
 		hashCode = Fields.hashCode(pubKeyHash) ^ Fields.hashCode(cryptoKey) ^
@@ -94,9 +113,12 @@ public class USK extends BaseClientKey {
 	}
 
 	public USK(USK usk) {
-		this.pubKeyHash = new byte[usk.pubKeyHash.length];
-		System.arraycopy(usk.pubKeyHash, 0, pubKeyHash, 0, usk.pubKeyHash.length);
+		// FIXME can we not copy pubKeyHash?
+		// If we can guarantee that neither USK nor anything getting it without copying will change it?
+		// db4o treats byte[] as individual byte members, so there are no issues with deactivation.
+		this.pubKeyHash = usk.pubKeyHash.clone();
 		this.cryptoAlgorithm = usk.cryptoAlgorithm;
+		// FIXME should we copy cryptoKey?
 		this.cryptoKey = usk.cryptoKey;
 		this.siteName = usk.siteName;
 		this.suggestedEdition = usk.suggestedEdition;
@@ -139,8 +161,10 @@ public class USK extends BaseClientKey {
 		return copy(0);
 	}
 	
-	@Override
-	public USK clone() {
+	public final USK copy() {
+		// We need our own constructor to make sure we copy pubKeyHash.
+		// So clone() doesn't work for this.
+		// FIXME when we are sure we don't need to copy the byte[]'s we might be able to switch back to clone().
 		return new USK(this);
 	}
 	
@@ -200,7 +224,38 @@ public class USK extends BaseClientKey {
 		return uri;
 	}
 
-	public void removeFrom(ObjectContainer container) {
-		container.delete(this);
+	@Override
+	public int compareTo(USK o) {
+		if(this == o) return 0;
+		if(cryptoAlgorithm < o.cryptoAlgorithm) return -1;
+		if(cryptoAlgorithm > o.cryptoAlgorithm) return 1;
+		int cmp = Fields.compareBytes(pubKeyHash, o.pubKeyHash);
+		if(cmp != 0) return cmp;
+		cmp = Fields.compareBytes(cryptoKey, o.cryptoKey);
+		if(cmp != 0) return cmp;
+		cmp = siteName.compareTo(o.siteName);
+		if(cmp != 0) return cmp;
+		if(suggestedEdition > o.suggestedEdition) return 1;
+		if(suggestedEdition < o.suggestedEdition) return -1;
+		return 0;
+	}
+	
+	public static final Comparator<USK> FAST_COMPARATOR = new Comparator<USK>() {
+
+		@Override
+		public int compare(USK o1, USK o2) {
+			if(o1.hashCode > o2.hashCode) return 1;
+			else if(o1.hashCode < o2.hashCode) return -1;
+			return o1.compareTo(o2);
+		}
+		
+	};
+
+	public byte[] getPubKeyHash() {
+		return Arrays.copyOf(pubKeyHash, pubKeyHash.length);
+	}
+
+	public boolean samePubKeyHash(NodeSSK k) {
+		return Arrays.equals(k.getPubKeyHash(), pubKeyHash);
 	}
 }

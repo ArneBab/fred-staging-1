@@ -6,8 +6,6 @@ package freenet.client.async;
 import java.util.HashMap;
 import java.util.Map;
 
-import com.db4o.ObjectContainer;
-
 import freenet.client.InsertContext;
 import freenet.client.InsertException;
 import freenet.client.Metadata;
@@ -15,25 +13,55 @@ import freenet.keys.BaseClientKey;
 import freenet.keys.CHKBlock;
 import freenet.keys.FreenetURI;
 import freenet.node.RequestClient;
+import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
 import freenet.support.api.Bucket;
 
-public class SimpleHealingQueue extends BaseClientPutter implements HealingQueue, PutCompletionCallback {
+public class SimpleHealingQueue extends BaseClientPutter implements HealingQueue, PutCompletionCallback, ClientRequestSchedulerGroup {
 
 	final int maxRunning;
 	int counter;
 	InsertContext ctx;
 	final Map<Bucket, SingleBlockInserter> runningInserters;
 
-	public SimpleHealingQueue(InsertContext context, short prio, int maxRunning) {
-		super(prio, new RequestClient() {
-			public boolean persistent() {
-				return false;
+        private static volatile boolean logMINOR;
+	static {
+		Logger.registerLogThresholdCallback(new LogThresholdCallback(){
+			@Override
+			public void shouldUpdate(){
+				logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
 			}
-			public void removeFrom(ObjectContainer container) {
-				throw new UnsupportedOperationException();
-			} });
+		});
+	}
+	
+	static final RequestClient REQUEST_CLIENT = 
+	    new RequestClient() {
+            @Override
+            public boolean persistent() {
+                return false;
+            }
+            @Override
+            public boolean realTimeFlag() {
+                return false;
+            }
+	};
+    
+    static final ClientBaseCallback BOGUS_CALLBACK = 
+        new ClientBaseCallback() {
+            @Override
+            public void onResume(ClientContext context) {
+                throw new IllegalStateException(); // Impossible.
+            }
+
+            @Override
+            public RequestClient getRequestClient() {
+                return REQUEST_CLIENT;
+            }
+    };
+
+	public SimpleHealingQueue(InsertContext context, short prio, int maxRunning) {
+		super(prio, BOGUS_CALLBACK);
 		this.ctx = context;
 		this.runningInserters = new HashMap<Bucket, SingleBlockInserter>();
 		this.maxRunning = maxRunning;
@@ -47,8 +75,8 @@ public class SimpleHealingQueue extends BaseClientPutter implements HealingQueue
 			if(runningInserters.size() > maxRunning) return false;
 			try {
 				sbi = new SingleBlockInserter(this, data, (short)-1,
-							FreenetURI.EMPTY_CHK_URI, ctx, this, false,
-							CHKBlock.DATA_LENGTH, ctr, false, false, false, data, null, context, false, true, 0, cryptoAlgorithm, cryptoKey);
+							FreenetURI.EMPTY_CHK_URI, ctx, realTimeFlag, this, false,
+							CHKBlock.DATA_LENGTH, ctr, false, false, data, context, false, true, 0, cryptoAlgorithm, cryptoKey);
 			} catch (Throwable e) {
 				Logger.error(this, "Caught trying to insert healing block: "+e, e);
 				return false;
@@ -56,8 +84,8 @@ public class SimpleHealingQueue extends BaseClientPutter implements HealingQueue
 			runningInserters.put(data, sbi);
 		}
 		try {
-			sbi.schedule(null, context);
-			if(Logger.shouldLog(LogLevel.MINOR, this))
+			sbi.schedule(context);
+			if(logMINOR)
 				Logger.minor(this, "Started healing insert "+ctr+" for "+data);
 			return true;
 		} catch (Throwable e) {
@@ -66,14 +94,10 @@ public class SimpleHealingQueue extends BaseClientPutter implements HealingQueue
 		}
 	}
 
+	@Override
 	public void queue(Bucket data, byte[] cryptoKey, byte cryptoAlgorithm, ClientContext context) {
 		if(!innerQueue(data, cryptoKey, cryptoAlgorithm, context))
 			data.free();
-	}
-
-	@Override
-	public void onMajorProgress(ObjectContainer container) {
-		// Ignore
 	}
 
 	@Override
@@ -87,66 +111,73 @@ public class SimpleHealingQueue extends BaseClientPutter implements HealingQueue
 	}
 
 	@Override
-	public void notifyClients(ObjectContainer container, ClientContext context) {
+	protected void innerNotifyClients(ClientContext context) {
 		// Do nothing
 	}
 
-	public void onSuccess(ClientPutState state, ObjectContainer container, ClientContext context) {
+	@Override
+	public void onSuccess(ClientPutState state, ClientContext context) {
 		SingleBlockInserter sbi = (SingleBlockInserter)state;
 		Bucket data = (Bucket) sbi.getToken();
 		synchronized(this) {
 			runningInserters.remove(data);
 		}
-		if(Logger.shouldLog(LogLevel.MINOR, this))
+		if(logMINOR)
 			Logger.minor(this, "Successfully inserted healing block: "+sbi.getURINoEncode()+" for "+data+" ("+sbi.token+ ')');
 		data.free();
 	}
 
-	public void onFailure(InsertException e, ClientPutState state, ObjectContainer container, ClientContext context) {
+	@Override
+	public void onFailure(InsertException e, ClientPutState state, ClientContext context) {
 		SingleBlockInserter sbi = (SingleBlockInserter)state;
 		Bucket data = (Bucket) sbi.getToken();
 		synchronized(this) {
 			runningInserters.remove(data);
 		}
-		if(Logger.shouldLog(LogLevel.MINOR, this))
+		if(logMINOR)
 			Logger.minor(this, "Failed to insert healing block: "+sbi.getURINoEncode()+" : "+e+" for "+data+" ("+sbi.token+ ')', e);
 		data.free();
 	}
 
-	public void onEncode(BaseClientKey usk, ClientPutState state, ObjectContainer container, ClientContext context) {
+	@Override
+	public void onEncode(BaseClientKey usk, ClientPutState state, ClientContext context) {
 		// Ignore
 	}
 
-	public void onTransition(ClientPutState oldState, ClientPutState newState, ObjectContainer container) {
+	@Override
+	public void onTransition(ClientPutState oldState, ClientPutState newState, ClientContext context) {
 		// Should never happen
 		Logger.error(this, "impossible: onTransition on SimpleHealingQueue from "+oldState+" to "+newState, new Exception("debug"));
 	}
 
-	public void onMetadata(Metadata m, ClientPutState state, ObjectContainer container, ClientContext context) {
+	@Override
+	public void onMetadata(Metadata m, ClientPutState state, ClientContext context) {
 		// Should never happen
 		Logger.error(this, "Got metadata on SimpleHealingQueue from "+state+": "+m, new Exception("debug"));
 	}
 
-	public void onBlockSetFinished(ClientPutState state, ObjectContainer container, ClientContext context) {
-		// Ignore
-	}
-
-	public void onFetchable(ClientPutState state, ObjectContainer container) {
+	@Override
+	public void onBlockSetFinished(ClientPutState state, ClientContext context) {
 		// Ignore
 	}
 
 	@Override
-	public void onTransition(ClientGetState oldState, ClientGetState newState, ObjectContainer container) {
+	public void onFetchable(ClientPutState state) {
 		// Ignore
 	}
 
 	@Override
-	protected void innerToNetwork(ObjectContainer container, ClientContext context) {
+	public void onTransition(ClientGetState oldState, ClientGetState newState, ClientContext context) {
 		// Ignore
 	}
 
 	@Override
-	public void cancel(ObjectContainer container, ClientContext context) {
+	protected void innerToNetwork(ClientContext context) {
+		// Ignore
+	}
+
+	@Override
+	public void cancel(ClientContext context) {
 		super.cancel();
 	}
 
@@ -154,5 +185,27 @@ public class SimpleHealingQueue extends BaseClientPutter implements HealingQueue
 	public int getMinSuccessFetchBlocks() {
 		return 0;
 	}
+
+	@Override
+	public void onMetadata(Bucket meta, ClientPutState state,
+			ClientContext context) {
+		Logger.error(this, "onMetadata() in SimpleHealingQueue - impossible", new Exception("error"));
+		meta.free();
+	}
+
+    @Override
+    public void innerOnResume(ClientContext context) {
+        // Do nothing. Not persisted.
+    }
+
+    @Override
+    protected ClientBaseCallback getCallback() {
+        return null;
+    }
+
+    @Override
+    public ClientRequestSchedulerGroup getSchedulerGroup() {
+        return this;
+    }
 
 }

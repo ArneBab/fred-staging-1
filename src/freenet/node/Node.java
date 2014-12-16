@@ -11,13 +11,14 @@ import static freenet.node.stats.DataStoreType.CACHE;
 import static freenet.node.stats.DataStoreType.CLIENT;
 import static freenet.node.stats.DataStoreType.SLASHDOT;
 import static freenet.node.stats.DataStoreType.STORE;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.MINUTES;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 import java.io.BufferedReader;
-import java.io.EOFException;
 import java.io.File;
 import java.io.FileFilter;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -25,21 +26,18 @@ import java.io.RandomAccessFile;
 import java.io.UnsupportedEncodingException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.text.DecimalFormat;
-import java.util.Calendar;
+import java.security.SecureRandom;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.MissingResourceException;
 import java.util.Random;
 import java.util.Set;
-import java.util.TimeZone;
-import java.util.Vector;
 
-import org.spaceroots.mantissa.random.MersenneTwister;
+import freenet.node.useralerts.JVMVersionAlert;
+import freenet.support.JVMVersion;
 import org.tanukisoftware.wrapper.WrapperManager;
 
 import com.db4o.Db4o;
@@ -47,26 +45,16 @@ import com.db4o.ObjectContainer;
 import com.db4o.ObjectSet;
 import com.db4o.config.Configuration;
 import com.db4o.config.GlobalOnlyConfigException;
-import com.db4o.defragment.AvailableClassFilter;
-import com.db4o.defragment.BTreeIDMapping;
-import com.db4o.defragment.Defragment;
-import com.db4o.defragment.DefragmentConfig;
 import com.db4o.diagnostic.ClassHasNoFields;
 import com.db4o.diagnostic.Diagnostic;
 import com.db4o.diagnostic.DiagnosticBase;
 import com.db4o.diagnostic.DiagnosticListener;
 import com.db4o.ext.Db4oException;
 import com.db4o.io.IoAdapter;
-import com.db4o.io.RandomAccessFileAdapter;
-import com.sleepycat.je.DatabaseException;
-import com.sleepycat.je.Environment;
-import com.sleepycat.je.EnvironmentConfig;
-import com.sleepycat.je.EnvironmentMutableConfig;
 
-import freenet.client.FECQueue;
 import freenet.client.FetchContext;
-import freenet.client.async.ClientRequestScheduler;
-import freenet.client.async.SplitFileInserterSegment;
+import freenet.clients.fcp.FCPMessage;
+import freenet.clients.fcp.FeedMessage;
 import freenet.clients.http.SecurityLevelsToadlet;
 import freenet.clients.http.SimpleToadletServer;
 import freenet.config.EnumerableOptionCallback;
@@ -77,7 +65,8 @@ import freenet.config.PersistentConfig;
 import freenet.config.SubConfig;
 import freenet.crypt.DSAPublicKey;
 import freenet.crypt.DiffieHellman;
-import freenet.crypt.EncryptingIoAdapter;
+import freenet.crypt.ECDH;
+import freenet.crypt.MasterSecret;
 import freenet.crypt.RandomSource;
 import freenet.crypt.Yarrow;
 import freenet.io.comm.DMT;
@@ -109,31 +98,33 @@ import freenet.keys.SSKBlock;
 import freenet.keys.SSKVerifyException;
 import freenet.l10n.BaseL10n;
 import freenet.l10n.NodeL10n;
+import freenet.node.DarknetPeerNode.FRIEND_TRUST;
+import freenet.node.DarknetPeerNode.FRIEND_VISIBILITY;
 import freenet.node.NodeDispatcher.NodeDispatcherCallback;
 import freenet.node.OpennetManager.ConnectionType;
-import freenet.node.SecurityLevels.FRIENDS_THREAT_LEVEL;
 import freenet.node.SecurityLevels.NETWORK_THREAT_LEVEL;
 import freenet.node.SecurityLevels.PHYSICAL_THREAT_LEVEL;
-import freenet.node.fcp.FCPMessage;
-import freenet.node.fcp.FeedMessage;
+import freenet.node.probe.Listener;
+import freenet.node.probe.Type;
 import freenet.node.stats.DataStoreInstanceType;
 import freenet.node.stats.DataStoreStats;
 import freenet.node.stats.NotAvailNodeStoreStats;
 import freenet.node.stats.StoreCallbackStats;
 import freenet.node.updater.NodeUpdateManager;
-import freenet.node.useralerts.BuildOldAgeUserAlert;
-import freenet.node.useralerts.ExtOldAgeUserAlert;
+import freenet.node.updater.UpdateDeployContext;
+import freenet.node.updater.UpdateDeployContext.CHANGED;
 import freenet.node.useralerts.MeaningfulNodeNameUserAlert;
 import freenet.node.useralerts.NotEnoughNiceLevelsUserAlert;
 import freenet.node.useralerts.SimpleUserAlert;
 import freenet.node.useralerts.TimeSkewDetectedUserAlert;
 import freenet.node.useralerts.UserAlert;
 import freenet.pluginmanager.ForwardPort;
+import freenet.pluginmanager.PluginDownLoaderOfficialHTTPS;
 import freenet.pluginmanager.PluginManager;
 import freenet.pluginmanager.PluginStore;
-import freenet.store.BerkeleyDBFreenetStore;
 import freenet.store.BlockMetadata;
 import freenet.store.CHKStore;
+import freenet.store.CachingFreenetStore;
 import freenet.store.FreenetStore;
 import freenet.store.KeyCollisionException;
 import freenet.store.NullFreenetStore;
@@ -143,23 +134,21 @@ import freenet.store.SSKStore;
 import freenet.store.SlashdotStore;
 import freenet.store.StorableBlock;
 import freenet.store.StoreCallback;
-import freenet.store.FreenetStore.StoreType;
+import freenet.store.saltedhash.ResizablePersistentIntBuffer;
 import freenet.store.saltedhash.SaltedHashFreenetStore;
 import freenet.support.Executor;
 import freenet.support.Fields;
-import freenet.support.FileLoggerHook;
 import freenet.support.HTMLNode;
 import freenet.support.HexUtil;
-import freenet.support.LRUQueue;
 import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
-import freenet.support.OOMHandler;
+import freenet.support.Logger.LogLevel;
 import freenet.support.PooledExecutor;
+import freenet.support.PrioritizedTicker;
 import freenet.support.ShortBuffer;
 import freenet.support.SimpleFieldSet;
-import freenet.support.SizeUtil;
+import freenet.support.Ticker;
 import freenet.support.TokenBucket;
-import freenet.support.Logger.LogLevel;
 import freenet.support.api.BooleanCallback;
 import freenet.support.api.IntCallback;
 import freenet.support.api.LongCallback;
@@ -169,6 +158,7 @@ import freenet.support.io.ArrayBucketFactory;
 import freenet.support.io.Closer;
 import freenet.support.io.FileUtil;
 import freenet.support.io.NativeThread;
+import freenet.support.math.MersenneTwister;
 import freenet.support.transport.ip.HostnameSyntaxException;
 
 /**
@@ -196,6 +186,7 @@ public class Node implements TimeSkewDetectorCallback {
 			}
 		}
 
+		@Override
 		public void run() {
 			System.err.println("Migrating old "+(clientCache ? "client cache" : "datastore"));
 			if(clientCache) {
@@ -260,8 +251,6 @@ public class Node implements TimeSkewDetectorCallback {
 			}
 			ramstore.clear();
 		} else if(store instanceof SaltedHashFreenetStore) {
-			SaltedHashFreenetStore<T> saltstore = (SaltedHashFreenetStore<T>) store;
-			// FIXME
 			Logger.error(this, "Migrating from from a saltedhashstore not fully supported yet: will not keep old keys");
 		}
 	}
@@ -290,7 +279,6 @@ public class Node implements TimeSkewDetectorCallback {
 		});
 	}
 	private static MeaningfulNodeNameUserAlert nodeNameUserAlert;
-	private static BuildOldAgeUserAlert buildOldAgeUserAlert;
 	private static TimeSkewDetectedUserAlert timeSkewDetectedUserAlert;
 
 	public class NodeNameCallback extends StringCallback  {
@@ -302,7 +290,7 @@ public class Node implements TimeSkewDetectorCallback {
 			synchronized(this) {
 				name = myName;
 			}
-			if(name.startsWith("Node id|")|| name.equals("MyFirstFreenetNode")){
+			if(name.startsWith("Node id|")|| name.equals("MyFirstFreenetNode") || name.startsWith("Freenet node with no name #")){
 				clientCore.alerts.register(nodeNameUserAlert);
 			}else{
 				clientCore.alerts.unregister(nodeNameUserAlert);
@@ -367,8 +355,9 @@ public class Node implements TimeSkewDetectorCallback {
 			}
 		}
 
+		@Override
 		public String[] getPossibleValues() {
-			return new String[] { "bdb-index", "salt-hash", "ram" };
+			return new String[] { "salt-hash", "ram" };
 		}
 	}
 
@@ -393,66 +382,42 @@ public class Node implements TimeSkewDetectorCallback {
 			if (!found)
 				throw new InvalidConfigValueException("Invalid store type");
 
-			String type;
-			synchronized(Node.this) {
-				type = clientCacheType;
-				if(clientCacheAwaitingPassword)
-					type = "ram";
-			}
-				synchronized(this) { // Serialise this part.
-					String suffix = getStoreSuffix();
-					if (val.equals("salt-hash")) {
-						byte[] key;
-						synchronized(Node.this) {
-							key = cachedClientCacheKey;
-							cachedClientCacheKey = null;
-						}
-						if(key == null) {
-							MasterKeys keys = null;
-							try {
-								if(securityLevels.physicalThreatLevel == PHYSICAL_THREAT_LEVEL.MAXIMUM) {
-									key = new byte[32];
-									random.nextBytes(key);
-								} else {
-									keys = MasterKeys.read(masterKeysFile, random, "");
-									key = keys.clientCacheMasterKey;
-									keys.clearAllNotClientCacheKey();
-								}
-							} catch (MasterKeysWrongPasswordException e1) {
-								setClientCacheAwaitingPassword();
-								synchronized(Node.this) {
-									clientCacheType = val;
-								}
-								throw new InvalidConfigValueException("You must enter the password");
-							} catch (MasterKeysFileSizeException e1) {
-								throw new InvalidConfigValueException("Master keys file corrupted (too " + e1.sizeToString() + ")");
-							} catch (IOException e1) {
-								throw new InvalidConfigValueException("Master keys file cannot be accessed: "+e1);
-							}
-						}
-						try {
-							initSaltHashClientCacheFS(suffix, true, key);
-						} catch (NodeInitException e) {
-							Logger.error(this, "Unable to create new store", e);
-							System.err.println("Unable to create new store: "+e);
-							e.printStackTrace();
-							// FIXME l10n both on the NodeInitException and the wrapper message
-							throw new InvalidConfigValueException("Unable to create new store: "+e);
-						} finally {
-							MasterKeys.clear(key);
-						}
-					} else if(val.equals("ram")) {
-						initRAMClientCacheFS();
-					} else /*if(val.equals("none")) */{
-						initNoClientCacheFS();
+			synchronized(this) { // Serialise this part.
+				String suffix = getStoreSuffix();
+				if (val.equals("salt-hash")) {
+					byte[] key;
+                    try {
+                        synchronized(Node.this) {
+                            if(keys == null) throw new MasterKeysWrongPasswordException();
+                            key = keys.clientCacheMasterKey;
+                            clientCacheType = val;
+                        }
+                    } catch (MasterKeysWrongPasswordException e1) {
+                        setClientCacheAwaitingPassword();
+                        throw new InvalidConfigValueException("You must enter the password");
 					}
-
-					synchronized(Node.this) {
-						clientCacheType = val;
+					try {
+						initSaltHashClientCacheFS(suffix, true, key);
+					} catch (NodeInitException e) {
+						Logger.error(this, "Unable to create new store", e);
+						System.err.println("Unable to create new store: "+e);
+						e.printStackTrace();
+						// FIXME l10n both on the NodeInitException and the wrapper message
+						throw new InvalidConfigValueException("Unable to create new store: "+e);
 					}
+				} else if(val.equals("ram")) {
+					initRAMClientCacheFS();
+				} else /*if(val.equals("none")) */{
+					initNoClientCacheFS();
 				}
+				
+				synchronized(Node.this) {
+					clientCacheType = val;
+				}
+			}
 		}
 
+		@Override
 		public String[] getPossibleValues() {
 			return new String[] { "salt-hash", "ram", "none" };
 		}
@@ -475,30 +440,35 @@ public class Node implements TimeSkewDetectorCallback {
 			PluginManager.setLanguage(NodeL10n.getBase().getSelectedLanguage());
 		}
 
+		@Override
 		public String[] getPossibleValues() {
 			return BaseL10n.LANGUAGE.valuesWithFullNames();
 		}
 	}
 
-	private final File dbFile;
-	private final File dbFileCrypt;
-	private boolean defragDatabaseOnStartup;
-	private boolean defragOnce;
+	final File dbFile; // FIXME remove
+	final File dbFileCrypt; // FIXME remove
 	/** db4o database for node and client layer.
 	 * Other databases can be created for the datastore (since its usage
 	 * patterns and content are completely different), or for plugins (for
-	 * security reasons). */
+	 * security reasons). FIXME remove. */
 	public ObjectContainer db;
+	private volatile boolean hasPanicked;
 	/** A fixed random number which identifies the top-level objects belonging to
 	 * this node, as opposed to any others that might be stored in the same database
-	 * (e.g. because of many-nodes-in-one-VM). */
+	 * (e.g. because of many-nodes-in-one-VM). FIXME remove when db4o back compaibility is removed. */
 	public long nodeDBHandle;
 
-	private boolean autoChangeDatabaseEncryption = true;
+	/** Encryption key for client.dat.crypt or client.dat.bak.crypt (and also the old node.db4o.
+	 * crypt) */
+	private DatabaseKey databaseKey;
+	
+	/** Encryption keys, if loaded, null if waiting for a password. We must be able to write them, 
+	 * and they're all used elsewhere anyway, so there's no point trying not to keep them in memory. */
+	private MasterKeys keys;
 
 	/** Stats */
 	public final NodeStats nodeStats;
-	public final NetworkIDManager netid;
 
 	/** Config object for the whole node. */
 	public final PersistentConfig config;
@@ -516,13 +486,17 @@ public class Node implements TimeSkewDetectorCallback {
 	public static final int PACKET_SIZE = 1024;
 	public static final double DECREMENT_AT_MIN_PROB = 0.25;
 	public static final double DECREMENT_AT_MAX_PROB = 0.5;
-	// Send keepalives every 14-28 seconds. Comfortably fits within 30 second timeout.
-	// If the packet is dropped, we will send ack requests etc, so this should be fine.
-	public static final int KEEPALIVE_INTERVAL = 14000;
+	// Send keepalives every 7-14 seconds. Will be acked and if necessary resent.
+	// Old behaviour was keepalives every 14-28. Even that was adequate for a 30 second
+	// timeout. Most nodes don't need to send keepalives because they are constantly busy,
+	// this is only an issue for disabled darknet connections, very quiet private networks
+	// etc.
+	public static final long KEEPALIVE_INTERVAL = SECONDS.toMillis(7);
 	// If no activity for 30 seconds, node is dead
-	public static final int MAX_PEER_INACTIVITY = 60000;
+	// 35 seconds allows plenty of time for resends etc even if above is 14 sec as it is on older nodes.
+	public static final long MAX_PEER_INACTIVITY = SECONDS.toMillis(35);
 	/** Time after which a handshake is assumed to have failed. */
-	public static final int HANDSHAKE_TIMEOUT = 4800; // Keep the below within the 30 second assumed timeout.
+	public static final int HANDSHAKE_TIMEOUT = (int) MILLISECONDS.toMillis(4800); // Keep the below within the 30 second assumed timeout.
 	// Inter-handshake time must be at least 2x handshake timeout
 	public static final int MIN_TIME_BETWEEN_HANDSHAKE_SENDS = HANDSHAKE_TIMEOUT*2; // 10-20 secs
 	public static final int RANDOMIZED_TIME_BETWEEN_HANDSHAKE_SENDS = HANDSHAKE_TIMEOUT*2; // avoid overlap when the two handshakes are at the same time
@@ -535,28 +509,36 @@ public class Node implements TimeSkewDetectorCallback {
 	public static final int MIN_BURSTING_HANDSHAKE_BURST_SIZE = 1; // 1-4 handshake sends per burst
 	public static final int RANDOMIZED_BURSTING_HANDSHAKE_BURST_SIZE = 3;
 	// If we don't receive any packets at all in this period, from any node, tell the user
-	public static final long ALARM_TIME = 60*1000;
+	public static final long ALARM_TIME = MINUTES.toMillis(1);
 
-	// 900ms
-	static final int MIN_INTERVAL_BETWEEN_INCOMING_SWAP_REQUESTS = 900;
-	static final int MIN_INTERVAL_BETWEEN_INCOMING_PROBE_REQUESTS = 1000;
+	static final long MIN_INTERVAL_BETWEEN_INCOMING_SWAP_REQUESTS = MILLISECONDS.toMillis(900);
+	static final long MIN_INTERVAL_BETWEEN_INCOMING_PROBE_REQUESTS = MILLISECONDS.toMillis(1000);
 	public static final int SYMMETRIC_KEY_LENGTH = 32; // 256 bits - note that this isn't used everywhere to determine it
-	/** Minimum space for zipped logfiles on testnet */
-	static final long TESTNET_MIN_MAX_ZIPPED_LOGFILES = 512*1024*1024;
-	static final String TESTNET_MIN_MAX_ZIPPED_LOGFILES_STRING = "512M";
 
 	/** Datastore directory */
-	private final File storeDir;
+	private final ProgramDirectory storeDir;
 
 	/** Datastore properties */
 	private String storeType;
-	private int storeBloomFilterSize;
-	private final boolean storeBloomFilterCounting;
+	private boolean storeUseSlotFilters;
 	private boolean storeSaltHashResizeOnStart;
+	
+	/** Minimum total datastore size */
+	static final long MIN_STORE_SIZE = 32 * 1024 * 1024;
+	/** Default datastore size (must be at least MIN_STORE_SIZE) */
+	static final long DEFAULT_STORE_SIZE = 32 * 1024 * 1024;
+	/** Minimum client cache size */
+	static final long MIN_CLIENT_CACHE_SIZE = 0;
+	/** Default client cache size (must be at least MIN_CLIENT_CACHE_SIZE) */
+	static final long DEFAULT_CLIENT_CACHE_SIZE = 10 * 1024 * 1024;
+	/** Minimum slashdot cache size */
+	static final long MIN_SLASHDOT_CACHE_SIZE = 0;
+	/** Default slashdot cache size (must be at least MIN_SLASHDOT_CACHE_SIZE) */
+	static final long DEFAULT_SLASHDOT_CACHE_SIZE = 10 * 1024 * 1024;
 
 	/** The number of bytes per key total in all the different datastores. All the datastores
 	 * are always the same size in number of keys. */
-	static final int sizePerKey = CHKBlock.DATA_LENGTH + CHKBlock.TOTAL_HEADERS_LENGTH +
+	public static final int sizePerKey = CHKBlock.DATA_LENGTH + CHKBlock.TOTAL_HEADERS_LENGTH +
 		DSAPublicKey.PADDED_SIZE + SSKBlock.DATA_LENGTH + SSKBlock.TOTAL_HEADERS_LENGTH;
 
 	/** The maximum number of keys stored in each of the datastores, cache and store combined. */
@@ -570,11 +552,7 @@ public class Node implements TimeSkewDetectorCallback {
 	 * preserve the most recently used data so are not recommended. */
 	private boolean storeForceBigShrinks;
 
-	/* These are private because must be protected by synchronized(this) */
-	private Environment storeEnvironment;
-	private EnvironmentMutableConfig envMutableConfig;
 	private final SemiOrderedShutdownHook shutdownHook;
-	private long databaseMaxMemory;
 	/** The CHK datastore. Long term storage; data should only be inserted here if
 	 * this node is the closest location on the chain so far, and it is on an
 	 * insert (because inserts will always reach the most specialized node; if we
@@ -595,9 +573,6 @@ public class Node implements TimeSkewDetectorCallback {
 	long maxClientCacheKeys;
 	/** Maximum size of the client cache. Kept to avoid rounding problems. */
 	private long maxTotalClientCacheSize;
-
-	/** Cached client cache key if the user is in the first-time wizard */
-	private byte[] cachedClientCacheKey;
 
 	/** The CHK datacache. Short term cache which stores everything that passes
 	 * through this node. */
@@ -621,7 +596,7 @@ public class Node implements TimeSkewDetectorCallback {
 	// FIXME make the first two configurable
 	private long maxSlashdotCacheSize;
 	private int maxSlashdotCacheKeys;
-	static final long PURGE_INTERVAL = 60*1000;
+	static final long PURGE_INTERVAL = SECONDS.toMillis(60);
 
 	private CHKStore chkSlashdotcache;
 	private SlashdotStore<CHKBlock> chkSlashdotcacheStore;
@@ -637,12 +612,8 @@ public class Node implements TimeSkewDetectorCallback {
 	 * sharing purposes. */
 	private boolean writeLocalToDatastore;
 
-	final GetPubkey getPubKey;
+	final NodeGetPubkey getPubKey;
 
-	/** RequestSender's currently transferring, by key */
-	private final HashMap<NodeCHK, RequestSender> transferringRequestSenders;
-	/** UIDs of RequestHandler's currently transferring */
-	private final HashSet<Long> transferringRequestHandlers;
 	/** FetchContext for ARKs */
 	public final FetchContext arkFetcherContext;
 
@@ -652,19 +623,8 @@ public class Node implements TimeSkewDetectorCallback {
 	 * probabilistic decrement at the edges of the HTLs. */
 	boolean disableProbabilisticHTLs;
 
-	/** HashSet of currently running request UIDs */
-	private final HashMap<Long,UIDTag> runningUIDs;
-	private final HashMap<Long,RequestTag> runningCHKGetUIDs;
-	private final HashMap<Long,RequestTag> runningLocalCHKGetUIDs;
-	private final HashMap<Long,RequestTag> runningSSKGetUIDs;
-	private final HashMap<Long,RequestTag> runningLocalSSKGetUIDs;
-	private final HashMap<Long,InsertTag> runningCHKPutUIDs;
-	private final HashMap<Long,InsertTag> runningLocalCHKPutUIDs;
-	private final HashMap<Long,InsertTag> runningSSKPutUIDs;
-	private final HashMap<Long,InsertTag> runningLocalSSKPutUIDs;
-	private final HashMap<Long,OfferReplyTag> runningCHKOfferReplyUIDs;
-	private final HashMap<Long,OfferReplyTag> runningSSKOfferReplyUIDs;
-
+	public final RequestTracker tracker;
+	
 	/** Semi-unique ID for swap requests. Used to identify us so that the
 	 * topology can be reconstructed. */
 	public long swapIdentifier;
@@ -672,14 +632,27 @@ public class Node implements TimeSkewDetectorCallback {
 	public final LocationManager lm;
 	/** My peers */
 	public final PeerManager peers;
-	/** Directory to put node, peers, etc into */
-	final File nodeDir;
+	/** Node-reference directory (node identity, peers, etc) */
+	final ProgramDirectory nodeDir;
+	/** Config directory (l10n overrides, etc) */
+	final ProgramDirectory cfgDir;
+	/** User data directory (bookmarks, download lists, etc) */
+	final ProgramDirectory userDir;
+	/** Run-time state directory (bootID, PRNG seed, etc) */
+	final ProgramDirectory runDir;
+	/** Plugin directory */
+	final ProgramDirectory pluginDir;
+
 	/** File to write crypto master keys into, possibly passworded */
 	final File masterKeysFile;
 	/** Directory to put extra peer data into */
 	final File extraPeerDataDir;
 	/** Strong RNG */
 	public final RandomSource random;
+	/** JCA-compliant strong RNG. WARNING: DO NOT CALL THIS ON THE MAIN NETWORK
+	 * HANDLING THREADS! In some configurations it can block, potentially 
+	 * forever, on nextBytes()! */
+	public final SecureRandom secureRandom;
 	/** Weak but fast RNG */
 	public final Random fastWeakRandom;
 	/** The object which handles incoming messages and allows us to wait for them */
@@ -688,6 +661,8 @@ public class Node implements TimeSkewDetectorCallback {
 	// Darknet stuff
 
 	NodeCrypto darknetCrypto;
+	// Back compat
+	private boolean showFriendsVisibilityAlert;
 
 	// Opennet stuff
 
@@ -702,11 +677,10 @@ public class Node implements TimeSkewDetectorCallback {
 
 	public final Executor executor;
 	public final PacketSender ps;
+	public final PrioritizedTicker ticker;
 	final DNSRequester dnsr;
 	final NodeDispatcher dispatcher;
 	public final UptimeEstimator uptime;
-	final boolean testnetEnabled;
-	final TestnetHandler testnetHandler;
 	public final TokenBucket outputThrottle;
 	public boolean throttleLocalData;
 	private int outputBandwidthLimit;
@@ -722,14 +696,16 @@ public class Node implements TimeSkewDetectorCallback {
 	boolean enablePacketCoalescing;
 	public static final short DEFAULT_MAX_HTL = (short)18;
 	private short maxHTL;
+	private boolean skipWrapperWarning;
+	private int maxPacketSize;
 	/** Should inserts ignore low backoff times by default? */
-	public static boolean IGNORE_LOW_BACKOFF_DEFAULT = false;
+	public static final boolean IGNORE_LOW_BACKOFF_DEFAULT = false;
 	/** Definition of "low backoff times" for above. */
-	public static int LOW_BACKOFF = 30*1000;
+	public static final long LOW_BACKOFF = SECONDS.toMillis(30);
 	/** Should inserts be fairly blatently prioritised on accept by default? */
-	public static boolean PREFER_INSERT_DEFAULT = false;
+	public static final boolean PREFER_INSERT_DEFAULT = false;
 	/** Should inserts fork when the HTL reaches cacheability? */
-	public static boolean FORK_ON_CACHEABLE_DEFAULT = true;
+	public static final boolean FORK_ON_CACHEABLE_DEFAULT = true;
 	public final IOStatisticCollector collector;
 	/** Type identifier for fproxy node to node messages, as sent on DMT.nodeToNodeMessage's */
 	public static final int N2N_MESSAGE_TYPE_FPROXY = 1;
@@ -785,8 +761,6 @@ public class Node implements TimeSkewDetectorCallback {
 	public final InetAddress localhostAddress;
 	public final FreenetInetAddress fLocalhostAddress;
 
-	private boolean wasTestnet;
-
 	// The node starter
 	private static NodeStarter nodeStarter;
 
@@ -804,6 +778,44 @@ public class Node implements TimeSkewDetectorCallback {
 	private volatile boolean isPRNGReady = false;
 
 	private boolean storePreallocate;
+	
+	private boolean enableRoutedPing;
+
+	/**
+	 * Minimum bandwidth limit in bytes considered usable: 5 KiB. If there is an attempt to set a limit below this -
+	 * excluding the reserved -1 for input bandwidth - the callback will throw. See the callbacks for
+	 * outputBandwidthLimit and inputBandwidthLimit.
+	 */
+	private static final int minimumBandwidth = 5 * 1024;
+
+	/*
+	 * Gets minimum bandwidth in bytes considered usable.
+	 *
+	 * @see #minimumBandwidth
+	 */
+	public static int getMinimumBandwidth() {
+		return minimumBandwidth;
+	}
+
+	/**
+	 * Returns an exception with an explanation that the given bandwidth limit is too low.
+	 *
+	 * See the Node.bandwidthMinimum localization string.
+	 * @param limit Bandwidth limit in bytes.
+	 */
+	private InvalidConfigValueException lowBandwidthLimit(int limit) {
+		return new InvalidConfigValueException(l10n("bandwidthMinimum",
+		    new String[] { "limit", "minimum" },
+		    new String[] { Integer.toString(limit), Integer.toString(minimumBandwidth) }));
+	}
+
+	/**
+	 * Dispatches a probe request with the specified settings
+	 * @see freenet.node.probe.Probe#start(byte, long, Type, Listener)
+	 */
+	public void startProbe(final byte htl, final long uid, final Type type, final Listener listener) {
+		dispatcher.probe.start(htl, uid, type, listener);
+	}
 
 	/**
 	 * Read all storable settings (identity etc) from the node file.
@@ -860,8 +872,6 @@ public class Node implements TimeSkewDetectorCallback {
 		} else {
 			lastVersion = Version.getArbitraryBuildNumber(verString, -1);
 		}
-
-		wasTestnet = Fields.stringToBool(fs.get("testnet"), false);
 	}
 
 	public void makeStore(String val) throws InvalidConfigValueException {
@@ -869,16 +879,6 @@ public class Node implements TimeSkewDetectorCallback {
 		if (val.equals("salt-hash")) {
 			try {
 				initSaltHashFS(suffix, true, null);
-			} catch (NodeInitException e) {
-				Logger.error(this, "Unable to create new store", e);
-				System.err.println("Unable to create new store: "+e);
-				e.printStackTrace();
-				// FIXME l10n both on the NodeInitException and the wrapper message
-				throw new InvalidConfigValueException("Unable to create new store: "+e);
-			}
-		} else if (val.equals("bdb-index")) {
-			try {
-				initBDBFS(suffix);
 			} catch (NodeInitException e) {
 				Logger.error(this, "Unable to create new store", e);
 				System.err.println("Unable to create new store: "+e);
@@ -897,14 +897,14 @@ public class Node implements TimeSkewDetectorCallback {
 
 
 	private String newName() {
-		return "Node id|"+random.nextLong();
+		return "Freenet node with no name #"+random.nextLong();
 	}
 
 	private final Object writeNodeFileSync = new Object();
 
 	public void writeNodeFile() {
 		synchronized(writeNodeFileSync) {
-			writeNodeFile(new File(nodeDir, "node-"+getDarknetPortNumber()), new File(nodeDir, "node-"+getDarknetPortNumber()+".bak"));
+			writeNodeFile(nodeDir.file("node-"+getDarknetPortNumber()), nodeDir.file("node-"+getDarknetPortNumber()+".bak"));
 		}
 	}
 
@@ -980,6 +980,7 @@ public class Node implements TimeSkewDetectorCallback {
 		this.shutdownHook = SemiOrderedShutdownHook.get();
 		// Easy stuff
 		String tmp = "Initializing Node using Freenet Build #"+Version.buildNumber()+" r"+Version.cvsRevision()+" and freenet-ext Build #"+NodeStarter.extBuildNumber+" r"+NodeStarter.extRevisionNumber+" with "+System.getProperty("java.vendor")+" JVM version "+System.getProperty("java.version")+" running on "+System.getProperty("os.arch")+' '+System.getProperty("os.name")+' '+System.getProperty("os.version");
+		fixCertsFiles();
 		Logger.normal(this, tmp);
 		System.out.println(tmp);
 		collector = new IOStatisticCollector();
@@ -987,13 +988,26 @@ public class Node implements TimeSkewDetectorCallback {
 		nodeStarter=ns;
 		if(logConfigHandler != lc)
 			logConfigHandler=lc;
-		getPubKey = new GetPubkey(this);
+		getPubKey = new NodeGetPubkey(this);
 		startupTime = System.currentTimeMillis();
 		SimpleFieldSet oldConfig = config.getSimpleFieldSet();
 		// Setup node-specific configuration
 		final SubConfig nodeConfig = new SubConfig("node", config);
+		final SubConfig installConfig = new SubConfig("node.install", config);
 
 		int sortOrder = 0;
+
+		// Directory for node-related files other than store
+		this.userDir = setupProgramDir(installConfig, "userDir", ".",
+		  "Node.userDir", "Node.userDirLong", nodeConfig);
+		this.cfgDir = setupProgramDir(installConfig, "cfgDir", getUserDir().toString(),
+		  "Node.cfgDir", "Node.cfgDirLong", nodeConfig);
+		this.nodeDir = setupProgramDir(installConfig, "nodeDir", getUserDir().toString(),
+		  "Node.nodeDir", "Node.nodeDirLong", nodeConfig);
+		this.runDir = setupProgramDir(installConfig, "runDir", getUserDir().toString(),
+		  "Node.runDir", "Node.runDirLong", nodeConfig);
+		this.pluginDir = setupProgramDir(installConfig, "pluginDir",  userDir().file("plugins").toString(),
+		  "Node.pluginDir", "Node.pluginDirLong", nodeConfig);
 
 		// l10n stuffs
 		nodeConfig.register("l10n", Locale.getDefault().getLanguage().toLowerCase(), sortOrder++, false, true,
@@ -1002,12 +1016,12 @@ public class Node implements TimeSkewDetectorCallback {
 				new L10nCallback());
 
 		try {
-			new NodeL10n(BaseL10n.LANGUAGE.mapToLanguage(nodeConfig.getString("l10n")));
+			new NodeL10n(BaseL10n.LANGUAGE.mapToLanguage(nodeConfig.getString("l10n")), getCfgDir());
 		} catch (MissingResourceException e) {
 			try {
-				new NodeL10n(BaseL10n.LANGUAGE.mapToLanguage(nodeConfig.getOption("l10n").getDefault()));
+				new NodeL10n(BaseL10n.LANGUAGE.mapToLanguage(nodeConfig.getOption("l10n").getDefault()), getCfgDir());
 			} catch (MissingResourceException e1) {
-				new NodeL10n(BaseL10n.LANGUAGE.mapToLanguage(BaseL10n.LANGUAGE.getDefault().shortCode));
+				new NodeL10n(BaseL10n.LANGUAGE.mapToLanguage(BaseL10n.LANGUAGE.getDefault().shortCode), getCfgDir());
 			}
 		}
 
@@ -1027,43 +1041,95 @@ public class Node implements TimeSkewDetectorCallback {
 			e4.printStackTrace();
 			throw new NodeInitException(NodeInitException.EXIT_COULD_NOT_START_FPROXY, "Could not start FProxy: "+e4);
 		}
+		
+		final NativeThread entropyGatheringThread = new NativeThread(new Runnable() {
+			
+			long tLastAdded = -1;
 
-		// Setup RNG if needed : DO NOT USE IT BEFORE THAT POINT!
-		if(r == null) {
-			final NativeThread entropyGatheringThread = new NativeThread(new Runnable() {
+			private void recurse(File f) {
+				if(isPRNGReady)
+					return;
+				extendTimeouts();
+				File[] subDirs = f.listFiles(new FileFilter() {
 
-				private void recurse(File f) {
+					@Override
+					public boolean accept(File pathname) {
+						return pathname.exists() && pathname.canRead() && pathname.isDirectory();
+					}
+				});
+
+
+				// @see http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=5086412
+				if(subDirs != null)
+					for(File currentDir : subDirs)
+						recurse(currentDir);
+			}
+
+			@Override
+			public void run() {
+				try {
+					// Delay entropy generation helper hack if enough entropy available
+					Thread.sleep(100);
+				} catch (InterruptedException e) {
+				}
+				if(isPRNGReady)
+					return;
+				System.out.println("Not enough entropy available.");
+				System.out.println("Trying to gather entropy (randomness) by reading the disk...");
+				if(File.separatorChar == '/') {
+					if(new File("/dev/hwrng").exists())
+						System.out.println("/dev/hwrng exists - have you installed rng-tools?");
+					else
+						System.out.println("You should consider installing a better random number generator e.g. haveged.");
+				}
+				extendTimeouts();
+				for(File root : File.listRoots()) {
 					if(isPRNGReady)
 						return;
-					File[] subDirs = f.listFiles(new FileFilter() {
-
-						public boolean accept(File pathname) {
-							return pathname.exists() && pathname.canRead() && pathname.isDirectory();
-						}
-					});
-
-
-					// @see http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=5086412
-					if(subDirs != null)
-						for(File currentDir : subDirs)
-							recurse(currentDir);
+					recurse(root);
 				}
+			}
+			
+			/** This is ridiculous, but for some users it can take more than an hour, and timing out sucks
+			 * a few bytes and then times out again. :( */
+			static final int EXTEND_BY = 60*60*1000;
+			
+			private void extendTimeouts() {
+				long now = System.currentTimeMillis();
+				if(now - tLastAdded < EXTEND_BY/2) return;
+				long target = tLastAdded + EXTEND_BY;
+				while(target < now)
+					target += EXTEND_BY;
+				long extend = target - now;
+				assert(extend < Integer.MAX_VALUE);
+				assert(extend > 0);
+				WrapperManager.signalStarting((int)extend);
+				tLastAdded = now;
+			}
 
-				public void run() {
-					for(File root : File.listRoots()) {
-						if(isPRNGReady)
-							return;
-						recurse(root);
-					}
-				}
-			}, "Entropy Gathering Thread", NativeThread.MIN_PRIORITY, true);
+		}, "Entropy Gathering Thread", NativeThread.MIN_PRIORITY, true);
 
+		// Setup RNG if needed : DO NOT USE IT BEFORE THAT POINT!
+		if (r == null) {
+			// Preload required freenet.crypt.Util and freenet.crypt.Rijndael classes (selftest can delay Yarrow startup and trigger false lack-of-enthropy message)
+			freenet.crypt.Util.mdProviders.size();
+			freenet.crypt.ciphers.Rijndael.getProviderName();
+
+			File seed = userDir.file("prng.seed");
+			FileUtil.setOwnerRW(seed);
 			entropyGatheringThread.start();
-			this.random = new Yarrow();
+			// Can block.
+			this.random = new Yarrow(seed);
 			DiffieHellman.init(random);
-
-		} else // if it's not null it's because we are running in the simulator
+			// http://bugs.sun.com/view_bug.do;jsessionid=ff625daf459fdffffffffcd54f1c775299e0?bug_id=4705093
+			// This might block on /dev/random while doing new SecureRandom(). Once it's created, it won't block.
+			ECDH.blockingInit();
+		} else {
 			this.random = r;
+			// if it's not null it's because we are running in the simulator
+		}
+		// This can block too.
+		this.secureRandom = NodeStarter.getGlobalSecureRandom();
 		isPRNGReady = true;
 		toadlets.getStartupToadlet().setIsPRNGReady();
 		if(weakRandom == null) {
@@ -1074,7 +1140,6 @@ public class Node implements TimeSkewDetectorCallback {
 			this.fastWeakRandom = weakRandom;
 
 		nodeNameUserAlert = new MeaningfulNodeNameUserAlert(this);
-		recentlyCompletedIDs = new LRUQueue<Long>();
 		this.config = config;
 		lm = new LocationManager(random, this);
 
@@ -1085,201 +1150,114 @@ public class Node implements TimeSkewDetectorCallback {
 			throw new Error(e3);
 		}
 		fLocalhostAddress = new FreenetInetAddress(localhostAddress);
-		transferringRequestSenders = new HashMap<NodeCHK, RequestSender>();
-		transferringRequestHandlers = new HashSet<Long>();
-		runningUIDs = new HashMap<Long,UIDTag>();
-		runningCHKGetUIDs = new HashMap<Long,RequestTag>();
-		runningLocalCHKGetUIDs = new HashMap<Long,RequestTag>();
-		runningSSKGetUIDs = new HashMap<Long,RequestTag>();
-		runningLocalSSKGetUIDs = new HashMap<Long,RequestTag>();
-		runningCHKPutUIDs = new HashMap<Long,InsertTag>();
-		runningLocalCHKPutUIDs = new HashMap<Long,InsertTag>();
-		runningSSKPutUIDs = new HashMap<Long,InsertTag>();
-		runningLocalSSKPutUIDs = new HashMap<Long,InsertTag>();
-		runningCHKOfferReplyUIDs = new HashMap<Long,OfferReplyTag>();
-		runningSSKOfferReplyUIDs = new HashMap<Long,OfferReplyTag>();
 
 		this.securityLevels = new SecurityLevels(this, config);
 
-		// Directory for node-related files other than store
-
-		nodeConfig.register("nodeDir", ".", sortOrder++, true, true /* because can't be changed on the fly, also for packages */, "Node.nodeDir", "Node.nodeDirLong",
-				new StringCallback() {
-					@Override
-					public String get() {
-						return nodeDir.getPath();
-					}
-					@Override
-					public void set(String val) throws InvalidConfigValueException {
-						if(nodeDir.equals(new File(val))) return;
-						// FIXME support it
-						// Don't translate the below as very few users will use it.
-						throw new InvalidConfigValueException("Moving node directory on the fly not supported at present");
-					}
-					@Override
-					public boolean isReadOnly() {
-				        return true;
-			        }
-		});
-
-		nodeDir = new File(nodeConfig.getString("nodeDir"));
-		if(!((nodeDir.exists() && nodeDir.isDirectory()) || (nodeDir.mkdir()))) {
-			String msg = "Could not find or create datastore directory";
-			throw new NodeInitException(NodeInitException.EXIT_BAD_NODE_DIR, msg);
-		}
-
-		nodeConfig.register("autoChangeDatabaseEncryption", true, sortOrder++, true, false, "Node.autoChangeDatabaseEncryption", "Node.autoChangeDatabaseEncryptionLong", new BooleanCallback() {
-
-			@Override
-			public Boolean get() {
-				synchronized(Node.this) {
-					return autoChangeDatabaseEncryption;
-				}
-			}
-
-			@Override
-			public void set(Boolean val) throws InvalidConfigValueException, NodeNeedRestartException {
-				synchronized(Node.this) {
-					autoChangeDatabaseEncryption = val;
-				}
-			}
-
-		});
-
-		autoChangeDatabaseEncryption = nodeConfig.getBoolean("autoChangeDatabaseEncryption");
-
 		// Location of master key
-
 		nodeConfig.register("masterKeyFile", "master.keys", sortOrder++, true, true, "Node.masterKeyFile", "Node.masterKeyFileLong",
-				new StringCallback() {
+			new StringCallback() {
 
-					@Override
-					public String get() {
-						if(masterKeysFile == null) return "none";
-						else return masterKeysFile.getPath();
-					}
+				@Override
+				public String get() {
+					if(masterKeysFile == null) return "none";
+					else return masterKeysFile.getPath();
+				}
 
-					@Override
-					public void set(String val) throws InvalidConfigValueException, NodeNeedRestartException {
-						// FIXME l10n
-						// FIXME wipe the old one and move
-						throw new InvalidConfigValueException("Node.masterKeyFile cannot be changed on the fly, you must shutdown, wipe the old file and reconfigure");
-					}
+				@Override
+				public void set(String val) throws InvalidConfigValueException, NodeNeedRestartException {
+					// FIXME l10n
+					// FIXME wipe the old one and move
+					throw new InvalidConfigValueException("Node.masterKeyFile cannot be changed on the fly, you must shutdown, wipe the old file and reconfigure");
+				}
 
 		});
-
 		String value = nodeConfig.getString("masterKeyFile");
 		File f;
-		if(value.equalsIgnoreCase("none")) {
+		if (value.equalsIgnoreCase("none")) {
 			f = null;
 		} else {
 			f = new File(value);
-			if((!nodeDir.getPath().equals(".")) && !f.isAbsolute() && !value.startsWith(nodeDir.getPath()))
-				f = new File(nodeDir, value);
 
 			if(f.exists() && !(f.canWrite() && f.canRead()))
 				throw new NodeInitException(NodeInitException.EXIT_CANT_WRITE_MASTER_KEYS, "Cannot read from and write to master keys file "+f);
 		}
 		masterKeysFile = f;
-
-		shutdownHook.addEarlyJob(new NativeThread("Shutdown database", NativeThread.HIGH_PRIORITY, true) {
-
-			public void realRun() {
-				System.err.println("Stopping database jobs...");
-				if(clientCore == null) return;
-				clientCore.killDatabase();
-			}
-
-		});
-
-		shutdownHook.addLateJob(new NativeThread("Close database", NativeThread.HIGH_PRIORITY, true) {
-
-			@Override
-			public void realRun() {
-				if(db == null) return;
-				System.err.println("Rolling back unfinished transactions...");
-				db.rollback();
-				System.err.println("Closing database...");
-				db.close();
-				if(securityLevels.getPhysicalThreatLevel() == PHYSICAL_THREAT_LEVEL.MAXIMUM) {
-					try {
-						FileUtil.secureDelete(dbFileCrypt, random);
-					} catch (IOException e) {
-						// Ignore
-					} finally {
-						dbFileCrypt.delete();
-					}
-				}
-			}
-
-		});
-
-		nodeConfig.register("defragDatabaseOnStartup", true, sortOrder++, false, true, "Node.defragDatabaseOnStartup", "Node.defragDatabaseOnStartupLong", new BooleanCallback() {
+		FileUtil.setOwnerRW(masterKeysFile);
+		
+		nodeConfig.register("showFriendsVisibilityAlert", false, sortOrder++, true, false, "Node.showFriendsVisibilityAlert", "Node.showFriendsVisibilityAlertLong", new BooleanCallback() {
 
 			@Override
 			public Boolean get() {
 				synchronized(Node.this) {
-					return defragDatabaseOnStartup;
+					return showFriendsVisibilityAlert;
 				}
 			}
 
 			@Override
-			public void set(Boolean val) throws InvalidConfigValueException, NodeNeedRestartException {
-				synchronized(Node.this) {
-					defragDatabaseOnStartup = val;
+			public void set(Boolean val) throws InvalidConfigValueException,
+					NodeNeedRestartException {
+				synchronized(this) {
+					if(val == showFriendsVisibilityAlert) return;
+					if(val) return;
 				}
+				unregisterFriendsVisibilityAlert();
 			}
-
+			
+			
+			
 		});
+		
+		showFriendsVisibilityAlert = nodeConfig.getBoolean("showFriendsVisibilityAlert");
 
-		defragDatabaseOnStartup = nodeConfig.getBoolean("defragDatabaseOnStartup");
+		dbFile = userDir.file("node.db4o");
+		dbFileCrypt = userDir.file("node.db4o.crypt");
 
-		nodeConfig.register("defragOnce", false, sortOrder++, false, true, "Node.defragOnce", "Node.defragOnceLong", new BooleanCallback() {
+        byte[] clientCacheKey = null;
+        
+        MasterSecret persistentSecret = null;
+        for(int i=0;i<2; i++) {
 
-			@Override
-			public Boolean get() {
-				synchronized(Node.this) {
-					return defragOnce;
-				}
-			}
+            try {
+                if(securityLevels.physicalThreatLevel == PHYSICAL_THREAT_LEVEL.MAXIMUM) {
+                    keys = MasterKeys.createRandom(secureRandom);
+                } else {
+                    keys = MasterKeys.read(masterKeysFile, secureRandom, "");
+                }
+                clientCacheKey = keys.clientCacheMasterKey;
+                persistentSecret = keys.getPersistentMasterSecret();
+                databaseKey = keys.createDatabaseKey(secureRandom);
+                if(securityLevels.getPhysicalThreatLevel() == PHYSICAL_THREAT_LEVEL.HIGH) {
+                    System.err.println("Physical threat level is set to HIGH but no password, resetting to NORMAL - probably timing glitch");
+                    securityLevels.resetPhysicalThreatLevel(PHYSICAL_THREAT_LEVEL.NORMAL);
+                }
+                break;
+            } catch (MasterKeysWrongPasswordException e) {
+                break;
+            } catch (MasterKeysFileSizeException e) {
+                System.err.println("Impossible: master keys file "+masterKeysFile+" too " + e.sizeToString() + "! Deleting to enable startup, but you will lose your client cache.");
+                masterKeysFile.delete();
+            } catch (IOException e) {
+                break;
+            }
+        }
 
-			@Override
-			public void set(Boolean val) throws InvalidConfigValueException, NodeNeedRestartException {
-				synchronized(Node.this) {
-					defragOnce = val;
-				}
-			}
-
-		});
-
-		defragOnce = nodeConfig.getBoolean("defragOnce");
-
-		dbFile = new File(nodeDir, "node.db4o");
-		dbFileCrypt = new File(nodeDir, "node.db4o.crypt");
-
-		boolean dontCreate = (!dbFile.exists()) && (!dbFileCrypt.exists()) && (!toadlets.fproxyHasCompletedWizard());
-
-		if(!dontCreate) {
-			try {
-				setupDatabase(null);
-			} catch (MasterKeysWrongPasswordException e2) {
-				System.out.println("Client database node.db4o is encrypted!");
-				databaseAwaitingPassword = true;
-			} catch (MasterKeysFileSizeException e2) {
-				System.err.println("Unable to decrypt database: master.keys file too " + e2.sizeToString() + "!");
-			} catch (IOException e2) {
-				System.err.println("Unable to access master.keys file to decrypt database: "+e2);
-				e2.printStackTrace();
-			}
-		} else
-			System.out.println("Not creating node.db4o for now, waiting for config as to security level...");
-
+        try {
+            setupDatabase(databaseKey);
+        } catch (MasterKeysWrongPasswordException e2) {
+            System.out.println("Client database node.db4o is encrypted!");
+            databaseAwaitingPassword = true;
+        } catch (MasterKeysFileSizeException e2) {
+            System.err.println("Unable to decrypt database: master.keys file too " + e2.sizeToString() + "!");
+        } catch (IOException e2) {
+            System.err.println("Unable to access master.keys file to decrypt database: "+e2);
+            e2.printStackTrace();
+        }
 		// Boot ID
 		bootID = random.nextLong();
 		// Fixed length file containing boot ID. Accessed with random access file. So hopefully it will always be
 		// written. Note that we set lastBootID to -1 if we can't _write_ our ID as well as if we can't read it,
 		// because if we can't write it then we probably couldn't write it on the last bootup either.
-		File bootIDFile = new File(nodeDir, "bootID");
+		File bootIDFile = runDir.file("bootID");
 		int BOOT_FILE_LENGTH = 64 / 4; // A long in padded hex bytes
 		long oldBootID = -1;
 		RandomAccessFile raf = null;
@@ -1310,8 +1288,6 @@ public class Node implements TimeSkewDetectorCallback {
 			Closer.close(raf);
 		}
 		lastBootID = oldBootID;
-
-		buildOldAgeUserAlert = new BuildOldAgeUserAlert();
 
 		nodeConfig.register("disableProbabilisticHTLs", false, sortOrder++, true, false, "Node.disablePHTLS", "Node.disablePHTLSLong",
 				new BooleanCallback() {
@@ -1352,7 +1328,7 @@ public class Node implements TimeSkewDetectorCallback {
 
 		// Determine where to bind to
 
-		usm = new MessageCore();
+		usm = new MessageCore(executor);
 
 		// FIXME maybe these configs should actually be under a node.ip subconfig?
 		ipDetector = new NodeIPDetector(this);
@@ -1474,39 +1450,6 @@ public class Node implements TimeSkewDetectorCallback {
 		});
 		routeAccordingToOurPeersLocation = nodeConfig.getBoolean("routeAccordingToOurPeersLocation");
 
-		securityLevels.addNetworkThreatLevelListener(new SecurityLevelListener<NETWORK_THREAT_LEVEL>() {
-
-			public void onChange(NETWORK_THREAT_LEVEL oldLevel, NETWORK_THREAT_LEVEL newLevel) {
-				synchronized(Node.this) {
-					boolean wantFOAF = true;
-					if(newLevel == NETWORK_THREAT_LEVEL.MAXIMUM || newLevel == NETWORK_THREAT_LEVEL.HIGH) {
-						// Opennet is disabled.
-						if(securityLevels.friendsThreatLevel == FRIENDS_THREAT_LEVEL.HIGH)
-							wantFOAF = false;
-					}
-					routeAccordingToOurPeersLocation = wantFOAF;
-				}
-			}
-
-		});
-
-		securityLevels.addFriendsThreatLevelListener(new SecurityLevelListener<FRIENDS_THREAT_LEVEL>() {
-
-			public void onChange(FRIENDS_THREAT_LEVEL oldLevel, FRIENDS_THREAT_LEVEL newLevel) {
-				synchronized(Node.this) {
-					boolean wantFOAF = true;
-					NETWORK_THREAT_LEVEL networkLevel = securityLevels.networkThreatLevel;
-					if(networkLevel == NETWORK_THREAT_LEVEL.MAXIMUM || networkLevel == NETWORK_THREAT_LEVEL.HIGH) {
-						// Opennet is disabled.
-						if(newLevel == FRIENDS_THREAT_LEVEL.HIGH)
-							wantFOAF = false;
-					}
-					routeAccordingToOurPeersLocation = wantFOAF;
-				}
-			}
-
-		});
-
 		nodeConfig.register("enableSwapQueueing", true, sortOrder++, true, false, "Node.enableSwapQueueing", "Node.enableSwapQueueingLong", new BooleanCallback() {
 			@Override
 			public Boolean get() {
@@ -1548,14 +1491,15 @@ public class Node implements TimeSkewDetectorCallback {
 
 		if(db != null) {
 			db.commit();
-			if(Logger.shouldLog(LogLevel.MINOR, this)) Logger.minor(this, "COMMITTED");
+			if(logMINOR) Logger.minor(this, "COMMITTED");
 		}
 
 		// Must be created after darknetCrypto
 		dnsr = new DNSRequester(this);
 		ps = new PacketSender(this);
+		ticker = new PrioritizedTicker(executor, getDarknetPortNumber());
 		if(executor instanceof PooledExecutor)
-			((PooledExecutor)executor).setTicker(ps);
+			((PooledExecutor)executor).setTicker(ticker);
 
 		Logger.normal(Node.class, "Creating node...");
 
@@ -1577,26 +1521,34 @@ public class Node implements TimeSkewDetectorCallback {
 		// Bandwidth limit
 
 		nodeConfig.register("outputBandwidthLimit", "15K", sortOrder++, false, true, "Node.outBWLimit", "Node.outBWLimitLong", new IntCallback() {
-					@Override
-					public Integer get() {
-						//return BlockTransmitter.getHardBandwidthLimit();
-						return outputBandwidthLimit;
-					}
-					@Override
-					public void set(Integer obwLimit) throws InvalidConfigValueException {
-						if(obwLimit <= 0) throw new InvalidConfigValueException(l10n("bwlimitMustBePositive"));
-						synchronized(Node.this) {
-							outputBandwidthLimit = obwLimit;
-						}
-						outputThrottle.changeNanosAndBucketSize((1000L * 1000L * 1000L) / obwLimit, obwLimit/2);
-						nodeStats.setOutputLimit(obwLimit);
-					}
-		}, true);
+			@Override
+			public Integer get() {
+				//return BlockTransmitter.getHardBandwidthLimit();
+				return outputBandwidthLimit;
+			}
+			@Override
+			public void set(Integer obwLimit) throws InvalidConfigValueException {
+				checkOutputBandwidthLimit(obwLimit);
+				try {
+					outputThrottle.changeNanosAndBucketSize(SECONDS.toNanos(1) / obwLimit, obwLimit/2);
+					nodeStats.setOutputLimit(obwLimit);
+				} catch (IllegalArgumentException e) {
+					throw new InvalidConfigValueException(e);
+				}
+				synchronized(Node.this) {
+					outputBandwidthLimit = obwLimit;
+				}
+			}
+		});
 
 		int obwLimit = nodeConfig.getInt("outputBandwidthLimit");
-		if(obwLimit <= 0)
-			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, "Invalid outputBandwidthLimit");
 		outputBandwidthLimit = obwLimit;
+		try {
+			checkOutputBandwidthLimit(outputBandwidthLimit);
+		} catch (InvalidConfigValueException e) {
+			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, e.getMessage());
+		}
+
 		// Bucket size of 0.5 seconds' worth of bytes.
 		// Add them at a rate determined by the obwLimit.
 		// Maximum forced bytes 80%, in other words, 20% of the bandwidth is reserved for
@@ -1605,37 +1557,52 @@ public class Node implements TimeSkewDetectorCallback {
 		// Must have at least space for ONE PACKET.
 		// FIXME: make compatible with alternate transports.
 		bucketSize = Math.max(bucketSize, 2048);
-		outputThrottle = new TokenBucket(bucketSize, (1000L*1000L*1000L) / obwLimit, obwLimit/2);
+		try {
+		outputThrottle = new TokenBucket(bucketSize, SECONDS.toNanos(1) / obwLimit, obwLimit/2);
+		} catch (IllegalArgumentException e) {
+			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, e.getMessage());
+		}
 
 		nodeConfig.register("inputBandwidthLimit", "-1", sortOrder++, false, true, "Node.inBWLimit", "Node.inBWLimitLong",	new IntCallback() {
-					@Override
-					public Integer get() {
-						if(inputLimitDefault) return -1;
-						return inputBandwidthLimit;
+			@Override
+			public Integer get() {
+				if(inputLimitDefault) return -1;
+				return inputBandwidthLimit;
+			}
+			@Override
+			public void set(Integer ibwLimit) throws InvalidConfigValueException {
+				synchronized(Node.this) {
+					checkInputBandwidthLimit(ibwLimit);
+
+					if(ibwLimit == -1) {
+						inputLimitDefault = true;
+						ibwLimit = outputBandwidthLimit * 4;
+					} else {
+						inputLimitDefault = false;
 					}
-					@Override
-					public void set(Integer ibwLimit) throws InvalidConfigValueException {
-						synchronized(Node.this) {
-							if(ibwLimit == -1) {
-								inputLimitDefault = true;
-								ibwLimit = outputBandwidthLimit * 4;
-							} else {
-								if(ibwLimit <= 1) throw new InvalidConfigValueException(l10n("bandwidthLimitMustBePositiveOrMinusOne"));
-								inputLimitDefault = false;
-							}
-							inputBandwidthLimit = ibwLimit;
-						}
+
+					try {
 						nodeStats.setInputLimit(ibwLimit);
+					} catch (IllegalArgumentException e) {
+						throw new InvalidConfigValueException(e);
 					}
-		}, true);
+
+					inputBandwidthLimit = ibwLimit;
+				}
+			}
+		});
 
 		int ibwLimit = nodeConfig.getInt("inputBandwidthLimit");
 		if(ibwLimit == -1) {
 			inputLimitDefault = true;
 			ibwLimit = obwLimit * 4;
-		} else if(ibwLimit <= 0)
-			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, "Invalid inputBandwidthLimit");
+		}
 		inputBandwidthLimit = ibwLimit;
+		try {
+			checkInputBandwidthLimit(inputBandwidthLimit);
+		} catch (InvalidConfigValueException e) {
+			throw new NodeInitException(NodeInitException.EXIT_BAD_BWLIMIT, e.getMessage());
+		}
 
 		nodeConfig.register("throttleLocalTraffic", false, sortOrder++, true, false, "Node.throttleLocalTraffic", "Node.throttleLocalTrafficLong", new BooleanCallback() {
 
@@ -1653,49 +1620,14 @@ public class Node implements TimeSkewDetectorCallback {
 
 		throttleLocalData = nodeConfig.getBoolean("throttleLocalTraffic");
 
-		// Testnet.
-		// Cannot be enabled/disabled on the fly.
-		// If enabled, forces certain other config options.
+		String s = "Testnet mode DISABLED. You may have some level of anonymity. :)\n"+
+		"Note that this version of Freenet is still a very early alpha, and may well have numerous bugs and design flaws.\n"+
+		"In particular: YOU ARE WIDE OPEN TO YOUR IMMEDIATE PEERS! They can eavesdrop on your requests with relatively little difficulty at present (correlation attacks etc).";
+		Logger.normal(this, s);
+		System.err.println(s);
 
-		if((testnetHandler = TestnetHandler.maybeCreate(this, config)) != null) {
-			String msg = "WARNING: ENABLING TESTNET CODE! This WILL seriously jeopardize your anonymity!";
-			Logger.error(this, msg);
-			System.err.println(msg);
-			testnetEnabled = true;
-			if(logConfigHandler.getFileLoggerHook() == null) {
-				System.err.println("Forcing logging enabled (essential for testnet)");
-				logConfigHandler.forceEnableLogging();
-			}
-			LogLevel x = Logger.globalGetThresholdNew();
-			if(!((x == LogLevel.MINOR) || (x == LogLevel.DEBUG))) {
-				System.err.println("Forcing log threshold to MINOR for testnet, was "+x);
-				Logger.globalSetThreshold(LogLevel.MINOR);
-			}
-			if(logConfigHandler.getMaxZippedLogFiles() < TESTNET_MIN_MAX_ZIPPED_LOGFILES) {
-				System.err.println("Forcing max zipped logfiles space to 256MB for testnet");
-				try {
-					logConfigHandler.setMaxZippedLogFiles(TESTNET_MIN_MAX_ZIPPED_LOGFILES_STRING);
-				} catch (InvalidConfigValueException e) {
-					throw new Error("Impossible: " + e, e);
-				} catch (NodeNeedRestartException e) {
-					throw new Error("Impossible: " + e, e);
-				}
-			}
-		} else {
-			String s = "Testnet mode DISABLED. You may have some level of anonymity. :)\n"+
-				"Note that this version of Freenet is still a very early alpha, and may well have numerous bugs and design flaws.\n"+
-				"In particular: YOU ARE WIDE OPEN TO YOUR IMMEDIATE PEERS! They can eavesdrop on your requests with relatively little difficulty at present (correlation attacks etc).";
-			Logger.normal(this, s);
-			System.err.println(s);
-			testnetEnabled = false;
-			if(wasTestnet) {
-				FileLoggerHook flh = logConfigHandler.getFileLoggerHook();
-				if(flh != null) flh.deleteAllOldLogFiles();
-			}
-		}
-
-		File nodeFile = new File(nodeDir, "node-"+getDarknetPortNumber());
-		File nodeFileBackup = new File(nodeDir, "node-"+getDarknetPortNumber()+".bak");
+		File nodeFile = nodeDir.file("node-"+getDarknetPortNumber());
+		File nodeFileBackup = nodeDir.file("node-"+getDarknetPortNumber()+".bak");
 		// After we have set up testnet and IP address, load the node file
 		try {
 			// FIXME should take file directly?
@@ -1719,25 +1651,41 @@ public class Node implements TimeSkewDetectorCallback {
 			}
 		}
 
-		if(wasTestnet != testnetEnabled) {
-			Logger.error(this, "Switched from testnet mode to non-testnet mode or vice versa! Regenerating pubkey, privkey, and deleting logs.");
-			// FIXME do we delete logs?
-			darknetCrypto.initCrypto();
-		}
+		// Then read the peers
+		peers = new PeerManager(this, shutdownHook);
+		
+		tracker = new RequestTracker(peers, ticker);
 
 		usm.setDispatcher(dispatcher=new NodeDispatcher(this));
 
-		// Then read the peers
-		peers = new PeerManager(this);
-		peers.tryReadPeers(new File(nodeDir, "peers-"+getDarknetPortNumber()).getPath(), darknetCrypto, null, false, false);
-		peers.writePeers();
-		peers.updatePMUserAlert();
-
-		uptime = new UptimeEstimator(nodeDir, ps, darknetCrypto.identityHash);
+		uptime = new UptimeEstimator(runDir, ticker, darknetCrypto.identityHash);
 
 		// ULPRs
 
 		failureTable = new FailureTable(this);
+
+		nodeStats = new NodeStats(this, sortOrder, new SubConfig("node.load", config), obwLimit, ibwLimit, lastVersion);
+
+		// clientCore needs new load management and other settings from stats.
+		clientCore = new NodeClientCore(this, config, nodeConfig, installConfig, getDarknetPortNumber(), sortOrder, oldConfig, fproxyConfig, toadlets, nodeDBHandle, databaseKey, db, persistentSecret);
+		toadlets.setCore(clientCore);
+
+		if (JVMVersion.isTooOld()) {
+			clientCore.alerts.register(new JVMVersionAlert());
+		}
+
+		if(showFriendsVisibilityAlert)
+			registerFriendsVisibilityAlert();
+		
+		// Node updater support
+
+		System.out.println("Initializing Node Updater");
+		try {
+			nodeUpdater = NodeUpdateManager.maybeCreate(this, config);
+		} catch (InvalidConfigValueException e) {
+			e.printStackTrace();
+			throw new NodeInitException(NodeInitException.EXIT_COULD_NOT_START_UPDATER, "Could not create Updater: "+e);
+		}
 
 		// Opennet
 
@@ -1801,7 +1749,7 @@ public class Node implements TimeSkewDetectorCallback {
 					@Override
 					public void set(Integer inputMaxOpennetPeers) throws InvalidConfigValueException {
 						if(inputMaxOpennetPeers < 0) throw new InvalidConfigValueException(l10n("mustBePositive"));
-						if(inputMaxOpennetPeers > OpennetManager.MAX_PEERS_FOR_SCALING) throw new InvalidConfigValueException(l10n("maxOpennetPeersMustBeTwentyOrLess"));
+						if(inputMaxOpennetPeers > OpennetManager.MAX_PEERS_FOR_SCALING) throw new InvalidConfigValueException(l10n("maxOpennetPeersMustBeTwentyOrLess", "maxpeers", Integer.toString(OpennetManager.MAX_PEERS_FOR_SCALING)));
 						maxOpennetPeers = inputMaxOpennetPeers;
 						}
 					}
@@ -1824,6 +1772,7 @@ public class Node implements TimeSkewDetectorCallback {
 
 		securityLevels.addNetworkThreatLevelListener(new SecurityLevelListener<NETWORK_THREAT_LEVEL>() {
 
+			@Override
 			public void onChange(NETWORK_THREAT_LEVEL oldLevel, NETWORK_THREAT_LEVEL newLevel) {
 				if(newLevel == NETWORK_THREAT_LEVEL.HIGH
 						|| newLevel == NETWORK_THREAT_LEVEL.MAXIMUM) {
@@ -1877,6 +1826,9 @@ public class Node implements TimeSkewDetectorCallback {
 
 		acceptSeedConnections = opennetConfig.getBoolean("acceptSeedConnections");
 
+		if(acceptSeedConnections && opennet != null)
+			opennet.crypto.socket.getAddressTracker().setHugeTracker();
+
 		opennetConfig.finishedInitialization();
 
 		nodeConfig.register("passOpennetPeersThroughDarknet", true, sortOrder++, true, false, "Node.passOpennetPeersThroughDarknet", "Node.passOpennetPeersThroughDarknetLong",
@@ -1900,28 +1852,10 @@ public class Node implements TimeSkewDetectorCallback {
 
 		passOpennetRefsThroughDarknet = nodeConfig.getBoolean("passOpennetPeersThroughDarknet");
 
-		// Extra Peer Data Directory
-		nodeConfig.register("extraPeerDataDir", new File(nodeDir, "extra-peer-data-"+getDarknetPortNumber()).toString(), sortOrder++, true, true /* can't be changed on the fly, also for packages */, "Node.extraPeerDir", "Node.extraPeerDirLong",
-				new StringCallback() {
-					@Override
-					public String get() {
-						return extraPeerDataDir.getPath();
-					}
-					@Override
-					public void set(String val) throws InvalidConfigValueException {
-						if(extraPeerDataDir.equals(new File(val))) return;
-						// FIXME
-						throw new InvalidConfigValueException("Moving extra peer data directory on the fly not supported at present");
-					}
-					@Override
-					public boolean isReadOnly() {
-				        return true;
-			        }
-		});
-		extraPeerDataDir = new File(nodeConfig.getString("extraPeerDataDir"));
-		if(!((extraPeerDataDir.exists() && extraPeerDataDir.isDirectory()) || (extraPeerDataDir.mkdir()))) {
+		this.extraPeerDataDir = userDir.file("extra-peer-data-"+getDarknetPortNumber());
+		if (!((extraPeerDataDir.exists() && extraPeerDataDir.isDirectory()) || (extraPeerDataDir.mkdir()))) {
 			String msg = "Could not find or create extra peer data directory";
-			throw new NodeInitException(NodeInitException.EXIT_EXTRA_PEER_DATA_DIR, msg);
+			throw new NodeInitException(NodeInitException.EXIT_BAD_DIR, msg);
 		}
 
 		// Name
@@ -1959,7 +1893,7 @@ public class Node implements TimeSkewDetectorCallback {
 		 * Very small initial store size, since the node will preallocate it when starting up for the first time,
 		 * BLOCKING STARTUP, and since everyone goes through the wizard anyway...
 		 */
-		nodeConfig.register("storeSize", "10M", sortOrder++, false, true, "Node.storeSize", "Node.storeSizeLong",
+		nodeConfig.register("storeSize", DEFAULT_STORE_SIZE, sortOrder++, false, true, "Node.storeSize", "Node.storeSizeLong",
 				new LongCallback() {
 
 					@Override
@@ -1969,7 +1903,7 @@ public class Node implements TimeSkewDetectorCallback {
 
 					@Override
 					public void set(Long storeSize) throws InvalidConfigValueException {
-						if((storeSize < 0) || (storeSize < (32 * 1024 * 1024)))
+						if(storeSize < MIN_STORE_SIZE)
 							throw new InvalidConfigValueException(l10n("invalidStoreSize"));
 						long newMaxStoreKeys = storeSize / sizePerKey;
 						if(newMaxStoreKeys == maxTotalKeys) return;
@@ -1992,10 +1926,6 @@ public class Node implements TimeSkewDetectorCallback {
 							Logger.error(this, "Caught "+e+" resizing the datastore", e);
 							System.err.println("Caught "+e+" resizing the datastore");
 							e.printStackTrace();
-						} catch (DatabaseException e) {
-							Logger.error(this, "Caught "+e+" resizing the datastore", e);
-							System.err.println("Caught "+e+" resizing the datastore");
-							e.printStackTrace();
 						}
 						//Perhaps a bit hackish...? Seems like this should be near it's definition in NodeStats.
 						nodeStats.avgStoreCHKLocation.changeMaxReports((int)maxStoreKeys);
@@ -2012,61 +1942,53 @@ public class Node implements TimeSkewDetectorCallback {
 
 		maxTotalDatastoreSize = nodeConfig.getLong("storeSize");
 
-		if(maxTotalDatastoreSize < 0 || maxTotalDatastoreSize < (32 * 1024 * 1024) && !storeType.equals("ram")) { // totally arbitrary minimum!
-			throw new NodeInitException(NodeInitException.EXIT_INVALID_STORE_SIZE, "Invalid store size");
+		if(maxTotalDatastoreSize < MIN_STORE_SIZE && !storeType.equals("ram")) { // totally arbitrary minimum!
+			throw new NodeInitException(NodeInitException.EXIT_INVALID_STORE_SIZE, "Store size too small");
 		}
 
 		maxTotalKeys = maxTotalDatastoreSize / sizePerKey;
+		
+		nodeConfig.register("storeUseSlotFilters", true, sortOrder++, true, false, "Node.storeUseSlotFilters", "Node.storeUseSlotFiltersLong", new BooleanCallback() {
 
-		nodeConfig.register("storeBloomFilterSize", -1, sortOrder++, true, false, "Node.storeBloomFilterSize",
-		        "Node.storeBloomFilterSizeLong", new IntCallback() {
-			        private Integer cachedBloomFilterSize;
+			public Boolean get() {
+				synchronized(Node.this) {
+					return storeUseSlotFilters;
+				}
+			}
 
-			        @Override
+			public void set(Boolean val) throws InvalidConfigValueException,
+					NodeNeedRestartException {
+				synchronized(Node.this) {
+					storeUseSlotFilters = val;
+				}
+				
+				// FIXME l10n
+				throw new NodeNeedRestartException("Need to restart to change storeUseSlotFilters");
+			}
+			
+		});
+		
+		storeUseSlotFilters = nodeConfig.getBoolean("storeUseSlotFilters");
+		
+		nodeConfig.register("storeSaltHashSlotFilterPersistenceTime", ResizablePersistentIntBuffer.DEFAULT_PERSISTENCE_TIME, sortOrder++, true, false, 
+				"Node.storeSaltHashSlotFilterPersistenceTime", "Node.storeSaltHashSlotFilterPersistenceTimeLong", new IntCallback() {
+
+					@Override
 					public Integer get() {
-			        	if (cachedBloomFilterSize == null)
-					        cachedBloomFilterSize = storeBloomFilterSize;
-				        return cachedBloomFilterSize;
-			        }
+						return ResizablePersistentIntBuffer.getPersistenceTime();
+					}
 
-			        @Override
-					public void set(Integer val) throws InvalidConfigValueException, NodeNeedRestartException {
-				        cachedBloomFilterSize = val;
-				        throw new NodeNeedRestartException("Store bloom filter size cannot be changed on the fly");
-			        }
-
-			        @Override
-					public boolean isReadOnly() {
-				        return !("salt-hash".equals(storeType));
-			        }
-		        }, true);
-
-		storeBloomFilterSize = nodeConfig.getInt("storeBloomFilterSize");
-
-		nodeConfig.register("storeBloomFilterCounting", true, sortOrder++, true, false,
-		        "Node.storeBloomFilterCounting", "Node.storeBloomFilterCountingLong", new BooleanCallback() {
-			        private Boolean cachedBloomFilterCounting;
-
-			        @Override
-					public Boolean get() {
-				        if (cachedBloomFilterCounting == null)
-					        cachedBloomFilterCounting = storeBloomFilterCounting;
-				        return cachedBloomFilterCounting;
-			        }
-
-			        @Override
-					public void set(Boolean val) throws InvalidConfigValueException, NodeNeedRestartException {
-				        cachedBloomFilterCounting = val;
-				        throw new NodeNeedRestartException("Store bloom filter type cannot be changed on the fly");
-			        }
-
-			        @Override
-					public boolean isReadOnly() {
-				        return !("salt-hash".equals(storeType));
-			        }
-		        });
-
-		storeBloomFilterCounting = nodeConfig.getBoolean("storeBloomFilterCounting");
+					@Override
+					public void set(Integer val)
+							throws InvalidConfigValueException,
+							NodeNeedRestartException {
+						if(val >= -1)
+							ResizablePersistentIntBuffer.setPersistenceTime(val);
+						else
+							throw new InvalidConfigValueException(l10n("slotFilterPersistenceTimeError"));
+					}
+			
+		}, false);
 
 		nodeConfig.register("storeSaltHashResizeOnStart", false, sortOrder++, true, false,
 				"Node.storeSaltHashResizeOnStart", "Node.storeSaltHashResizeOnStartLong", new BooleanCallback() {
@@ -2082,31 +2004,10 @@ public class Node implements TimeSkewDetectorCallback {
 		});
 		storeSaltHashResizeOnStart = nodeConfig.getBoolean("storeSaltHashResizeOnStart");
 
-		nodeConfig.register("storeDir", "datastore", sortOrder++, true, true, "Node.storeDirectory", "Node.storeDirectoryLong",
-				new StringCallback() {
-					@Override
-					public String get() {
-						return storeDir.getPath();
-					}
-					@Override
-					public void set(String val) throws InvalidConfigValueException {
-						if(storeDir.equals(new File(val))) return;
-						// FIXME
-						throw new InvalidConfigValueException("Moving datastore on the fly not supported at present");
-					}
-					@Override
-					public boolean isReadOnly() {
-				        return true;
-			        }
-		});
+		this.storeDir = setupProgramDir(installConfig, "storeDir", userDir().file("datastore").getPath(), "Node.storeDirectory", "Node.storeDirectoryLong", nodeConfig);
+		installConfig.finishedInitialization();
 
 		final String suffix = getStoreSuffix();
-		String datastoreDir = nodeConfig.getString("storeDir");
-		storeDir = new File(datastoreDir);
-		if(!((storeDir.exists() && storeDir.isDirectory()) || (storeDir.mkdir()))) {
-			String msg = "Could not find or create datastore directory";
-			throw new NodeInitException(NodeInitException.EXIT_STORE_OTHER, msg);
-		}
 
 		maxStoreKeys = maxTotalKeys / 2;
 		maxCacheKeys = maxTotalKeys - maxStoreKeys;
@@ -2132,20 +2033,29 @@ public class Node implements TimeSkewDetectorCallback {
                     public void set(Boolean val) throws InvalidConfigValueException, NodeNeedRestartException {
 						storePreallocate = val;
 						if (storeType.equals("salt-hash")) {
-							((SaltedHashFreenetStore<CHKBlock>) chkDatastore.getStore()).setPreallocate(val);
-							((SaltedHashFreenetStore<CHKBlock>) chkDatacache.getStore()).setPreallocate(val);
-							((SaltedHashFreenetStore<DSAPublicKey>) pubKeyDatastore.getStore()).setPreallocate(val);
-							((SaltedHashFreenetStore<DSAPublicKey>) pubKeyDatacache.getStore()).setPreallocate(val);
-							((SaltedHashFreenetStore<SSKBlock>) sskDatastore.getStore()).setPreallocate(val);
-							((SaltedHashFreenetStore<SSKBlock>) sskDatacache.getStore()).setPreallocate(val);
+							setPreallocate(chkDatastore, val);
+							setPreallocate(chkDatacache, val);
+							setPreallocate(pubKeyDatastore, val);
+							setPreallocate(pubKeyDatacache, val);
+							setPreallocate(sskDatastore, val);
+							setPreallocate(sskDatacache, val);
 						}
-                    }}
+                    }
+
+					private void setPreallocate(StoreCallback<?> datastore,
+							boolean val) {
+						// Avoid race conditions by checking first.
+						FreenetStore<?> store = datastore.getStore();
+						if(store instanceof SaltedHashFreenetStore)
+							((SaltedHashFreenetStore<?>)store).setPreallocate(val);
+					}}
 		);
 		storePreallocate = nodeConfig.getBoolean("storePreallocate");
 
 		if(File.separatorChar == '/' && System.getProperty("os.name").toLowerCase().indexOf("mac os") < 0) {
 			securityLevels.addPhysicalThreatLevelListener(new SecurityLevelListener<SecurityLevels.PHYSICAL_THREAT_LEVEL>() {
 
+				@Override
 				public void onChange(PHYSICAL_THREAT_LEVEL oldLevel, PHYSICAL_THREAT_LEVEL newLevel) {
 					try {
 						if(newLevel == PHYSICAL_THREAT_LEVEL.LOW)
@@ -2163,6 +2073,7 @@ public class Node implements TimeSkewDetectorCallback {
 
 		securityLevels.addPhysicalThreatLevelListener(new SecurityLevelListener<SecurityLevels.PHYSICAL_THREAT_LEVEL>() {
 
+			@Override
 			public void onChange(PHYSICAL_THREAT_LEVEL oldLevel, PHYSICAL_THREAT_LEVEL newLevel) {
 					if(newLevel == PHYSICAL_THREAT_LEVEL.MAXIMUM) {
 						synchronized(this) {
@@ -2170,13 +2081,32 @@ public class Node implements TimeSkewDetectorCallback {
 							databaseAwaitingPassword = false;
 						}
 						try {
-							killMasterKeysFile();
+                            killMasterKeysFile();
+						    clientCore.clientLayerPersister.disableWrite();
+						    clientCore.clientLayerPersister.waitForNotWriting();
+                            clientCore.clientLayerPersister.deleteAllFiles();
 						} catch (IOException e) {
 							masterKeysFile.delete();
 							Logger.error(this, "Unable to securely delete "+masterKeysFile);
 							System.err.println(NodeL10n.getBase().getString("SecurityLevels.cantDeletePasswordFile", "filename", masterKeysFile.getAbsolutePath()));
 							clientCore.alerts.register(new SimpleUserAlert(true, NodeL10n.getBase().getString("SecurityLevels.cantDeletePasswordFileTitle"), NodeL10n.getBase().getString("SecurityLevels.cantDeletePasswordFile"), NodeL10n.getBase().getString("SecurityLevels.cantDeletePasswordFileTitle"), UserAlert.CRITICAL_ERROR));
 						}
+					}
+					if(oldLevel == PHYSICAL_THREAT_LEVEL.MAXIMUM && newLevel != PHYSICAL_THREAT_LEVEL.HIGH) {
+					    // Not passworded.
+					    // Create the master.keys.
+					    // Keys must exist.
+					    try {
+					        MasterKeys keys;
+					        synchronized(this) {
+					            keys = Node.this.keys;
+					        }
+                            keys.changePassword(masterKeysFile, "", secureRandom);
+                        } catch (IOException e) {
+                            Logger.error(this, "Unable to create encryption keys file: "+masterKeysFile+" : "+e, e);
+                            System.err.println("Unable to create encryption keys file: "+masterKeysFile+" : "+e);
+                            e.printStackTrace();
+                        }
 					}
 				}
 
@@ -2191,64 +2121,107 @@ public class Node implements TimeSkewDetectorCallback {
 				throw new NodeInitException(NodeInitException.EXIT_CANT_WRITE_MASTER_KEYS, msg);
 			}
 		}
-
-		nodeConfig.register("databaseMaxMemory", "20M", sortOrder++, true, false, "Node.databaseMemory", "Node.databaseMemoryLong",
-				new LongCallback() {
-
-			@Override
-			public Long get() {
-				return databaseMaxMemory;
-			}
-
-			@Override
-			public void set(Long val) throws InvalidConfigValueException {
-				if(val < 0)
-					throw new InvalidConfigValueException(l10n("mustBePositive"));
-				else {
-					long maxHeapMemory = Runtime.getRuntime().maxMemory();
-					/* There are some JVMs (for example libgcj 4.1.1) whose Runtime.maxMemory() does not work. */
-					if(maxHeapMemory < Long.MAX_VALUE && val > (80 * maxHeapMemory / 100))
-						throw new InvalidConfigValueException(l10n("storeMaxMemTooHigh"));
-				}
-
-				envMutableConfig.setCacheSize(val);
-				try{
-					storeEnvironment.setMutableConfig(envMutableConfig);
-				} catch (DatabaseException e) {
-					throw new InvalidConfigValueException(l10n("errorApplyingConfig", "error", e.getLocalizedMessage()));
-				}
-				databaseMaxMemory = val;
-			}
-
-		}, true);
-
-		/* There are some JVMs (for example libgcj 4.1.1) whose Runtime.maxMemory() does not work. */
-		long maxHeapMemory = Runtime.getRuntime().maxMemory();
-		databaseMaxMemory = nodeConfig.getLong("databaseMaxMemory");
-		// see #1202
-		if(maxHeapMemory < Long.MAX_VALUE && databaseMaxMemory > (80 * maxHeapMemory / 100)){
-			Logger.error(this, "The databaseMemory setting is set too high " + databaseMaxMemory +
-					" ... let's assume it's not what the user wants to do and restore the default.");
-			databaseMaxMemory = Fields.parseLong(nodeConfig.getOption("databaseMaxMemory").getDefault());
+		
+		long defaultCacheSize;
+		long memoryLimit = NodeStarter.getMemoryLimitBytes();
+		// This is tricky because systems with low memory probably also have slow disks, but using 
+		// up too much memory can be catastrophic...
+		// Total alchemy, FIXME!
+		if(memoryLimit == Long.MAX_VALUE || memoryLimit < 0)
+			defaultCacheSize = 1024*1024;
+		else if(memoryLimit <= 128*1024*1024)
+			defaultCacheSize = 0; // Turn off completely for very small memory.
+		else {
+			// 9 stores, total should be 5% of memory, up to maximum of 1MB per store at 308MB+
+			defaultCacheSize = Math.min(1024*1024, (memoryLimit - 128*1024*1024) / (20*9));
 		}
+		
+		nodeConfig.register("cachingFreenetStoreMaxSize", defaultCacheSize, sortOrder++, true, false, "Node.cachingFreenetStoreMaxSize", "Node.cachingFreenetStoreMaxSizeLong",
+			new LongCallback() {
+				@Override
+				public Long get() {
+					synchronized(Node.this) {
+						return cachingFreenetStoreMaxSize;
+					}
+				}
 
+				@Override
+				public void set(Long val) throws InvalidConfigValueException, NodeNeedRestartException {
+					if(val < 0) throw new InvalidConfigValueException(l10n("invalidMemoryCacheSize"));
+					// Any positive value is legal. In particular, e.g. 1200 bytes would cause us to cache SSKs but not CHKs.
+					synchronized(Node.this) {
+						cachingFreenetStoreMaxSize = val;
+					}
+					throw new NodeNeedRestartException("Caching Maximum Size cannot be changed on the fly");
+				}
+		}, true);
+		
+		cachingFreenetStoreMaxSize = nodeConfig.getLong("cachingFreenetStoreMaxSize");
+		if(cachingFreenetStoreMaxSize < 0)
+			throw new NodeInitException(NodeInitException.EXIT_BAD_CONFIG, l10n("invalidMemoryCacheSize"));
+		
+		nodeConfig.register("cachingFreenetStorePeriod", "300k", sortOrder++, true, false, "Node.cachingFreenetStorePeriod", "Node.cachingFreenetStorePeriod",
+			new LongCallback() {
+				@Override
+				public Long get() {
+					synchronized(Node.this) {
+						return cachingFreenetStorePeriod;
+					}
+				}
+
+				@Override
+				public void set(Long val) throws InvalidConfigValueException, NodeNeedRestartException {
+					synchronized(Node.this) {
+						cachingFreenetStorePeriod = val;
+					}
+					throw new NodeNeedRestartException("Caching Period cannot be changed on the fly");
+				}
+		}, true);
+		
+		cachingFreenetStorePeriod = nodeConfig.getLong("cachingFreenetStorePeriod");
+
+		boolean shouldWriteConfig = false;
+
+		if(storeType.equals("bdb-index")) {
+			System.err.println("Old format Berkeley DB datastore detected.");
+			System.err.println("This datastore format is no longer supported.");
+			System.err.println("The old datastore will be securely deleted.");
+			storeType = "salt-hash";
+			shouldWriteConfig = true;
+			deleteOldBDBIndexStoreFiles();
+		}
 		if (storeType.equals("salt-hash")) {
 			initRAMFS();
+			// FIXME remove migration code
+			final int lastVersionWithBloom = 1384;
+			if(lastVersion > 0 && lastVersion <= lastVersionWithBloom) {
+				// Check for a comment in wrapper.conf saying we've already upgraded, otherwise update it and restart.
+				long extraMemory = maxTotalKeys * 3 * 4;
+				int extraMemoryMB = (int)Math.min(Integer.MAX_VALUE, ((extraMemory + 1024 * 1024 - 1) / (1024 * 1024)));
+				if(extraMemoryMB >= 10) {
+					System.out.println("Need "+extraMemoryMB+"MB extra space in heap for slot filters.");
+					UpdateDeployContext.CHANGED changed = 
+						UpdateDeployContext.tryIncreaseMemoryLimit(extraMemoryMB, " Increased because of slot filters in "+(lastVersionWithBloom+1));
+					if(changed == CHANGED.SUCCESS) {
+						WrapperManager.restart();
+						System.err.println("Unable to restart after increasing memory limit for the slot filters (the total memory usage is decreased relative to bloom filters but the heap size needs to grow). Probably due to not running in the wrapper.");
+						System.err.println("If the node crashes due to out of memory, be it on your own head!");
+						System.err.println("You need to increase wrapper.java.maxmemory by "+extraMemoryMB);
+					} else if(changed == CHANGED.FAIL) {
+						System.err.println("Unable to increase the memory limit for the slot filters (the total memory usage is decreased relative to bloom filters but the heap size needs to grow). Most likely due to being unable to write wrapper.conf or similar problem.");
+						System.err.println("If the node crashes due to out of memory, be it on your own head!");
+						System.err.println("You need to increase wrapper.java.maxmemory by "+extraMemoryMB);
+					} else /*if(changed == CHANGED.ALREADY)*/ {
+						System.err.println("Memory limit has already been increased for slot filters, continuing startup.");
+					}
+				}
+			}
 			initSaltHashFS(suffix, false, null);
-		} else if (storeType.equals("bdb-index")) {
-			initBDBFS(suffix);
 		} else {
 			initRAMFS();
 		}
 
-		nodeStats = new NodeStats(this, sortOrder, new SubConfig("node.load", config), obwLimit, ibwLimit, nodeDir);
-
-		clientCore = new NodeClientCore(this, config, nodeConfig, nodeDir, getDarknetPortNumber(), sortOrder, oldConfig, fproxyConfig, toadlets, nodeDBHandle, db);
-
 		if(databaseAwaitingPassword) createPasswordUserAlert();
-		if(notEnoughSpaceForAutoCrypt) createAutoCryptFailedUserAlert();
-
-		netid = new NetworkIDManager(this);
 
 		// Client cache
 
@@ -2258,7 +2231,7 @@ public class Node implements TimeSkewDetectorCallback {
 
 		clientCacheType = nodeConfig.getString("clientCacheType");
 
-		nodeConfig.register("clientCacheSize", "10M", sortOrder++, false, true, "Node.clientCacheSize", "Node.clientCacheSizeLong",
+		nodeConfig.register("clientCacheSize", DEFAULT_CLIENT_CACHE_SIZE, sortOrder++, false, true, "Node.clientCacheSize", "Node.clientCacheSizeLong",
 				new LongCallback() {
 
 					@Override
@@ -2268,7 +2241,7 @@ public class Node implements TimeSkewDetectorCallback {
 
 					@Override
 					public void set(Long storeSize) throws InvalidConfigValueException {
-						if((storeSize < 0))
+						if(storeSize < MIN_CLIENT_CACHE_SIZE)
 							throw new InvalidConfigValueException(l10n("invalidStoreSize"));
 						long newMaxStoreKeys = storeSize / sizePerKey;
 						if(newMaxStoreKeys == maxClientCacheKeys) return;
@@ -2286,77 +2259,39 @@ public class Node implements TimeSkewDetectorCallback {
 							Logger.error(this, "Caught "+e+" resizing the clientcache", e);
 							System.err.println("Caught "+e+" resizing the clientcache");
 							e.printStackTrace();
-						} catch (DatabaseException e) {
-							Logger.error(this, "Caught "+e+" resizing the clientcache", e);
-							System.err.println("Caught "+e+" resizing the clientcache");
-							e.printStackTrace();
 						}
 					}
 		}, true);
 
 		maxTotalClientCacheSize = nodeConfig.getLong("clientCacheSize");
 
-		if(maxTotalClientCacheSize < 0) {
-			throw new NodeInitException(NodeInitException.EXIT_INVALID_STORE_SIZE, "Invalid client cache size");
+		if(maxTotalClientCacheSize < MIN_CLIENT_CACHE_SIZE) {
+			throw new NodeInitException(NodeInitException.EXIT_INVALID_STORE_SIZE, "Client cache size too small");
 		}
 
 		maxClientCacheKeys = maxTotalClientCacheSize / sizePerKey;
 
 		boolean startedClientCache = false;
 
-		boolean shouldWriteConfig = false;
-
-		byte[] databaseKey = null;
-		MasterKeys keys = null;
-
-		for(int i=0;i<2 && !startedClientCache; i++) {
 		if (clientCacheType.equals("salt-hash")) {
-
-			byte[] clientCacheKey = null;
-			try {
-				if(securityLevels.physicalThreatLevel == PHYSICAL_THREAT_LEVEL.MAXIMUM) {
-					clientCacheKey = new byte[32];
-					random.nextBytes(clientCacheKey);
-				} else {
-					keys = MasterKeys.read(masterKeysFile, random, "");
-					clientCacheKey = keys.clientCacheMasterKey;
-					if(securityLevels.getPhysicalThreatLevel() == PHYSICAL_THREAT_LEVEL.HIGH) {
-						System.err.println("Physical threat level is set to HIGH but no password, resetting to NORMAL - probably timing glitch");
-						securityLevels.resetPhysicalThreatLevel(PHYSICAL_THREAT_LEVEL.NORMAL);
-						databaseKey = keys.databaseKey;
-						shouldWriteConfig = true;
-					} else {
-						keys.clearAllNotClientCacheKey();
-					}
-				}
-				initSaltHashClientCacheFS(suffix, false, clientCacheKey);
-				startedClientCache = true;
-			} catch (MasterKeysWrongPasswordException e) {
-				System.err.println("Cannot open client-cache, it is passworded");
-				setClientCacheAwaitingPassword();
-				break;
-			} catch (MasterKeysFileSizeException e) {
-				System.err.println("Impossible: master keys file "+masterKeysFile+" too " + e.sizeToString() + "! Deleting to enable startup, but you will lose your client cache.");
-				masterKeysFile.delete();
-			} catch (IOException e) {
-				break;
-			} finally {
-				MasterKeys.clear(clientCacheKey);
-			}
+		    if(clientCacheKey == null) {
+		        System.err.println("Cannot open client-cache, it is passworded");
+		        setClientCacheAwaitingPassword();
+		    } else {
+		        initSaltHashClientCacheFS(suffix, false, clientCacheKey);
+		        startedClientCache = true;
+		    }
 		} else if(clientCacheType.equals("none")) {
 			initNoClientCacheFS();
 			startedClientCache = true;
-			break;
 		} else { // ram
 			initRAMClientCacheFS();
 			startedClientCache = true;
-			break;
-		}
 		}
 		if(!startedClientCache)
 			initRAMClientCacheFS();
-
-		if(db == null && databaseKey != null)  {
+		
+		if(!clientCore.loadedDatabase() && databaseKey != null)  {
 			try {
 				lateSetupDatabase(databaseKey);
 			} catch (MasterKeysWrongPasswordException e2) {
@@ -2369,7 +2304,6 @@ public class Node implements TimeSkewDetectorCallback {
 				System.err.println("Unable to load database: "+e2);
 				e2.printStackTrace();
 			}
-			keys.clearAll();
 		}
 
 		nodeConfig.register("useSlashdotCache", true, sortOrder++, true, false, "Node.useSlashdotCache", "Node.useSlashdotCacheLong", new BooleanCallback() {
@@ -2407,6 +2341,7 @@ public class Node implements TimeSkewDetectorCallback {
 
 		securityLevels.addNetworkThreatLevelListener(new SecurityLevelListener<NETWORK_THREAT_LEVEL>() {
 
+			@Override
 			public void onChange(NETWORK_THREAT_LEVEL oldLevel, NETWORK_THREAT_LEVEL newLevel) {
 				if(newLevel == NETWORK_THREAT_LEVEL.LOW && securityLevels.getPhysicalThreatLevel() == PHYSICAL_THREAT_LEVEL.LOW)
 					writeLocalToDatastore = true;
@@ -2418,6 +2353,7 @@ public class Node implements TimeSkewDetectorCallback {
 
 		securityLevels.addPhysicalThreatLevelListener(new SecurityLevelListener<PHYSICAL_THREAT_LEVEL>() {
 
+			@Override
 			public void onChange(PHYSICAL_THREAT_LEVEL oldLevel, PHYSICAL_THREAT_LEVEL newLevel) {
 				if(newLevel == PHYSICAL_THREAT_LEVEL.LOW && securityLevels.getNetworkThreatLevel() == NETWORK_THREAT_LEVEL.LOW)
 					writeLocalToDatastore = true;
@@ -2427,7 +2363,7 @@ public class Node implements TimeSkewDetectorCallback {
 
 		});
 
-		nodeConfig.register("slashdotCacheLifetime", 30*60*1000L, sortOrder++, true, false, "Node.slashdotCacheLifetime", "Node.slashdotCacheLifetimeLong", new LongCallback() {
+		nodeConfig.register("slashdotCacheLifetime", MINUTES.toMillis(30), sortOrder++, true, false, "Node.slashdotCacheLifetime", "Node.slashdotCacheLifetimeLong", new LongCallback() {
 
 			@Override
 			public Long get() {
@@ -2446,7 +2382,7 @@ public class Node implements TimeSkewDetectorCallback {
 
 		long slashdotCacheLifetime = nodeConfig.getLong("slashdotCacheLifetime");
 
-		nodeConfig.register("slashdotCacheSize", "10M", sortOrder++, false, true, "Node.slashdotCacheSize", "Node.slashdotCacheSizeLong",
+		nodeConfig.register("slashdotCacheSize", DEFAULT_SLASHDOT_CACHE_SIZE, sortOrder++, false, true, "Node.slashdotCacheSize", "Node.slashdotCacheSizeLong",
 				new LongCallback() {
 
 					@Override
@@ -2456,7 +2392,7 @@ public class Node implements TimeSkewDetectorCallback {
 
 					@Override
 					public void set(Long storeSize) throws InvalidConfigValueException {
-						if((storeSize < 0))
+						if(storeSize < MIN_SLASHDOT_CACHE_SIZE)
 							throw new InvalidConfigValueException(l10n("invalidStoreSize"));
 						int newMaxStoreKeys = (int) Math.min(storeSize / sizePerKey, Integer.MAX_VALUE);
 						if(newMaxStoreKeys == maxSlashdotCacheKeys) return;
@@ -2474,34 +2410,31 @@ public class Node implements TimeSkewDetectorCallback {
 							Logger.error(this, "Caught "+e+" resizing the slashdotcache", e);
 							System.err.println("Caught "+e+" resizing the slashdotcache");
 							e.printStackTrace();
-						} catch (DatabaseException e) {
-							Logger.error(this, "Caught "+e+" resizing the slashdotcache", e);
-							System.err.println("Caught "+e+" resizing the slashdotcache");
-							e.printStackTrace();
 						}
 					}
 		}, true);
 
 		maxSlashdotCacheSize = nodeConfig.getLong("slashdotCacheSize");
 
-		if(maxSlashdotCacheSize < 0) {
-			throw new NodeInitException(NodeInitException.EXIT_INVALID_STORE_SIZE, "Invalid client cache size");
+		if(maxSlashdotCacheSize < MIN_SLASHDOT_CACHE_SIZE) {
+			throw new NodeInitException(NodeInitException.EXIT_INVALID_STORE_SIZE, "Slashdot cache size too small");
 		}
 
 		maxSlashdotCacheKeys = (int) Math.min(maxSlashdotCacheSize / sizePerKey, Integer.MAX_VALUE);
 
 		chkSlashdotcache = new CHKStore();
-		chkSlashdotcacheStore = new SlashdotStore<CHKBlock>(chkSlashdotcache, maxSlashdotCacheKeys, slashdotCacheLifetime, PURGE_INTERVAL, ps, this.clientCore.tempBucketFactory);
+		chkSlashdotcacheStore = new SlashdotStore<CHKBlock>(chkSlashdotcache, maxSlashdotCacheKeys, slashdotCacheLifetime, PURGE_INTERVAL, ticker, this.clientCore.tempBucketFactory);
 		pubKeySlashdotcache = new PubkeyStore();
-		pubKeySlashdotcacheStore = new SlashdotStore<DSAPublicKey>(pubKeySlashdotcache, maxSlashdotCacheKeys, slashdotCacheLifetime, PURGE_INTERVAL, ps, this.clientCore.tempBucketFactory);
+		pubKeySlashdotcacheStore = new SlashdotStore<DSAPublicKey>(pubKeySlashdotcache, maxSlashdotCacheKeys, slashdotCacheLifetime, PURGE_INTERVAL, ticker, this.clientCore.tempBucketFactory);
 		getPubKey.setLocalSlashdotcache(pubKeySlashdotcache);
 		sskSlashdotcache = new SSKStore(getPubKey);
-		sskSlashdotcacheStore = new SlashdotStore<SSKBlock>(sskSlashdotcache, maxSlashdotCacheKeys, slashdotCacheLifetime, PURGE_INTERVAL, ps, this.clientCore.tempBucketFactory);
+		sskSlashdotcacheStore = new SlashdotStore<SSKBlock>(sskSlashdotcache, maxSlashdotCacheKeys, slashdotCacheLifetime, PURGE_INTERVAL, ticker, this.clientCore.tempBucketFactory);
 
 		// MAXIMUM seclevel = no slashdot cache.
 
 		securityLevels.addNetworkThreatLevelListener(new SecurityLevelListener<NETWORK_THREAT_LEVEL>() {
 
+			@Override
 			public void onChange(NETWORK_THREAT_LEVEL oldLevel, NETWORK_THREAT_LEVEL newLevel) {
 				if(newLevel == NETWORK_THREAT_LEVEL.MAXIMUM)
 					useSlashdotCache = false;
@@ -2511,19 +2444,84 @@ public class Node implements TimeSkewDetectorCallback {
 
 		});
 
+		nodeConfig.register("skipWrapperWarning", false, sortOrder++, true, false, "Node.skipWrapperWarning", "Node.skipWrapperWarningLong", new BooleanCallback() {
+
+			@Override
+			public void set(Boolean value) throws InvalidConfigValueException, NodeNeedRestartException {
+				skipWrapperWarning = value;
+			}
+
+			@Override
+			public Boolean get() {
+				return skipWrapperWarning;
+			}
+		});
+
+		skipWrapperWarning = nodeConfig.getBoolean("skipWrapperWarning");
+
+		nodeConfig.register("maxPacketSize", 1280, sortOrder++, true, true, "Node.maxPacketSize", "Node.maxPacketSizeLong", new IntCallback() {
+
+			@Override
+			public Integer get() {
+				synchronized(Node.this) {
+					return maxPacketSize;
+				}
+			}
+
+			@Override
+			public void set(Integer val) throws InvalidConfigValueException,
+					NodeNeedRestartException {
+				synchronized(Node.this) {
+					if(val == maxPacketSize) return;
+					if(val < UdpSocketHandler.MIN_MTU) throw new InvalidConfigValueException("Must be over 576");
+					if(val > 1492) throw new InvalidConfigValueException("Larger than ethernet frame size unlikely to work!");
+					maxPacketSize = val;
+				}
+				updateMTU();
+			}
+
+		}, true);
+
+		maxPacketSize = nodeConfig.getInt("maxPacketSize");
+		
+		nodeConfig.register("enableRoutedPing", false, sortOrder++, true, false, "Node.enableRoutedPing", "Node.enableRoutedPingLong", new BooleanCallback() {
+
+			@Override
+			public Boolean get() {
+				synchronized(Node.this) {
+					return enableRoutedPing;
+				}
+			}
+
+			@Override
+			public void set(Boolean val) throws InvalidConfigValueException,
+					NodeNeedRestartException {
+				synchronized(Node.this) {
+					enableRoutedPing = val;
+				}
+			}
+			
+		});
+		enableRoutedPing = nodeConfig.getBoolean("enableRoutedPing");
+		
+		updateMTU();
+		
+		/* Take care that no configuration options are registered after this point; they will not persist
+		 * between restarts.
+		 */
 		nodeConfig.finishedInitialization();
-		if(shouldWriteConfig)
-			config.store();
+		if(shouldWriteConfig) config.store();
 		writeNodeFile();
 
 		// Initialize the plugin manager
 		Logger.normal(this, "Initializing Plugin Manager");
 		System.out.println("Initializing Plugin Manager");
 		pluginManager = new PluginManager(this, lastVersion);
-		
-		shutdownHook.addLateJob(new NativeThread("Shutdown plugins", NativeThread.HIGH_PRIORITY, true) {
+
+		shutdownHook.addEarlyJob(new NativeThread("Shutdown plugins", NativeThread.HIGH_PRIORITY, true) {
+			@Override
 			public void realRun() {
-				pluginManager.stop(30*1000); // FIXME make it configurable??
+				pluginManager.stop(SECONDS.toMillis(30)); // FIXME make it configurable??
 			}
 		});
 
@@ -2534,9 +2532,9 @@ public class Node implements TimeSkewDetectorCallback {
 		// it's likely (on reports so far) that a restart will fix it.
 		// And we have to get a build out because ALL plugins are now failing to load,
 		// including the absolutely essential (for most nodes) JSTUN and UPnP.
-		WrapperManager.signalStarting(120*1000);
+		WrapperManager.signalStarting((int) MINUTES.toMillis(2));
 
-		FetchContext ctx = clientCore.makeClient((short)0, true).getFetchContext();
+		FetchContext ctx = clientCore.makeClient((short)0, true, false).getFetchContext();
 
 		ctx.allowSplitfiles = false;
 		ctx.dontEnterImplicitArchives = true;
@@ -2548,16 +2546,6 @@ public class Node implements TimeSkewDetectorCallback {
 		ctx.maxTempLength = 4096;
 
 		this.arkFetcherContext = ctx;
-
-		// Node updater support
-
-		System.out.println("Initializing Node Updater");
-		try {
-			nodeUpdater = NodeUpdateManager.maybeCreate(this, config);
-		} catch (InvalidConfigValueException e) {
-			e.printStackTrace();
-			throw new NodeInitException(NodeInitException.EXIT_COULD_NOT_START_UPDATER, "Could not create Updater: "+e);
-		}
 
 		registerNodeToNodeMessageListener(N2N_MESSAGE_TYPE_FPROXY, fproxyN2NMListener);
 		registerNodeToNodeMessageListener(Node.N2N_MESSAGE_TYPE_DIFFNODEREF, diffNoderefListener);
@@ -2575,21 +2563,104 @@ public class Node implements TimeSkewDetectorCallback {
 		System.out.println("Node constructor completed");
 	}
 
-	public void lateSetupDatabase(byte[] databaseKey) throws MasterKeysWrongPasswordException, MasterKeysFileSizeException, IOException {
-		if(db != null) return;
+    /** Delete files from old BDB-index datastore. */
+	private void deleteOldBDBIndexStoreFiles() {
+		File dbDir = storeDir.file("database-"+getDarknetPortNumber());
+		FileUtil.removeAll(dbDir);
+		File dir = storeDir.dir();
+		File[] list = dir.listFiles();
+		for(File f : list) {
+			String name = f.getName();
+			if(f.isFile() && 
+					name.toLowerCase().matches("((chk)|(ssk)|(pubkey))-[0-9]*\\.((store)|(cache))(\\.((keys)|(lru)))?")) {
+				System.out.println("Deleting old datastore file \""+f+"\"");
+				try {
+					FileUtil.secureDelete(f);
+				} catch (IOException e) {
+					System.err.println("Failed to delete old datastore file \""+f+"\": "+e);
+					e.printStackTrace();
+				}
+			}
+		}
+	}
+
+	private void fixCertsFiles() {
+		// Hack to update certificates file to fix update.cmd
+		// startssl.pem: Might be useful for old versions of update.sh too?
+		File certs = new File(PluginDownLoaderOfficialHTTPS.certfileOld);
+		fixCertsFile(certs);
+		if(FileUtil.detectedOS.isWindows) {
+			// updater\startssl.pem: Needed for Windows update.cmd.
+			certs = new File("updater", PluginDownLoaderOfficialHTTPS.certfileOld);
+			fixCertsFile(certs);
+		}
+	}
+
+	private void fixCertsFile(File certs) {
+		long oldLength = certs.exists() ? certs.length() : -1;
+		try {
+			File tmpFile = File.createTempFile(PluginDownLoaderOfficialHTTPS.certfileOld, ".tmp", new File("."));
+			PluginDownLoaderOfficialHTTPS.writeCertsTo(tmpFile);
+			if(FileUtil.renameTo(tmpFile, certs)) {
+				long newLength = certs.length();
+				if(newLength != oldLength)
+					System.err.println("Updated "+certs+" so that update scripts will work");
+			} else {
+				if(certs.length() != tmpFile.length()) {
+					System.err.println("Cannot update "+certs+" : last-resort update scripts (in particular update.cmd on Windows) may not work");
+					File manual = new File(PluginDownLoaderOfficialHTTPS.certfileOld+".new");
+					manual.delete();
+					if(tmpFile.renameTo(manual))
+						System.err.println("Please delete "+certs+" and rename "+manual+" over it");
+					else
+						tmpFile.delete();
+				}
+			}
+		} catch (IOException e) {
+		}
+	}
+
+	/**
+	** Sets up a program directory using the config value defined by the given
+	** parameters.
+	*/
+	public ProgramDirectory setupProgramDir(SubConfig installConfig,
+	  String cfgKey, String defaultValue, String shortdesc, String longdesc, String moveErrMsg,
+	  SubConfig oldConfig) throws NodeInitException {
+		ProgramDirectory dir = new ProgramDirectory(moveErrMsg);
+		int sortOrder = ProgramDirectory.nextOrder();
+		// forceWrite=true because currently it can't be changed on the fly, also for packages
+		installConfig.register(cfgKey, defaultValue, sortOrder, true, true, shortdesc, longdesc, dir.getStringCallback());
+		String dirName = installConfig.getString(cfgKey);
+		try {
+			dir.move(dirName);
+		} catch (IOException e) {
+			throw new NodeInitException(NodeInitException.EXIT_BAD_DIR, "could not set up directory: " + longdesc);
+		}
+		return dir;
+	}
+
+	protected ProgramDirectory setupProgramDir(SubConfig installConfig,
+	  String cfgKey, String defaultValue, String shortdesc, String longdesc,
+	  SubConfig oldConfig) throws NodeInitException {
+		return setupProgramDir(installConfig, cfgKey, defaultValue, shortdesc, longdesc, null, oldConfig);
+	}
+
+	public void lateSetupDatabase(DatabaseKey databaseKey) throws MasterKeysWrongPasswordException, MasterKeysFileSizeException, IOException {
+	    if(clientCore.loadedDatabase()) return;
 		System.out.println("Starting late database initialisation");
 		setupDatabase(databaseKey);
 		nodeDBHandle = darknetCrypto.getNodeHandle(db);
 
 		if(db != null) {
 			db.commit();
-			if(Logger.shouldLog(LogLevel.MINOR, this)) Logger.minor(this, "COMMITTED");
-			try {
-				if(!clientCore.lateInitDatabase(nodeDBHandle, db))
-					failLateInitDatabase();
-			} catch (NodeInitException e) {
-				failLateInitDatabase();
-			}
+			if(logMINOR) Logger.minor(this, "COMMITTED");
+		}
+		try {
+		    if(!clientCore.lateInitDatabase(nodeDBHandle, db, databaseKey))
+		        failLateInitDatabase();
+		} catch (NodeInitException e) {
+		    failLateInitDatabase();
 		}
 	}
 
@@ -2599,34 +2670,40 @@ public class Node implements TimeSkewDetectorCallback {
 		db = null;
 	}
 
-	private boolean databaseEncrypted;
+	private static class DB4ODiagnosticListener implements DiagnosticListener {
+		private static volatile boolean logDEBUG;
 
-	private void setupDatabase(byte[] databaseKey) throws MasterKeysWrongPasswordException, MasterKeysFileSizeException, IOException {
-		/* FIXME: Backup the database! */
+		static {
+			Logger.registerLogThresholdCallback(new LogThresholdCallback(){
+				@Override
+				public void shouldUpdate(){
+					logDEBUG = Logger.shouldLog(LogLevel.DEBUG, this);
+				}
+			});
+		}
+			@Override
+			public void onDiagnostic(Diagnostic arg0) {
+				if(!logDEBUG)
+					return;
+				if(arg0 instanceof ClassHasNoFields)
+					return; // Ignore
+				if(arg0 instanceof DiagnosticBase) {
+					DiagnosticBase d = (DiagnosticBase) arg0;
+					Logger.debug(this, "Diagnostic: "+d.getClass()+" : "+d.problem()+" : "+d.solution()+" : "+d.reason(), new Exception("debug"));
+				} else
+					Logger.debug(this, "Diagnostic: "+arg0+" : "+arg0.getClass(), new Exception("debug"));
+			}
+	}
+	/**
+	 * @param databaseKey The encryption key to the database. Null if the database is not encrypted
+	 * @return A new Db4o Configuration object which is fully configured to Fred's desired database settings.
+	 */
+	private Configuration getNewDatabaseConfiguration(DatabaseKey databaseKey) {
 		Configuration dbConfig = Db4o.newConfiguration();
 		/* On my db4o test node with lots of downloads, and several days old, com.db4o.internal.freespace.FreeSlotNode
 		 * used 73MB out of the 128MB limit (117MB used). This memory was not reclaimed despite constant garbage collection.
 		 * This is unacceptable, hence btree freespace. */
 		dbConfig.freespace().useBTreeSystem();
-		dbConfig.objectClass(freenet.client.async.PersistentCooldownQueueItem.class).objectField("key").indexed(true);
-		dbConfig.objectClass(freenet.client.async.PersistentCooldownQueueItem.class).objectField("keyAsBytes").indexed(true);
-		dbConfig.objectClass(freenet.client.async.PersistentCooldownQueueItem.class).objectField("time").indexed(true);
-		dbConfig.objectClass(freenet.client.async.RegisterMe.class).objectField("core").indexed(true);
-		dbConfig.objectClass(freenet.client.async.RegisterMe.class).objectField("priority").indexed(true);
-		dbConfig.objectClass(freenet.client.async.PersistentCooldownQueueItem.class).objectField("time").indexed(true);
-		dbConfig.objectClass(freenet.client.FECJob.class).objectField("priority").indexed(true);
-		dbConfig.objectClass(freenet.client.FECJob.class).objectField("addedTime").indexed(true);
-		dbConfig.objectClass(freenet.client.FECJob.class).objectField("queue").indexed(true);
-		dbConfig.objectClass(freenet.client.async.InsertCompressor.class).objectField("nodeDBHandle").indexed(true);
-		dbConfig.objectClass(freenet.node.fcp.FCPClient.class).objectField("name").indexed(true);
-		dbConfig.objectClass(freenet.client.async.DatastoreCheckerItem.class).objectField("prio").indexed(true);
-		dbConfig.objectClass(freenet.client.async.DatastoreCheckerItem.class).objectField("getter").indexed(true);
-		dbConfig.objectClass(freenet.support.io.PersistentBlobTempBucketTag.class).objectField("index").indexed(true);
-		dbConfig.objectClass(freenet.support.io.PersistentBlobTempBucketTag.class).objectField("bucket").indexed(true);
-		dbConfig.objectClass(freenet.support.io.PersistentBlobTempBucketTag.class).objectField("factory").indexed(true);
-		dbConfig.objectClass(freenet.support.io.PersistentBlobTempBucketTag.class).objectField("isFree").indexed(true);
-		dbConfig.objectClass(freenet.client.FetchException.class).cascadeOnDelete(true);
-		dbConfig.objectClass(PluginStore.class).cascadeOnDelete(true);
 		/*
 		 * HashMap: don't enable cascade on update/delete/activate, db4o handles this
 		 * internally through the TMap translator.
@@ -2651,26 +2728,38 @@ public class Node implements TimeSkewDetectorCallback {
 		 * long, and allows databases of up to 16GB.
 		 * FIXME make configurable by user. */
 		dbConfig.blockSize(8);
-		dbConfig.diagnostic().addListener(new DiagnosticListener() {
+		dbConfig.diagnostic().addListener(new DB4ODiagnosticListener());
 
-			public void onDiagnostic(Diagnostic arg0) {
-				if(arg0 instanceof ClassHasNoFields)
-					return; // Ignore
-				if(arg0 instanceof DiagnosticBase) {
-					DiagnosticBase d = (DiagnosticBase) arg0;
-					Logger.debug(this, "Diagnostic: "+d.getClass()+" : "+d.problem()+" : "+d.solution()+" : "+d.reason(), new Exception("debug"));
-				} else
-					Logger.debug(this, "Diagnostic: "+arg0+" : "+arg0.getClass(), new Exception("debug"));
-			}
-		});
+		dbConfig.exceptionsOnNotStorable(false);
 
 		System.err.println("Optimise native queries: "+dbConfig.optimizeNativeQueries());
 		System.err.println("Query activation depth: "+dbConfig.activationDepth());
+
+		// The database is encrypted.
+		if(databaseKey != null) {
+			IoAdapter baseAdapter = dbConfig.io();
+			try {
+				dbConfig.io(databaseKey.createEncryptingDb4oAdapter(baseAdapter));
+			} catch (GlobalOnlyConfigException e) {
+				// Fouled up after encrypting/decrypting.
+				System.err.println("Caught "+e+" opening encrypted database.");
+				e.printStackTrace();
+				WrapperManager.restart();
+				throw e;
+			}
+		}
+
+		return dbConfig;
+	}
+
+	private void setupDatabase(DatabaseKey databaseKey) throws MasterKeysWrongPasswordException, MasterKeysFileSizeException, IOException {
+		/* FIXME: Backup the database! */
+
 		ObjectContainer database;
 
 		File dbFileBackup = new File(dbFile.getPath()+".tmp");
 		File dbFileCryptBackup = new File(dbFileCrypt.getPath()+".tmp");
-		
+
 		if(dbFileBackup.exists() && !dbFile.exists()) {
 			if(!dbFileBackup.renameTo(dbFile)) {
 				throw new IOException("Database backup file "+dbFileBackup+" exists but cannot be renamed to "+dbFile+". Not loading database, please fix permissions problems!");
@@ -2681,149 +2770,37 @@ public class Node implements TimeSkewDetectorCallback {
 				throw new IOException("Database backup file "+dbFileCryptBackup+" exists but cannot be renamed to "+dbFileCrypt+". Not loading database, please fix permissions problems!");
 			}
 		}
-		
+
 		try {
 			if(securityLevels.getPhysicalThreatLevel() == PHYSICAL_THREAT_LEVEL.MAXIMUM) {
-				databaseKey = new byte[32];
-				random.nextBytes(databaseKey);
-				FileUtil.secureDelete(dbFileCrypt, random);
-				FileUtil.secureDelete(dbFile, random);
-				database = openCryptDatabase(dbConfig, databaseKey);
-				synchronized(this) {
-					databaseEncrypted = true;
-				}
-			} else if(dbFile.exists() && securityLevels.getPhysicalThreatLevel() == PHYSICAL_THREAT_LEVEL.LOW) {
-				maybeDefragmentDatabase(dbConfig, dbFile);
+			    if(dbFile.exists())
+			        FileUtil.secureDelete(dbFile);
+			    if(dbFileCrypt.exists())
+			        FileUtil.secureDelete(dbFileCrypt);
+                if(dbFileBackup.exists())
+                    FileUtil.secureDelete(dbFile);
+                if(dbFileCryptBackup.exists())
+                    FileUtil.secureDelete(dbFileCrypt);
+			    return; // No need to migrate
+			} else if(dbFile.exists()) {
 				// Just open it.
-				database = Db4o.openFile(dbConfig, dbFile.toString());
-				synchronized(this) {
-					databaseEncrypted = false;
-				}
-			} else if(dbFileCrypt.exists() && securityLevels.getPhysicalThreatLevel() == PHYSICAL_THREAT_LEVEL.LOW && autoChangeDatabaseEncryption && enoughSpaceForAutoChangeEncryption(dbFileCrypt, false)) {
-				// Migrate the encrypted file to plaintext, if we have the key
-				if(databaseKey == null) {
-					// Try with no password
-					MasterKeys keys;
-					try {
-						keys = MasterKeys.read(masterKeysFile, random, "");
-					} catch (MasterKeysWrongPasswordException e) {
-						// User probably changed it in the config file
-						System.err.println("Unable to decrypt the node.db4o. Please enter the correct password and set the physical security level to LOW via the GUI.");
-						securityLevels.setThreatLevel(PHYSICAL_THREAT_LEVEL.HIGH);
-						throw e;
-					}
-					databaseKey = keys.databaseKey;
-					keys.clearAllNotDatabaseKey();
-				}
-				System.err.println("Decrypting the old node.db4o.crypt ...");
-				IoAdapter baseAdapter = new RandomAccessFileAdapter();
-				EncryptingIoAdapter adapter =
-					new EncryptingIoAdapter(baseAdapter, databaseKey, random);
-				File tempFile = new File(dbFile.getPath()+".tmp");
-				tempFile.deleteOnExit();
-				FileOutputStream fos = new FileOutputStream(tempFile);
-				EncryptingIoAdapter readAdapter =
-					(EncryptingIoAdapter) adapter.open(dbFileCrypt.toString(), false, 0, true);
-				long length = readAdapter.getLength();
-				// Estimate approx 1 byte/sec.
-				WrapperManager.signalStarting((int)Math.min(24*60*60*1000, 300*1000+length));
-				byte[] buf = new byte[65536];
-				long read = 0;
-				while(read < length) {
-					int bytes = (int) Math.min(buf.length, length - read);
-					bytes = readAdapter.read(buf, bytes);
-					if(bytes < 0) throw new EOFException();
-					read += bytes;
-					fos.write(buf, 0, bytes);
-				}
-				fos.close();
-				readAdapter.close();
-				tempFile.renameTo(dbFile);
-				dbFileCrypt.delete();
-				database = Db4o.openFile(dbConfig, dbFile.toString());
-				System.err.println("Completed decrypting the old node.db4o.crypt.");
-				synchronized(this) {
-					databaseEncrypted = false;
-				}
-			} else if(dbFile.exists() && securityLevels.getPhysicalThreatLevel() != PHYSICAL_THREAT_LEVEL.LOW && autoChangeDatabaseEncryption && enoughSpaceForAutoChangeEncryption(dbFile, true)) {
-				// Migrate the unencrypted file to ciphertext.
-				// This will always succeed short of I/O errors.
-				maybeDefragmentDatabase(dbConfig, dbFile);
-				if(databaseKey == null) {
-					// Try with no password
-					MasterKeys keys;
-					keys = MasterKeys.read(masterKeysFile, random, "");
-					databaseKey = keys.databaseKey;
-					keys.clearAllNotDatabaseKey();
-				}
-				System.err.println("Encrypting the old node.db4o ...");
-				IoAdapter baseAdapter = new RandomAccessFileAdapter();
-				EncryptingIoAdapter adapter =
-					new EncryptingIoAdapter(baseAdapter, databaseKey, random);
-				File tempFile = new File(dbFileCrypt.getPath()+".tmp");
-				tempFile.delete();
-				tempFile.deleteOnExit();
-				EncryptingIoAdapter readAdapter =
-					(EncryptingIoAdapter) adapter.open(tempFile.getPath(), false, 0, false);
-				FileInputStream fis = new FileInputStream(dbFile);
-				long length = dbFile.length();
-				// Estimate approx 1 byte/sec.
-				WrapperManager.signalStarting((int)Math.min(24*60*60*1000, 300*1000+length));
-				byte[] buf = new byte[65536];
-				long read = 0;
-				while(read < length) {
-					int bytes = (int) Math.min(buf.length, length - read);
-					bytes = fis.read(buf, 0, bytes);
-					if(bytes < 0) throw new EOFException();
-					read += bytes;
-					readAdapter.write(buf, bytes);
-				}
-				fis.close();
-				readAdapter.close();
-				tempFile.renameTo(dbFileCrypt);
-				FileUtil.secureDelete(dbFile, random);
-				System.err.println("Completed encrypting the old node.db4o.");
-				database = openCryptDatabase(dbConfig, databaseKey);
-				synchronized(this) {
-					databaseEncrypted = true;
-				}
-			} else if((dbFileCrypt.exists() && !dbFile.exists()) || 
-					(securityLevels.getPhysicalThreatLevel() == PHYSICAL_THREAT_LEVEL.NORMAL) ||
-					(securityLevels.getPhysicalThreatLevel() == PHYSICAL_THREAT_LEVEL.HIGH && databaseKey != null)) {
+				database = Db4o.openFile(getNewDatabaseConfiguration(null), dbFile.toString());
+			} else if((dbFileCrypt.exists())) {
 				// Open encrypted, regardless of seclevel.
-				if(databaseKey == null) {
-					// Try with no password
-					MasterKeys keys;
-					keys = MasterKeys.read(masterKeysFile, random, "");
-					databaseKey = keys.databaseKey;
-					keys.clearAllNotDatabaseKey();
-				}
-				database = openCryptDatabase(dbConfig, databaseKey);
-				synchronized(this) {
-					databaseEncrypted = true;
-				}
-			} else {
-				maybeDefragmentDatabase(dbConfig, dbFile);
-				// Open unencrypted.
-				database = Db4o.openFile(dbConfig, dbFile.toString());
-				synchronized(this) {
-					databaseEncrypted = false;
-				}
-			}
+				database = openCryptDatabase(databaseKey);
+			} else return;
 		} catch (Db4oException e) {
 			database = null;
 			System.err.println("Failed to open database: "+e);
 			e.printStackTrace();
 		}
 		// DUMP DATABASE CONTENTS
-		if(Logger.shouldLog(LogLevel.DEBUG, ClientRequestScheduler.class) && database != null) {
+		if(logDEBUG && database != null) {
 		try {
 		System.err.println("DUMPING DATABASE CONTENTS:");
 		ObjectSet<Object> contents = database.queryByExample(new Object());
 		Map<String,Integer> map = new HashMap<String, Integer>();
-		Iterator<Object> i = contents.iterator();
-		while(i.hasNext()) {
-			Object o = i.next();
+		for(Object o: contents) {
 			String name = o.getClass().getName();
 			if((map.get(name)) != null) {
 				map.put(name, map.get(name)+1);
@@ -2843,34 +2820,6 @@ public class Node implements TimeSkewDetectorCallback {
 			System.err.println(entry.getKey()+" : "+entry.getValue());
 			total += entry.getValue();
 		}
-
-		// Now dump the SplitFileInserterSegment's.
-		ObjectSet<SplitFileInserterSegment> segments = database.query(SplitFileInserterSegment.class);
-		for(SplitFileInserterSegment seg : segments) {
-			try {
-			database.activate(seg, 1);
-			boolean finished = seg.isFinished();
-			boolean cancelled = seg.isCancelled(database);
-			boolean empty = seg.isEmpty(database);
-			boolean encoded = seg.isEncoded();
-			boolean started = seg.isStarted();
-			System.out.println("Segment "+seg+" finished="+finished+" cancelled="+cancelled+" empty="+empty+" encoded="+encoded+" size="+seg.countDataBlocks()+" data "+seg.countCheckBlocks()+" check started="+started);
-
-			if(!finished && !encoded) {
-				System.out.println("Not finished and not encoded: "+seg);
-				// Basic checks...
-				seg.checkHasDataBlocks(true, database);
-
-			}
-
-			database.deactivate(seg, 1);
-			} catch (Throwable t) {
-				System.out.println("Caught "+t+" processing segment");
-				t.printStackTrace();
-			}
-		}
-
-		FECQueue.dump(database, RequestStarter.NUMBER_OF_PRIORITY_CLASSES);
 
 		// Some structures e.g. collections are sensitive to the activation depth.
 		// If they are activated to depth 1, they are broken, and activating them to
@@ -2909,130 +2858,14 @@ public class Node implements TimeSkewDetectorCallback {
 
 	}
 
+	private ObjectContainer openCryptDatabase(DatabaseKey databaseKey) throws IOException {
 
-	private volatile boolean notEnoughSpaceForAutoCrypt = false;
-	private volatile boolean notEnoughSpaceIsCrypt = false;
-	private volatile long notEnoughSpaceMinimumSpace = 0;
-
-	private boolean enoughSpaceForAutoChangeEncryption(File file, boolean isCrypt) {
-		long freeSpace = FileUtil.getFreeSpace(file);
-		if(freeSpace == -1) {
-			return true; // We hope ... FIXME check the error handling ...
-		}
-		long minSpace = (long)(file.length() * 1.1) + 10*1024*1024;
-		if(freeSpace < minSpace) {
-			System.err.println(l10n(isCrypt ? "notEnoughSpaceToAutoEncrypt" : "notEnoughSpaceToAutoDecrypt", new String[] { "size", "file" }, new String[] { SizeUtil.formatSize(minSpace), dbFile.getAbsolutePath() }));
-			if(this.clientCore != null && this.clientCore.alerts != null)
-				createAutoCryptFailedUserAlert();
-			else {
-				notEnoughSpaceIsCrypt = isCrypt;
-				notEnoughSpaceForAutoCrypt = true;
-				notEnoughSpaceMinimumSpace = minSpace;
-			}
-			return false;
-		}
-		return true;
-	}
-
-
-	private ObjectContainer openCryptDatabase(Configuration dbConfig, byte[] databaseKey) throws IOException {
-		IoAdapter baseAdapter = dbConfig.io();
-		if(Logger.shouldLog(LogLevel.DEBUG, this))
-			Logger.debug(this, "Encrypting database with "+HexUtil.bytesToHex(databaseKey));
-		try {
-			dbConfig.io(new EncryptingIoAdapter(baseAdapter, databaseKey, random));
-		} catch (GlobalOnlyConfigException e) {
-			// Fouled up after encrypting/decrypting.
-			System.err.println("Caught "+e+" opening encrypted database.");
-			e.printStackTrace();
-			WrapperManager.restart();
-			throw e;
-		}
-
-		maybeDefragmentDatabase(dbConfig, dbFileCrypt);
-
-		ObjectContainer database = Db4o.openFile(dbConfig, dbFileCrypt.toString());
-		synchronized(this) {
-			databaseAwaitingPassword = false;
-		}
+		ObjectContainer database = Db4o.openFile(getNewDatabaseConfiguration(databaseKey), dbFileCrypt.toString());
 		return database;
 	}
 
-
-	private void maybeDefragmentDatabase(Configuration dbConfig, File databaseFile) throws IOException {
-
-		synchronized(this) {
-			if(!defragDatabaseOnStartup) return;
-		}
-		
-		// Open it first, because defrag will throw if it needs to upgrade the file.
-		
-		ObjectContainer database = Db4o.openFile(dbConfig, databaseFile.toString());
-		while(!database.close());
-		
-		if(!databaseFile.exists()) return;
-		long length = databaseFile.length();
-		// Estimate approx 1 byte/sec.
-		WrapperManager.signalStarting((int)Math.min(24*60*60*1000, 300*1000+length));
-		System.err.println("Defragmenting persistent downloads database.");
-
-		File backupFile = new File(databaseFile.getPath()+".tmp");
-		FileUtil.secureDelete(backupFile, random);
-
-		File tmpFile = new File(databaseFile.getPath()+".map");
-		FileUtil.secureDelete(tmpFile, random);
-		
-		
-
-		DefragmentConfig config=new DefragmentConfig(databaseFile.getPath(),backupFile.getPath(),new BTreeIDMapping(tmpFile.getPath()));
-		config.storedClassFilter(new AvailableClassFilter());
-		config.db4oConfig(dbConfig);
-		try {
-			Defragment.defrag(config);
-		} catch (IOException e) {
-			if(backupFile.exists()) {
-				System.err.println("Defrag failed. Trying to preserve original database file.");
-				FileUtil.secureDelete(databaseFile, random);
-				if(!backupFile.renameTo(databaseFile)) {
-					System.err.println("Unable to rename backup file back to database file! Restarting on the assumption that it didn't get closed...");
-					WrapperManager.restart();
-					throw e;
-				}
-			}
-		} catch (Db4oException e) {
-			if(backupFile.exists()) {
-				System.err.println("Defrag failed. Trying to preserve original database file.");
-				FileUtil.secureDelete(databaseFile, random);
-				if(!backupFile.renameTo(databaseFile)) {
-					System.err.println("Unable to rename backup file back to database file! Restarting on the assumption that it didn't get closed...");
-					WrapperManager.restart();
-					throw e;
-				}
-			}
-		}
-		System.err.println("Finalising defragmentation...");
-		FileUtil.secureDelete(tmpFile, random);
-		FileUtil.secureDelete(backupFile, random);
-		System.err.println("Defragment completed.");
-
-		synchronized(this) {
-			if(!defragOnce) return;
-			defragDatabaseOnStartup = false;
-		}
-		// Store after startup
-		this.executor.execute(new Runnable() {
-
-			public void run() {
-				Node.this.config.store();
-			}
-
-		}, "Store config");
-
-	}
-
-
 	public void killMasterKeysFile() throws IOException {
-		MasterKeys.killMasterKeys(masterKeysFile, random);
+		MasterKeys.killMasterKeys(masterKeysFile);
 	}
 
 
@@ -3043,92 +2876,100 @@ public class Node implements TimeSkewDetectorCallback {
 		}
 	}
 
+	/** Called when the client layer (not necessarily the old db4o database) needs the decryption 
+	 * password. */
+    void setDatabaseAwaitingPassword() {
+        synchronized(this) {
+            databaseAwaitingPassword = true;
+        }
+    }
+
 	private final UserAlert masterPasswordUserAlert = new UserAlert() {
 
 		final long creationTime = System.currentTimeMillis();
 
+		@Override
 		public String anchor() {
 			return "password";
 		}
 
+		@Override
 		public String dismissButtonText() {
 			return null;
 		}
 
+		@Override
 		public long getUpdatedTime() {
 			return creationTime;
 		}
 
+		@Override
 		public FCPMessage getFCPMessage() {
 			return new FeedMessage(getTitle(), getShortText(), getText(), getPriorityClass(), getUpdatedTime());
 		}
 
+		@Override
 		public HTMLNode getHTMLText() {
 			HTMLNode content = new HTMLNode("div");
 			SecurityLevelsToadlet.generatePasswordFormPage(false, clientCore.getToadletContainer(), content, false, false, false, null, null);
 			return content;
 		}
 
+		@Override
 		public short getPriorityClass() {
 			return UserAlert.ERROR;
 		}
 
+		@Override
 		public String getShortText() {
 			return NodeL10n.getBase().getString("SecurityLevels.enterPassword");
 		}
 
+		@Override
 		public String getText() {
 			return NodeL10n.getBase().getString("SecurityLevels.enterPassword");
 		}
 
+		@Override
 		public String getTitle() {
 			return NodeL10n.getBase().getString("SecurityLevels.enterPassword");
 		}
 
-		public Object getUserIdentifier() {
-			return Node.this;
-		}
-
+		@Override
 		public boolean isEventNotification() {
 			return false;
 		}
 
+		@Override
 		public boolean isValid() {
 			synchronized(Node.this) {
 				return clientCacheAwaitingPassword || databaseAwaitingPassword;
 			}
 		}
 
+		@Override
 		public void isValid(boolean validity) {
 			// Ignore
 		}
 
+		@Override
 		public void onDismiss() {
 			// Ignore
 		}
 
+		@Override
 		public boolean shouldUnregisterOnDismiss() {
 			return false;
 		}
 
+		@Override
 		public boolean userCanDismiss() {
 			return false;
 		}
 
 	};
-	private boolean xmlRemoteCodeExec;
-
 	private void createPasswordUserAlert() {
 		this.clientCore.alerts.register(masterPasswordUserAlert);
-	}
-
-	private void createAutoCryptFailedUserAlert() {
-		boolean isCrypt = notEnoughSpaceIsCrypt;
-		this.clientCore.alerts.register(new SimpleUserAlert(true,
-				isCrypt ? l10n("notEnoughSpaceToAutoEncryptTitle") : l10n("notEnoughSpaceToAutoDecryptTitle"),
-				l10n((isCrypt ? "notEnoughSpaceToAutoEncrypt" : "notEnoughSpaceToAutoDecrypt"), new String[] { "size", "file" }, new String[] { SizeUtil.formatSize(notEnoughSpaceMinimumSpace), dbFile.getAbsolutePath() }),
-				isCrypt ? l10n("notEnoughSpaceToAutoEncryptTitle") : l10n("notEnoughSpaceToAutoDecryptTitle"),
-				isCrypt ? UserAlert.ERROR : UserAlert.WARNING));
 	}
 
 	private void initRAMClientCacheFS() {
@@ -3138,8 +2979,6 @@ public class Node implements TimeSkewDetectorCallback {
 		new RAMFreenetStore<DSAPublicKey>(pubKeyClientcache, (int) Math.min(Integer.MAX_VALUE, maxClientCacheKeys));
 		sskClientcache = new SSKStore(getPubKey);
 		new RAMFreenetStore<SSKBlock>(sskClientcache, (int) Math.min(Integer.MAX_VALUE, maxClientCacheKeys));
-		envMutableConfig = null;
-		this.storeEnvironment = null;
 	}
 
 	private void initNoClientCacheFS() {
@@ -3149,8 +2988,6 @@ public class Node implements TimeSkewDetectorCallback {
 		new NullFreenetStore<DSAPublicKey>(pubKeyClientcache);
 		sskClientcache = new SSKStore(getPubKey);
 		new NullFreenetStore<SSKBlock>(sskClientcache);
-		envMutableConfig = null;
-		this.storeEnvironment = null;
 	}
 
 	private String getStoreSuffix() {
@@ -3159,78 +2996,12 @@ public class Node implements TimeSkewDetectorCallback {
 
 	private void finishInitSaltHashFS(final String suffix, NodeClientCore clientCore) {
 		if(clientCore.alerts == null) throw new NullPointerException();
-		((SaltedHashFreenetStore<CHKBlock>) chkDatastore.getStore()).setUserAlertManager(clientCore.alerts);
-		((SaltedHashFreenetStore<CHKBlock>) chkDatacache.getStore()).setUserAlertManager(clientCore.alerts);
-		((SaltedHashFreenetStore<DSAPublicKey>) pubKeyDatastore.getStore()).setUserAlertManager(clientCore.alerts);
-		((SaltedHashFreenetStore<DSAPublicKey>) pubKeyDatacache.getStore()).setUserAlertManager(clientCore.alerts);
-		((SaltedHashFreenetStore<SSKBlock>) sskDatastore.getStore()).setUserAlertManager(clientCore.alerts);
-		((SaltedHashFreenetStore<SSKBlock>) sskDatacache.getStore()).setUserAlertManager(clientCore.alerts);
-
-		if (isBDBStoreExist(suffix)) {
-			clientCore.alerts.register(new SimpleUserAlert(true, NodeL10n.getBase().getString("Node.storeSaltHashMigratedShort"),
-			        NodeL10n.getBase().getString("Node.storeSaltHashMigratedShort"), NodeL10n.getBase()
-			                .getString("Node.storeSaltHashMigratedShort"), UserAlert.MINOR) {
-
-				@Override
-				public HTMLNode getHTMLText() {
-					HTMLNode div = new HTMLNode("div");
-					div.addChild("#", NodeL10n.getBase().getString("Node.storeSaltHashMigrated"));
-					HTMLNode ul = div.addChild("ul");
-
-					for (String type : new String[] { "chk", "pubkey", "ssk" })
-						for (String storecache : new String[] { "store", "store.keys", "store.lru", "cache",
-						        "cache.keys", "cache.lru" }) {
-							File f = new File(storeDir, type + suffix + "." + storecache);
-							if (f.exists())
-								ul.addChild("li", f.getAbsolutePath());
-						}
-
-					File dbDir = new File(storeDir, "database" + suffix);
-					if (dbDir.exists())
-						ul.addChild("li", dbDir.getAbsolutePath());
-
-					return div;
-				}
-
-				@Override
-				public String getText() {
-					StringBuilder sb = new StringBuilder();
-					sb.append(NodeL10n.getBase().getString("Node.storeSaltHashMigrated") + " \n");
-
-					for (String type : new String[] { "chk", "pubkey", "ssk" })
-						for (String storecache : new String[] { "store", "store.keys", "store.lru", "cache",
-						        "cache.keys", "cache.lru" }) {
-							File f = new File(storeDir, type + suffix + "." + storecache);
-					if (f.exists())
-								sb.append(" - ");
-							sb.append(f.getAbsolutePath());
-							sb.append("\n");
-					}
-					File dbDir = new File(storeDir, "database" + suffix);
-					if (dbDir.exists()) {
-						sb.append(" - ");
-						sb.append(dbDir.getAbsolutePath());
-						sb.append("\n");
-					}
-
-					return sb.toString();
-				}
-
-				@Override
-				public boolean isValid() {
-					return isBDBStoreExist(suffix);
-				}
-
-				@Override
-				public void onDismiss() {
-				}
-
-				@Override
-				public boolean userCanDismiss() {
-					return true;
-				}
-			});
-		}
+		chkDatastore.getStore().setUserAlertManager(clientCore.alerts);
+		chkDatacache.getStore().setUserAlertManager(clientCore.alerts);
+		pubKeyDatastore.getStore().setUserAlertManager(clientCore.alerts);
+		pubKeyDatacache.getStore().setUserAlertManager(clientCore.alerts);
+		sskDatastore.getStore().setUserAlertManager(clientCore.alerts);
+		sskDatacache.getStore().setUserAlertManager(clientCore.alerts);
 	}
 
 	private void initRAMFS() {
@@ -3247,57 +3018,36 @@ public class Node implements TimeSkewDetectorCallback {
 		new RAMFreenetStore<SSKBlock>(sskDatastore, (int) Math.min(Integer.MAX_VALUE, maxStoreKeys));
 		sskDatacache = new SSKStore(getPubKey);
 		new RAMFreenetStore<SSKBlock>(sskDatacache, (int) Math.min(Integer.MAX_VALUE, maxCacheKeys));
-		envMutableConfig = null;
-		this.storeEnvironment = null;
 	}
 
-	private boolean isBDBStoreExist(final String suffix) {
-		for(String type : new String[] { "chk", "pubkey", "ssk" }) {
-			for(String ver : new String[] { "store", "cache" }) {
-				for(String ext : new String[] { "", ".keys", ".lru" }) {
-					if(new File(storeDir, type + suffix + "." + ver + ext).exists()) return true;
-				}
-			}
-		}
-		if(new File(storeDir, "database" + suffix).exists()) return true;
-		return false;
-    }
+	private long cachingFreenetStoreMaxSize;
+	private long cachingFreenetStorePeriod;
 
 	private void initSaltHashFS(final String suffix, boolean dontResizeOnStart, byte[] masterKey) throws NodeInitException {
-	    storeEnvironment = null;
-		envMutableConfig = null;
 		try {
-			int bloomSize = storeBloomFilterSize;
-			if (bloomSize == -1)
-				bloomSize = (int) Math.min(maxTotalDatastoreSize / 2048, Integer.MAX_VALUE);
-			int bloomFilterSizeInM = storeBloomFilterCounting ? bloomSize / 6 * 4
-			        : (bloomSize + 6) / 6 * 8; // + 6 to make size different, trigger rebuild
-			// Increase size by 10% to allow some space for removing keys. Even a 2-bit counting filter gets saturated.
-			bloomFilterSizeInM *= 1.1;
-
 			final CHKStore chkDatastore = new CHKStore();
-			final SaltedHashFreenetStore<CHKBlock> chkDataFS = makeStore(bloomFilterSizeInM, "CHK", true, chkDatastore, dontResizeOnStart, masterKey);
+			final FreenetStore<CHKBlock> chkDataFS = makeStore("CHK", true, chkDatastore, dontResizeOnStart, masterKey);
 			final CHKStore chkDatacache = new CHKStore();
-			final SaltedHashFreenetStore<CHKBlock> chkCacheFS = makeStore(bloomFilterSizeInM, "CHK", false, chkDatacache, dontResizeOnStart, masterKey);
-			chkCacheFS.setAltStore(chkDataFS);
+			final FreenetStore<CHKBlock> chkCacheFS = makeStore("CHK", false, chkDatacache, dontResizeOnStart, masterKey);
+			((SaltedHashFreenetStore<CHKBlock>) chkCacheFS.getUnderlyingStore()).setAltStore(((SaltedHashFreenetStore<CHKBlock>) chkDataFS.getUnderlyingStore()));
 			final PubkeyStore pubKeyDatastore = new PubkeyStore();
-			final SaltedHashFreenetStore<DSAPublicKey> pubkeyDataFS = makeStore(bloomFilterSizeInM, "PUBKEY", true, pubKeyDatastore, dontResizeOnStart, masterKey);
+			final FreenetStore<DSAPublicKey> pubkeyDataFS = makeStore("PUBKEY", true, pubKeyDatastore, dontResizeOnStart, masterKey);
 			final PubkeyStore pubKeyDatacache = new PubkeyStore();
-			final SaltedHashFreenetStore<DSAPublicKey> pubkeyCacheFS = makeStore(bloomFilterSizeInM, "PUBKEY", false, pubKeyDatacache, dontResizeOnStart, masterKey);
-			pubkeyCacheFS.setAltStore(pubkeyDataFS);
+			final FreenetStore<DSAPublicKey> pubkeyCacheFS = makeStore("PUBKEY", false, pubKeyDatacache, dontResizeOnStart, masterKey);
+			((SaltedHashFreenetStore<DSAPublicKey>) pubkeyCacheFS.getUnderlyingStore()).setAltStore(((SaltedHashFreenetStore<DSAPublicKey>) pubkeyDataFS.getUnderlyingStore()));
 			final SSKStore sskDatastore = new SSKStore(getPubKey);
-			final SaltedHashFreenetStore<SSKBlock> sskDataFS = makeStore(bloomFilterSizeInM, "SSK", true, sskDatastore, dontResizeOnStart, masterKey);
+			final FreenetStore<SSKBlock> sskDataFS = makeStore("SSK", true, sskDatastore, dontResizeOnStart, masterKey);
 			final SSKStore sskDatacache = new SSKStore(getPubKey);
-			final SaltedHashFreenetStore<SSKBlock> sskCacheFS = makeStore(bloomFilterSizeInM, "SSK", false, sskDatacache, dontResizeOnStart, masterKey);
-			sskCacheFS.setAltStore(sskDataFS);
-
+			final FreenetStore<SSKBlock> sskCacheFS = makeStore("SSK", false, sskDatacache, dontResizeOnStart, masterKey);
+			((SaltedHashFreenetStore<SSKBlock>) sskCacheFS.getUnderlyingStore()).setAltStore(((SaltedHashFreenetStore<SSKBlock>) sskDataFS.getUnderlyingStore()));
+			
 			boolean delay =
-				chkDataFS.start(ps, false) |
-				chkCacheFS.start(ps, false) |
-				pubkeyDataFS.start(ps, false) |
-				pubkeyCacheFS.start(ps, false) |
-				sskDataFS.start(ps, false) |
-				sskCacheFS.start(ps, false);
+				chkDataFS.start(ticker, false) |
+				chkCacheFS.start(ticker, false) |
+				pubkeyDataFS.start(ticker, false) |
+				pubkeyCacheFS.start(ticker, false) |
+				sskDataFS.start(ticker, false) |
+				sskCacheFS.start(ticker, false);
 
 			if(delay) {
 
@@ -3309,15 +3059,16 @@ public class Node implements TimeSkewDetectorCallback {
 
 				this.getTicker().queueTimedJob(new Runnable() {
 
+					@Override
 					public void run() {
 						System.err.println("Starting delayed init of datastore");
 						try {
-							chkDataFS.start(ps, true);
-							chkCacheFS.start(ps, true);
-							pubkeyDataFS.start(ps, true);
-							pubkeyCacheFS.start(ps, true);
-							sskDataFS.start(ps, true);
-							sskCacheFS.start(ps, true);
+							chkDataFS.start(ticker, true);
+							chkCacheFS.start(ticker, true);
+							pubkeyDataFS.start(ticker, true);
+							pubkeyCacheFS.start(ticker, true);
+							sskDataFS.start(ticker, true);
+							sskCacheFS.start(ticker, true);
 						} catch (IOException e) {
 							Logger.error(this, "Failed to start datastore: "+e, e);
 							System.err.println("Failed to start datastore: "+e);
@@ -3353,6 +3104,7 @@ public class Node implements TimeSkewDetectorCallback {
 
 				this.getTicker().queueTimedJob(new Runnable() {
 
+					@Override
 					public void run() {
 						Node.this.chkDatastore = chkDatastore;
 						Node.this.chkDatacache = chkDatacache;
@@ -3368,16 +3120,6 @@ public class Node implements TimeSkewDetectorCallback {
 				}, "Start store", 0, true, false);
 			}
 
-			File migrationFile = new File(storeDir, "migrated");
-			if (!migrationFile.exists()) {
-				tryMigrate(chkDataFS, "chk", true, suffix);
-				tryMigrate(chkCacheFS, "chk", false, suffix);
-				tryMigrate(pubkeyDataFS, "pubkey", true, suffix);
-				tryMigrate(pubkeyCacheFS, "pubkey", false, suffix);
-				tryMigrate(sskDataFS, "ssk", true, suffix);
-				tryMigrate(sskCacheFS, "ssk", false, suffix);
-				migrationFile.createNewFile();
-			}
 		} catch (IOException e) {
 			System.err.println("Could not open store: " + e);
 			e.printStackTrace();
@@ -3386,25 +3128,19 @@ public class Node implements TimeSkewDetectorCallback {
     }
 
 	private void initSaltHashClientCacheFS(final String suffix, boolean dontResizeOnStart, byte[] clientCacheMasterKey) throws NodeInitException {
-	    storeEnvironment = null;
-		envMutableConfig = null;
 
 		try {
-			int bloomSize = (int) Math.min(maxTotalClientCacheSize / 2048, Integer.MAX_VALUE);
-			int bloomFilterSizeInM = storeBloomFilterCounting ? bloomSize / 6 * 4
-			        : (bloomSize + 6) / 6 * 8; // + 6 to make size different, trigger rebuild
-
 			final CHKStore chkClientcache = new CHKStore();
-			final SaltedHashFreenetStore<CHKBlock> chkDataFS = makeClientcache(bloomFilterSizeInM, "CHK", true, chkClientcache, dontResizeOnStart, clientCacheMasterKey);
+			final FreenetStore<CHKBlock> chkDataFS = makeClientcache("CHK", true, chkClientcache, dontResizeOnStart, clientCacheMasterKey);
 			final PubkeyStore pubKeyClientcache = new PubkeyStore();
-			final SaltedHashFreenetStore<DSAPublicKey> pubkeyDataFS = makeClientcache(bloomFilterSizeInM, "PUBKEY", true, pubKeyClientcache, dontResizeOnStart, clientCacheMasterKey);
+			final FreenetStore<DSAPublicKey> pubkeyDataFS = makeClientcache("PUBKEY", true, pubKeyClientcache, dontResizeOnStart, clientCacheMasterKey);
 			final SSKStore sskClientcache = new SSKStore(getPubKey);
-			final SaltedHashFreenetStore<SSKBlock> sskDataFS = makeClientcache(bloomFilterSizeInM, "SSK", true, sskClientcache, dontResizeOnStart, clientCacheMasterKey);
+			final FreenetStore<SSKBlock> sskDataFS = makeClientcache("SSK", true, sskClientcache, dontResizeOnStart, clientCacheMasterKey);
 
 			boolean delay =
-				chkDataFS.start(ps, false) |
-				pubkeyDataFS.start(ps, false) |
-				sskDataFS.start(ps, false);
+				chkDataFS.start(ticker, false) |
+				pubkeyDataFS.start(ticker, false) |
+				sskDataFS.start(ticker, false);
 
 			if(delay) {
 
@@ -3416,12 +3152,13 @@ public class Node implements TimeSkewDetectorCallback {
 
 				getTicker().queueTimedJob(new Runnable() {
 
+					@Override
 					public void run() {
 						System.err.println("Starting delayed init of client-cache");
 						try {
-							chkDataFS.start(ps, true);
-							pubkeyDataFS.start(ps, true);
-							sskDataFS.start(ps, true);
+							chkDataFS.start(ticker, true);
+							pubkeyDataFS.start(ticker, true);
+							sskDataFS.start(ticker, true);
 						} catch (IOException e) {
 							Logger.error(this, "Failed to start client-cache: "+e, e);
 							System.err.println("Failed to start client-cache: "+e);
@@ -3451,181 +3188,37 @@ public class Node implements TimeSkewDetectorCallback {
 		}
     }
 
-	private <T extends StorableBlock> void tryMigrate(SaltedHashFreenetStore<T> chkDataFS, String type, boolean isStore, String suffix) {
-		String store = isStore ? "store" : "cache";
-		chkDataFS.migrationFrom(//
-		        new File(storeDir, type + suffix + "."+store), //
-		        new File(storeDir, type + suffix + "."+store+".keys"));
-	}
-
-	private <T extends StorableBlock> SaltedHashFreenetStore<T> makeClientcache(int bloomFilterSizeInM, String type, boolean isStore, StoreCallback<T> cb, boolean dontResizeOnStart, byte[] clientCacheMasterKey) throws IOException {
-		SaltedHashFreenetStore<T> store = makeStore(bloomFilterSizeInM, type, "clientcache", maxClientCacheKeys, cb, dontResizeOnStart, clientCacheMasterKey);
+	private <T extends StorableBlock> FreenetStore<T> makeClientcache(String type, boolean isStore, StoreCallback<T> cb, boolean dontResizeOnStart, byte[] clientCacheMasterKey) throws IOException {
+		FreenetStore<T> store = makeStore(type, "clientcache", maxClientCacheKeys, cb, dontResizeOnStart, clientCacheMasterKey);
 		return store;
 	}
 
-	private <T extends StorableBlock> SaltedHashFreenetStore<T> makeStore(int bloomFilterSizeInM, String type, boolean isStore, StoreCallback<T> cb, boolean dontResizeOnStart, byte[] clientCacheMasterKey) throws IOException {
+	private <T extends StorableBlock> FreenetStore<T> makeStore(String type, boolean isStore, StoreCallback<T> cb, boolean dontResizeOnStart, byte[] clientCacheMasterKey) throws IOException {
 		String store = isStore ? "store" : "cache";
 		long maxKeys = isStore ? maxStoreKeys : maxCacheKeys;
-		return makeStore(bloomFilterSizeInM, type, store, maxKeys, cb, dontResizeOnStart, clientCacheMasterKey);
+		return makeStore(type, store, maxKeys, cb, dontResizeOnStart, clientCacheMasterKey);
 	}
 
-	private <T extends StorableBlock> SaltedHashFreenetStore<T> makeStore(int bloomFilterSizeInM, String type, String store, long maxKeys, StoreCallback<T> cb, boolean lateStart, byte[] clientCacheMasterKey) throws IOException {
+	private <T extends StorableBlock> FreenetStore<T> makeStore(String type, String store, long maxKeys, StoreCallback<T> cb, boolean lateStart, byte[] clientCacheMasterKey) throws IOException {
 		Logger.normal(this, "Initializing "+type+" Data"+store);
 		System.out.println("Initializing "+type+" Data"+store+" (" + maxStoreKeys + " keys)");
 
-		SaltedHashFreenetStore<T> fs = SaltedHashFreenetStore.<T>construct(storeDir, type+"-"+store, cb,
-		        random, maxKeys, bloomFilterSizeInM, storeBloomFilterCounting, shutdownHook, storePreallocate, storeSaltHashResizeOnStart && !lateStart, lateStart ? ps : null, clientCacheMasterKey);
+		SaltedHashFreenetStore<T> fs = SaltedHashFreenetStore.<T>construct(getStoreDir(), type+"-"+store, cb,
+		        random, maxKeys, storeUseSlotFilters, shutdownHook, storePreallocate, storeSaltHashResizeOnStart && !lateStart, lateStart ? ticker : null, clientCacheMasterKey);
 		cb.setStore(fs);
-		return fs;
-	}
-
-	private void initBDBFS(final String suffix) throws NodeInitException {
-		// Setup datastores
-		final EnvironmentConfig envConfig = BerkeleyDBFreenetStore.getBDBConfig();
-
-		final File dbDir = new File(storeDir, "database-"+getDarknetPortNumber());
-		dbDir.mkdirs();
-
-		final File reconstructFile = new File(dbDir, "reconstruct");
-
-		Environment env = null;
-		EnvironmentMutableConfig mutableConfig;
-
-		// This can take some time
-		System.out.println("Starting database...");
-		try {
-			if(reconstructFile.exists()) {
-				reconstructFile.delete();
-				throw new DatabaseException();
-			}
-			// Auto-recovery can take a long time
-			WrapperManager.signalStarting(60*60*1000);
-			env = new Environment(dbDir, envConfig);
-			mutableConfig = env.getConfig();
-		} catch (final DatabaseException e) {
-
-			// Close the database
-			if(env != null) {
-				try {
-					env.close();
-				} catch (final Throwable t) {
-					System.err.println("Error closing database: "+t+" after "+e);
-					t.printStackTrace();
-				}
-			}
-
-			// Delete the database logs
-
-			System.err.println("Deleting old database log files...");
-
-			final File[] files = dbDir.listFiles();
-			for(int i=0;i<files.length;i++) {
-				final String name = files[i].getName().toLowerCase();
-				if(name.endsWith(".jdb") || name.equals("je.lck"))
-					if(!files[i].delete())
-						System.err.println("Failed to delete old database log file "+files[i]);
-			}
-
-			System.err.println("Recovering...");
-			// The database is broken
-			// We will have to recover from scratch
-			try {
-				env = new Environment(dbDir, envConfig);
-				mutableConfig = env.getConfig();
-			} catch (final DatabaseException e1) {
-				System.err.println("Could not open store: "+e1);
-				e1.printStackTrace();
-				System.err.println("Previous error was (tried deleting database and retrying): "+e);
-				e.printStackTrace();
-				throw new NodeInitException(NodeInitException.EXIT_STORE_OTHER, e1.getMessage());
-			}
-		}
-		storeEnvironment = env;
-		envMutableConfig = mutableConfig;
-
-		shutdownHook.addLateJob(new NativeThread("Shutdown bdbje database", NativeThread.HIGH_PRIORITY, true) {
-			@Override
-			public void realRun() {
-				try {
-					storeEnvironment.close();
-					System.err.println("Successfully closed all datastores.");
-				} catch (final Throwable t) {
-					System.err.println("Caught "+t+" closing environment");
-					t.printStackTrace();
-				}
-			}
-		});
-		envMutableConfig.setCacheSize(databaseMaxMemory);
-		// http://www.oracle.com/technology/products/berkeley-db/faq/je_faq.html#35
-
-		try {
-			storeEnvironment.setMutableConfig(envMutableConfig);
-		} catch (final DatabaseException e) {
-			System.err.println("Could not set the database configuration: "+e);
-			e.printStackTrace();
-			throw new NodeInitException(NodeInitException.EXIT_STORE_OTHER, e.getMessage());
-		}
-
-		try {
-			Logger.normal(this, "Initializing CHK Datastore");
-			System.out.println("Initializing CHK Datastore ("+maxStoreKeys+" keys)");
-			chkDatastore = new CHKStore();
-			BerkeleyDBFreenetStore.construct(storeDir, true, suffix, maxStoreKeys, StoreType.CHK,
-					storeEnvironment, shutdownHook, reconstructFile, chkDatastore, random);
-			Logger.normal(this, "Initializing CHK Datacache");
-			System.out.println("Initializing CHK Datacache ("+maxCacheKeys+ ':' +maxCacheKeys+" keys)");
-			chkDatacache = new CHKStore();
-			BerkeleyDBFreenetStore.construct(storeDir, false, suffix, maxCacheKeys, StoreType.CHK,
-					storeEnvironment, shutdownHook, reconstructFile, chkDatacache, random);
-			Logger.normal(this, "Initializing pubKey Datastore");
-			System.out.println("Initializing pubKey Datastore");
-			pubKeyDatastore = new PubkeyStore();
-			BerkeleyDBFreenetStore.construct(storeDir, true, suffix, maxStoreKeys, StoreType.PUBKEY,
-					storeEnvironment, shutdownHook, reconstructFile, pubKeyDatastore, random);
-			Logger.normal(this, "Initializing pubKey Datacache");
-			System.out.println("Initializing pubKey Datacache ("+maxCacheKeys+" keys)");
-			pubKeyDatacache = new PubkeyStore();
-			BerkeleyDBFreenetStore.construct(storeDir, false, suffix, maxCacheKeys, StoreType.PUBKEY,
-					storeEnvironment, shutdownHook, reconstructFile, pubKeyDatacache, random);
-			getPubKey.setDataStore(pubKeyDatastore, pubKeyDatacache);
-			Logger.normal(this, "Initializing SSK Datastore");
-			System.out.println("Initializing SSK Datastore");
-			sskDatastore = new SSKStore(getPubKey);
-			BerkeleyDBFreenetStore.construct(storeDir, true, suffix, maxStoreKeys, StoreType.SSK,
-					storeEnvironment, shutdownHook, reconstructFile, sskDatastore, random);
-			Logger.normal(this, "Initializing SSK Datacache");
-			System.out.println("Initializing SSK Datacache ("+maxCacheKeys+" keys)");
-			sskDatacache = new SSKStore(getPubKey);
-			BerkeleyDBFreenetStore.construct(storeDir, false, suffix, maxStoreKeys, StoreType.SSK,
-					storeEnvironment, shutdownHook, reconstructFile, sskDatacache, random);
-		} catch (final FileNotFoundException e1) {
-			final String msg = "Could not open datastore: "+e1;
-			Logger.error(this, msg, e1);
-			System.err.println(msg);
-			throw new NodeInitException(NodeInitException.EXIT_STORE_FILE_NOT_FOUND, msg);
-		} catch (final IOException e1) {
-			final String msg = "Could not open datastore: "+e1;
-			Logger.error(this, msg, e1);
-			System.err.println(msg);
-			e1.printStackTrace();
-			throw new NodeInitException(NodeInitException.EXIT_STORE_IOEXCEPTION, msg);
-		} catch (final DatabaseException e1) {
-			try {
-				reconstructFile.createNewFile();
-			} catch (final IOException e) {
-				System.err.println("Cannot create reconstruct file "+reconstructFile+" : "+e+" - store will not be reconstructed !!!!");
-				e.printStackTrace();
-			}
-			final String msg = "Could not open datastore due to corruption, will attempt to reconstruct on next startup: "+e1;
-			Logger.error(this, msg, e1);
-			System.err.println(msg);
-			e1.printStackTrace();
-			throw new NodeInitException(NodeInitException.EXIT_STORE_RECONSTRUCT, msg);
-		}
+		if(cachingFreenetStoreMaxSize > 0)
+			return new CachingFreenetStore<T>(cb, cachingFreenetStoreMaxSize, cachingFreenetStorePeriod, fs, ticker);
+		else
+			return fs;
 	}
 
 	public void start(boolean noSwaps) throws NodeInitException {
-
+		
+		// IMPORTANT: Read the peers only after we have finished initializing Node.
+		// Peer constructors are complex and can call methods on Node.
+		peers.tryReadPeers(nodeDir.file("peers-"+getDarknetPortNumber()).getPath(), darknetCrypto, null, false, false);
+		peers.updatePMUserAlert();
+		
 		dispatcher.start(nodeStats); // must be before usm
 		dnsr.start();
 		peers.start(); // must be before usm
@@ -3637,7 +3230,9 @@ public class Node implements TimeSkewDetectorCallback {
 		if(opennet != null)
 			opennet.start();
 		ps.start(nodeStats);
-		usm.start(ps);
+		ticker.start();
+		scheduleVersionTransition();
+		usm.start(ticker);
 
 		if(isUsingWrapper()) {
 			Logger.normal(this, "Using wrapper correctly: "+nodeStarter);
@@ -3658,7 +3253,7 @@ public class Node implements TimeSkewDetectorCallback {
 		ipDetector.start();
 
 		// Start sending swaps
-		lm.startSender();
+		lm.start();
 
 		// Node Updater
 		try{
@@ -3669,10 +3264,6 @@ public class Node implements TimeSkewDetectorCallback {
 			throw new NodeInitException(NodeInitException.EXIT_COULD_NOT_START_UPDATER, "Could not start Updater: "+e);
 		}
 
-		// Start testnet handler
-		if(testnetHandler != null)
-			testnetHandler.start();
-
 		/* TODO: Make sure that this is called BEFORE any instances of HTTPFilter are created.
 		 * HTTPFilter uses checkForGCJCharConversionBug() which returns the value of the static
 		 * variable jvmHasGCJCharConversionBug - and this is initialized in the following function.
@@ -3681,23 +3272,17 @@ public class Node implements TimeSkewDetectorCallback {
 		 */
 		checkForEvilJVMBugs();
 
-		// TODO: implement a "required" version if needed
-		if(!nodeUpdater.isEnabled() && (NodeStarter.RECOMMENDED_EXT_BUILD_NUMBER > NodeStarter.extBuildNumber))
-			clientCore.alerts.register(new ExtOldAgeUserAlert());
-		else if(NodeStarter.extBuildNumber == -1)
-			clientCore.alerts.register(new ExtOldAgeUserAlert());
-
 		if(!NativeThread.HAS_ENOUGH_NICE_LEVELS)
 			clientCore.alerts.register(new NotEnoughNiceLevelsUserAlert());
 
-		this.clientCore.start(config);
+		this.clientCore.start(config, db);
 
-		startDeadUIDChecker();
+		tracker.startDeadUIDChecker();
 
 		// After everything has been created, write the config file back to disk.
 		if(config instanceof FreenetFilePersistentConfig) {
 			FreenetFilePersistentConfig cfg = (FreenetFilePersistentConfig) config;
-			cfg.finishedInit(this.ps);
+			cfg.finishedInit(this.ticker);
 			cfg.setHasNodeStarted();
 		}
 		config.store();
@@ -3710,63 +3295,51 @@ public class Node implements TimeSkewDetectorCallback {
 		hasStarted = true;
 	}
 
+	private void scheduleVersionTransition() {
+		long now = System.currentTimeMillis();
+		long transition = Version.transitionTime();
+		if(now < transition)
+			ticker.queueTimedJob(new Runnable() {
+
+				@Override
+				public void run() {
+					freenet.support.Logger.OSThread.logPID(this);
+					for(PeerNode pn: peers.myPeers()) {
+						pn.updateVersionRoutablity();
+					}
+				}
+			}, transition - now);
+	}
+
+
 	private static boolean jvmHasGCJCharConversionBug=false;
 
 	private void checkForEvilJVMBugs() {
 		// Now check whether we are likely to get the EvilJVMBug.
-		// If we are running a Sun or Blackdown JVM, on Linux, and LD_ASSUME_KERNEL is not set, then we are.
+		// If we are running a Sun/Oracle or Blackdown JVM, on Linux, and LD_ASSUME_KERNEL is not set, then we are.
 
 		String jvmVendor = System.getProperty("java.vm.vendor");
 		String jvmSpecVendor = System.getProperty("java.specification.vendor","");
 		String javaVersion = System.getProperty("java.version");
 		String jvmName = System.getProperty("java.vm.name");
-		String jvmVersion = System.getProperty("java.vm.version");
 		String osName = System.getProperty("os.name");
 		String osVersion = System.getProperty("os.version");
 
 		boolean isOpenJDK = false;
-
-		if(jvmName.startsWith("OpenJDK ")) {
-			isOpenJDK = true;
-			if(javaVersion.startsWith("1.6.0")) {
-				String subverString;
-				if(jvmVersion.startsWith("14.0-b"))
-					subverString = jvmVersion.substring("14.0-b".length());
-				else if(jvmVersion.startsWith("1.6.0_0-b"))
-					subverString = jvmVersion.substring("1.6.0_0-b".length());
-				else
-					subverString = null;
-				if(subverString != null) {
-					int subver;
-					try {
-						subver = Integer.parseInt(subverString);
-					} catch (NumberFormatException e) {
-						subver = -1;
-					}
-				if(subver > -1 && subver < 15) {
-					File javaDir = new File(System.getProperty("java.home"));
-
-					// Assume that if the java home dir has been updated since August 11th, we have the fix.
-
-					final Calendar _cal = Calendar.getInstance(TimeZone.getTimeZone("GMT"));
-					_cal.set(2009, Calendar.AUGUST, 11, 0, 0, 0);
-					if(javaDir.exists() && javaDir.isDirectory() && javaDir.lastModified() > _cal.getTimeInMillis()) {
-						System.err.println("Your Java appears to have been updated, we probably do not have the XML bug (http://www.cert.fi/en/reports/2009/vulnerability2009085.html).");
-					} else {
-						System.err.println("Old version of OpenJDK detected. It is possible that your Java may be vulnerable to a remote code execution vulnerability. Please update your operating system ASAP. We will not disable plugins because we cannot be sure whether there is a problem.");
-						System.err.println("See here: http://www.cert.fi/en/reports/2009/vulnerability2009085.html");
-						clientCore.alerts.register(new SimpleUserAlert(false, l10n("openJDKMightBeVulnerableXML"), l10n("openJDKMightBeVulnerableXML"), l10n("openJDKMightBeVulnerableXML"), UserAlert.ERROR));
-					}
-
-				}
-				}
-			}
-		}
+		//boolean isOracle = false;
 
 		if(logMINOR) Logger.minor(this, "JVM vendor: "+jvmVendor+", JVM name: "+jvmName+", JVM version: "+javaVersion+", OS name: "+osName+", OS version: "+osVersion);
 
-		if((!isOpenJDK) && (jvmVendor.startsWith("Sun ") || (jvmVendor.startsWith("The FreeBSD Foundation") && jvmSpecVendor.startsWith("Sun ")) || (jvmVendor.startsWith("Apple ")))) {
-			// Sun bugs
+		if(jvmName.startsWith("OpenJDK ")) {
+			isOpenJDK = true;
+		}
+		
+		//Add some checks for "Oracle" to futureproof against them renaming from "Sun".
+		//Should have no effect because if a user has downloaded a new enough file for Oracle to have changed the name these bugs shouldn't apply.
+		//Still, one never knows and this code might be extended to cover future bugs.
+		if((!isOpenJDK) && (jvmVendor.startsWith("Sun ") || jvmVendor.startsWith("Oracle ")) || (jvmVendor.startsWith("The FreeBSD Foundation") && (jvmSpecVendor.startsWith("Sun ") || jvmSpecVendor.startsWith("Oracle "))) || (jvmVendor.startsWith("Apple "))) {
+			//isOracle = true;
+			// Sun/Oracle bugs
 
 			// Spurious OOMs
 			// http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=4855795
@@ -3788,21 +3361,13 @@ public class Node implements TimeSkewDetectorCallback {
 
 				Logger.minor(this, "JVM version: "+javaVersion+" subver: "+subver+" from "+secondPart);
 
-				if(is150 && subver < 20 || is160 && subver < 15)
-					xmlRemoteCodeExec = true;
-			}
-
-			if(xmlRemoteCodeExec) {
-				System.err.println("Please upgrade your Java to 1.6.0 update 15 or 1.5.0 update 20 IMMEDIATELY!");
-				System.err.println("Freenet plugins using XML, including the search function, and Freenet client applications such as Thaw which use XML are vulnerable to remote code execution!");
-
-				clientCore.alerts.register(new SimpleUserAlert(false, l10n("sunJVMxmlRemoteCodeExecTitle"), l10n("sunJVMxmlRemoteCodeExec"), l10n("sunJVMxmlRemoteCodeExecTitle"), UserAlert.CRITICAL_ERROR));
 			}
 
 		} else if (jvmVendor.startsWith("Apple ") || jvmVendor.startsWith("\"Apple ")) {
-			//Note that Sun does not produce VMs for the Macintosh operating system, dont ask the user to find one...
-		} else {
+			//Note that Sun/Oracle does not produce VMs for the Macintosh operating system, dont ask the user to find one...
+		} else if(!isOpenJDK) {
 			if(jvmVendor.startsWith("Free Software Foundation")) {
+				// GCJ/GIJ.
 				try {
 					javaVersion = System.getProperty("java.version").split(" ")[0].replaceAll("[.]","");
 					int jvmVersionInt = Integer.parseInt(javaVersion);
@@ -3814,19 +3379,22 @@ public class Node implements TimeSkewDetectorCallback {
 				catch(Throwable t) {
 					Logger.error(this, "GCJ version check is broken!", t);
 				}
+				clientCore.alerts.register(new SimpleUserAlert(true, l10n("usingGCJTitle"), l10n("usingGCJ"), l10n("usingGCJTitle"), UserAlert.WARNING));
 			}
-
-			clientCore.alerts.register(new SimpleUserAlert(true, l10n("notUsingSunVMTitle"), l10n("notUsingSunVM", new String[] { "vendor", "name", "version" }, new String[] { jvmVendor, jvmName, javaVersion }), l10n("notUsingSunVMShort"), UserAlert.WARNING));
 		}
 
-		if(!isUsingWrapper()) {
+		if(!isUsingWrapper() && !skipWrapperWarning) {
 			clientCore.alerts.register(new SimpleUserAlert(true, l10n("notUsingWrapperTitle"), l10n("notUsingWrapper"), l10n("notUsingWrapperShort"), UserAlert.WARNING));
 		}
-
-	}
-
-	public boolean xmlRemoteCodeExecVuln() {
-		return xmlRemoteCodeExec;
+		
+		// Unfortunately debian's version of OpenJDK appears to have segfaulting issues.
+		// Which presumably are exploitable.
+		// So we can't recommend people switch just yet. :(
+		
+//		if(isOracle && Rijndael.AesCtrProvider == null) {
+//			if(!(FileUtil.detectedOS == FileUtil.OperatingSystem.Windows || FileUtil.detectedOS == FileUtil.OperatingSystem.MacOS))
+//				clientCore.alerts.register(new SimpleUserAlert(true, l10n("usingOracleTitle"), l10n("usingOracle"), l10n("usingOracleTitle"), UserAlert.WARNING));
+//		}
 	}
 
 	public static boolean checkForGCJCharConversionBug() {
@@ -3856,13 +3424,15 @@ public class Node implements TimeSkewDetectorCallback {
 	 * Do a routed ping of another node on the network by its location.
 	 * @param loc2 The location of the other node to ping. It must match
 	 * exactly.
+	 * @param pubKeyHash The hash of the pubkey of the target node. We match
+	 * by location; this is just a shortcut if we get close.
 	 * @return The number of hops it took to find the node, if it was found.
 	 * Otherwise -1.
 	 */
-	public int routedPing(double loc2, byte[] nodeIdentity) {
+	public int routedPing(double loc2, byte[] pubKeyHash) {
 		long uid = random.nextLong();
 		int initialX = random.nextInt();
-		Message m = DMT.createFNPRoutedPing(uid, loc2, maxHTL, initialX, nodeIdentity);
+		Message m = DMT.createFNPRoutedPing(uid, loc2, maxHTL, initialX, pubKeyHash);
 		Logger.normal(this, "Message: "+m);
 
 		dispatcher.handleRouted(m, null);
@@ -3897,7 +3467,7 @@ public class Node implements TimeSkewDetectorCallback {
 		KeyBlock kb = null;
 
 		if (key instanceof NodeCHK) {
-			kb = fetch((NodeCHK) key, false, canReadClientCache, canWriteClientCache, canWriteDatastore, null);
+			kb = fetch(key, false, canReadClientCache, canWriteClientCache, canWriteDatastore, null);
 		} else if (key instanceof NodeSSK) {
 			NodeSSK sskKey = (NodeSSK) key;
 			DSAPublicKey pubKey = sskKey.getPubKey();
@@ -3925,10 +3495,13 @@ public class Node implements TimeSkewDetectorCallback {
 		if (kb != null) {
 			// Probably somebody waiting for it. Trip it.
 			if (clientCore != null && clientCore.requestStarters != null) {
-				if (kb instanceof CHKBlock)
-					clientCore.requestStarters.chkFetchScheduler.tripPendingKey(kb);
-				else
-					clientCore.requestStarters.sskFetchScheduler.tripPendingKey(kb);
+				if (kb instanceof CHKBlock) {
+					clientCore.requestStarters.chkFetchSchedulerBulk.tripPendingKey(kb);
+					clientCore.requestStarters.chkFetchSchedulerRT.tripPendingKey(kb);
+				} else {
+					clientCore.requestStarters.sskFetchSchedulerBulk.tripPendingKey(kb);
+					clientCore.requestStarters.sskFetchSchedulerRT.tripPendingKey(kb);
+				}
 			}
 			failureTable.onFound(kb);
 			return kb;
@@ -3948,7 +3521,7 @@ public class Node implements TimeSkewDetectorCallback {
 	 * a RequestSender, unless the HTL is 0, in which case NULL.
 	 * RequestSender.
 	 */
-	public Object makeRequestSender(Key key, short htl, long uid, PeerNode source, boolean localOnly, boolean ignoreStore, boolean offersOnly, boolean canReadClientCache, boolean canWriteClientCache) {
+	public Object makeRequestSender(Key key, short htl, long uid, RequestTag tag, PeerNode source, boolean localOnly, boolean ignoreStore, boolean offersOnly, boolean canReadClientCache, boolean canWriteClientCache, boolean realTimeFlag) {
 		boolean canWriteDatastore = canWriteDatastoreRequest(htl);
 		if(logMINOR) Logger.minor(this, "makeRequestSender("+key+ ',' +htl+ ',' +uid+ ',' +source+") on "+getDarknetPortNumber());
 		// In store?
@@ -3961,12 +3534,12 @@ public class Node implements TimeSkewDetectorCallback {
 		if(logMINOR) Logger.minor(this, "Not in store locally");
 
 		// Transfer coalescing - match key only as HTL irrelevant
-		RequestSender sender = null;
-		synchronized(transferringRequestSenders) {
-			sender = transferringRequestSenders.get(key);
-		}
+		RequestSender sender = key instanceof NodeCHK ? 
+			tracker.getTransferringRequestSenderByKey((NodeCHK)key, realTimeFlag) : null;
 		if(sender != null) {
 			if(logMINOR) Logger.minor(this, "Data already being transferred: "+sender);
+			sender.setTransferCoalesced();
+			tag.setSender(sender, true);
 			return sender;
 		}
 
@@ -3976,7 +3549,8 @@ public class Node implements TimeSkewDetectorCallback {
 			return null;
 		}
 
-		sender = new RequestSender(key, null, htl, uid, this, source, offersOnly, canWriteClientCache, canWriteDatastore);
+		sender = new RequestSender(key, null, htl, uid, tag, this, source, offersOnly, canWriteClientCache, canWriteDatastore, realTimeFlag);
+		tag.setSender(sender, false);
 		sender.start();
 		if(logMINOR) Logger.minor(this, "Created new sender: "+sender);
 		return sender;
@@ -4005,27 +3579,6 @@ public class Node implements TimeSkewDetectorCallback {
 	}
 
 	/**
-	 * Add a transferring RequestSender to our HashMap.
-	 */
-	public void addTransferringSender(NodeCHK key, RequestSender sender) {
-		synchronized(transferringRequestSenders) {
-			transferringRequestSenders.put(key, sender);
-		}
-	}
-
-	void addTransferringRequestHandler(long id) {
-		synchronized(transferringRequestHandlers) {
-			transferringRequestHandlers.add(id);
-		}
-	}
-
-	void removeTransferringRequestHandler(long id) {
-		synchronized(transferringRequestHandlers) {
-			transferringRequestHandlers.remove(id);
-		}
-	}
-
-	/**
 	 * Fetch a block from the datastore.
 	 * @param key
 	 * @param canReadClientCache
@@ -4051,7 +3604,7 @@ public class Node implements TimeSkewDetectorCallback {
 		double dist=Location.distance(lm.getLocation(), loc);
 		if(canReadClientCache) {
 			try {
-				SSKBlock block = sskClientcache.fetch(key, dontPromote || !canWriteClientCache, canReadClientCache, forULPR, meta);
+				SSKBlock block = sskClientcache.fetch(key, dontPromote || !canWriteClientCache, canReadClientCache, forULPR, false, meta);
 				if(block != null) {
 					nodeStats.avgClientCacheSSKSuccess.report(loc);
 					if (dist > nodeStats.furthestClientCacheSSKSuccess)
@@ -4065,7 +3618,7 @@ public class Node implements TimeSkewDetectorCallback {
 		}
 		if(forULPR || useSlashdotCache || canReadClientCache) {
 			try {
-				SSKBlock block = sskSlashdotcache.fetch(key, dontPromote, canReadClientCache, forULPR, meta);
+				SSKBlock block = sskSlashdotcache.fetch(key, dontPromote, canReadClientCache, forULPR, false, meta);
 				if(block != null) {
 					nodeStats.avgSlashdotCacheSSKSuccess.report(loc);
 					if (dist > nodeStats.furthestSlashdotCacheSSKSuccess)
@@ -4077,15 +3630,17 @@ public class Node implements TimeSkewDetectorCallback {
 				Logger.error(this, "Could not read from slashdot/ULPR cache: "+e, e);
 			}
 		}
+		boolean ignoreOldBlocks = !writeLocalToDatastore;
+		if(canReadClientCache) ignoreOldBlocks = false;
 		if(logMINOR) dumpStoreHits();
 		try {
 
 			nodeStats.avgRequestLocation.report(loc);
-			SSKBlock block = sskDatastore.fetch(key, dontPromote || !canWriteDatastore, canReadClientCache, forULPR, meta);
+			SSKBlock block = sskDatastore.fetch(key, dontPromote || !canWriteDatastore, canReadClientCache, forULPR, ignoreOldBlocks, meta);
 			if(block == null) {
 				SSKStore store = oldSSK;
 				if(store != null)
-					block = store.fetch(key, dontPromote || !canWriteDatastore, canReadClientCache, forULPR, meta);
+					block = store.fetch(key, dontPromote || !canWriteDatastore, canReadClientCache, forULPR, ignoreOldBlocks, meta);
 			}
 			if(block != null) {
 			nodeStats.avgStoreSSKSuccess.report(loc);
@@ -4094,11 +3649,11 @@ public class Node implements TimeSkewDetectorCallback {
 				if(logDEBUG) Logger.debug(this, "Found key "+key+" in store");
 				return block;
 			}
-			block=sskDatacache.fetch(key, dontPromote || !canWriteDatastore, canReadClientCache, forULPR, meta);
+			block=sskDatacache.fetch(key, dontPromote || !canWriteDatastore, canReadClientCache, forULPR, ignoreOldBlocks, meta);
 			if(block == null) {
 				SSKStore store = oldSSKCache;
 				if(store != null)
-					block = store.fetch(key, dontPromote || !canWriteDatastore, canReadClientCache, forULPR, meta);
+					block = store.fetch(key, dontPromote || !canWriteDatastore, canReadClientCache, forULPR, ignoreOldBlocks, meta);
 			}
 			if (block != null) {
 			nodeStats.avgCacheSSKSuccess.report(loc);
@@ -4118,7 +3673,7 @@ public class Node implements TimeSkewDetectorCallback {
 		double dist=Location.distance(lm.getLocation(), loc);
 		if(canReadClientCache) {
 			try {
-				CHKBlock block = chkClientcache.fetch(key, dontPromote || !canWriteClientCache, meta);
+				CHKBlock block = chkClientcache.fetch(key, dontPromote || !canWriteClientCache, false, meta);
 				if(block != null) {
 					nodeStats.avgClientCacheCHKSuccess.report(loc);
 					if (dist > nodeStats.furthestClientCacheCHKSuccess)
@@ -4131,7 +3686,7 @@ public class Node implements TimeSkewDetectorCallback {
 		}
 		if(forULPR || useSlashdotCache || canReadClientCache) {
 			try {
-				CHKBlock block = chkSlashdotcache.fetch(key, dontPromote, meta);
+				CHKBlock block = chkSlashdotcache.fetch(key, dontPromote, false, meta);
 				if(block != null) {
 					nodeStats.avgSlashdotCacheCHKSucess.report(loc);
 					if (dist > nodeStats.furthestSlashdotCacheCHKSuccess)
@@ -4142,14 +3697,16 @@ public class Node implements TimeSkewDetectorCallback {
 				Logger.error(this, "Could not read from slashdot/ULPR cache: "+e, e);
 			}
 		}
+		boolean ignoreOldBlocks = !writeLocalToDatastore;
+		if(canReadClientCache) ignoreOldBlocks = false;
 		if(logMINOR) dumpStoreHits();
 		try {
 			nodeStats.avgRequestLocation.report(loc);
-			CHKBlock block = chkDatastore.fetch(key, dontPromote || !canWriteDatastore, meta);
+			CHKBlock block = chkDatastore.fetch(key, dontPromote || !canWriteDatastore, ignoreOldBlocks, meta);
 			if(block == null) {
 				CHKStore store = oldCHK;
 				if(store != null)
-					block = store.fetch(key, dontPromote || !canWriteDatastore, meta);
+					block = store.fetch(key, dontPromote || !canWriteDatastore, ignoreOldBlocks, meta);
 			}
 			if (block != null) {
 				nodeStats.avgStoreCHKSuccess.report(loc);
@@ -4157,11 +3714,11 @@ public class Node implements TimeSkewDetectorCallback {
 					nodeStats.furthestStoreCHKSuccess=dist;
 				return block;
 			}
-			block=chkDatacache.fetch(key, dontPromote || !canWriteDatastore, meta);
+			block=chkDatacache.fetch(key, dontPromote || !canWriteDatastore, ignoreOldBlocks, meta);
 			if(block == null) {
 				CHKStore store = oldCHKCache;
 				if(store != null)
-					block = store.fetch(key, dontPromote || !canWriteDatastore, meta);
+					block = store.fetch(key, dontPromote || !canWriteDatastore, ignoreOldBlocks, meta);
 			}
 			if (block != null) {
 				nodeStats.avgCacheCHKSuccess.report(loc);
@@ -4175,19 +3732,34 @@ public class Node implements TimeSkewDetectorCallback {
 		}
 	}
 
-	public CHKStore getChkDatacache() {
+	CHKStore getChkDatacache() {
 		return chkDatacache;
 	}
-	public CHKStore getChkDatastore() {
+	CHKStore getChkDatastore() {
 		return chkDatastore;
 	}
-	public SSKStore getSskDatacache() {
+	SSKStore getSskDatacache() {
 		return sskDatacache;
 	}
-	public SSKStore getSskDatastore() {
+	SSKStore getSskDatastore() {
 		return sskDatastore;
 	}
 
+        CHKStore getChkSlashdotCache() {
+            return chkSlashdotcache;
+        }
+
+        CHKStore getChkClientCache() {
+            return chkClientcache;
+        }
+
+        SSKStore getSskSlashdotCache() {
+            return sskSlashdotcache;
+        }
+
+        SSKStore getSskClientCache() {
+            return sskClientcache;
+        }
 
 	/**
 	 * This method returns all statistics info for our data store stats table
@@ -4261,9 +3833,10 @@ public class Node implements TimeSkewDetectorCallback {
 				nodeStats.avgClientCacheCHKLocation.report(loc);
 			}
 
-			if ((forULPR || useSlashdotCache) && !(canWriteDatastore || writeLocalToDatastore))
+			if ((forULPR || useSlashdotCache) && !(canWriteDatastore || writeLocalToDatastore)) {
 				chkSlashdotcache.put(block, false);
 				nodeStats.avgSlashdotCacheCHKLocation.report(loc);
+			}
 			if (canWriteDatastore || writeLocalToDatastore) {
 
 				if (deep) {
@@ -4278,20 +3851,20 @@ public class Node implements TimeSkewDetectorCallback {
 				failureTable.onFound(block);
 		} catch (IOException e) {
 			Logger.error(this, "Cannot store data: "+e, e);
-		} catch (OutOfMemoryError e) {
-			OOMHandler.handleOOM(e);
 		} catch (Throwable t) {
 			System.err.println(t);
 			t.printStackTrace();
 			Logger.error(this, "Caught "+t+" storing data", t);
 		}
-		if(clientCore != null && clientCore.requestStarters != null)
-			clientCore.requestStarters.chkFetchScheduler.tripPendingKey(block);
+		if(clientCore != null && clientCore.requestStarters != null) {
+			clientCore.requestStarters.chkFetchSchedulerBulk.tripPendingKey(block);
+			clientCore.requestStarters.chkFetchSchedulerRT.tripPendingKey(block);
+		}
 	}
 
 	/** Store the block if this is a sink. Call for inserts. */
 	public void storeInsert(SSKBlock block, boolean deep, boolean overwrite, boolean canWriteClientCache, boolean canWriteDatastore) throws KeyCollisionException {
-		store(block, deep, canWriteClientCache, canWriteDatastore, false);
+		store(block, deep, overwrite, canWriteClientCache, canWriteDatastore, false);
 	}
 
 	/** Store only to the cache, and not the store. Called by requests,
@@ -4310,9 +3883,10 @@ public class Node implements TimeSkewDetectorCallback {
 				sskClientcache.put(block, overwrite, false);
 				nodeStats.avgClientCacheSSKLocation.report(loc);
 			}
-			if((forULPR || useSlashdotCache) && !(canWriteDatastore || writeLocalToDatastore))
+			if((forULPR || useSlashdotCache) && !(canWriteDatastore || writeLocalToDatastore)) {
 				sskSlashdotcache.put(block, overwrite, false);
 				nodeStats.avgSlashdotCacheSSKLocation.report(loc);
+			}
 			if(canWriteDatastore || writeLocalToDatastore) {
 				if(deep) {
 					sskDatastore.put(block, overwrite, !canWriteDatastore);
@@ -4325,8 +3899,6 @@ public class Node implements TimeSkewDetectorCallback {
 				failureTable.onFound(block);
 		} catch (IOException e) {
 			Logger.error(this, "Cannot store data: "+e, e);
-		} catch (OutOfMemoryError e) {
-			OOMHandler.handleOOM(e);
 		} catch (KeyCollisionException e) {
 			throw e;
 		} catch (Throwable t) {
@@ -4334,24 +3906,9 @@ public class Node implements TimeSkewDetectorCallback {
 			t.printStackTrace();
 			Logger.error(this, "Caught "+t+" storing data", t);
 		}
-		if(clientCore != null && clientCore.requestStarters != null)
-			clientCore.requestStarters.sskFetchScheduler.tripPendingKey(block);
-	}
-
-	/**
-	 * Remove a sender from the set of currently transferring senders.
-	 */
-	public void removeTransferringSender(NodeCHK key, RequestSender sender) {
-		synchronized(transferringRequestSenders) {
-//			RequestSender rs = (RequestSender) transferringRequestSenders.remove(key);
-//			if(rs != sender) {
-//				Logger.error(this, "Removed "+rs+" should be "+sender+" for "+key+" in removeTransferringSender");
-//			}
-
-			// Since there is no request coalescing, we only remove it if it matches,
-			// and don't complain if it doesn't.
-			if(transferringRequestSenders.get(key) == sender)
-				transferringRequestSenders.remove(key);
+		if(clientCore != null && clientCore.requestStarters != null) {
+			clientCore.requestStarters.sskFetchSchedulerBulk.tripPendingKey(block);
+			clientCore.requestStarters.sskFetchSchedulerRT.tripPendingKey(block);
 		}
 	}
 
@@ -4392,14 +3949,14 @@ public class Node implements TimeSkewDetectorCallback {
 	 * CHKInsertSender running.
 	 * @param source The node that sent the InsertRequest, or null
 	 * if it originated locally.
-	 * @param ignoreLowBackoff 
-	 * @param preferInsert 
+	 * @param ignoreLowBackoff
+	 * @param preferInsert
 	 */
-	public CHKInsertSender makeInsertSender(NodeCHK key, short htl, long uid, PeerNode source,
-			byte[] headers, PartiallyReceivedBlock prb, boolean fromStore, boolean canWriteClientCache, boolean forkOnCacheable, boolean preferInsert, boolean ignoreLowBackoff) {
+	public CHKInsertSender makeInsertSender(NodeCHK key, short htl, long uid, InsertTag tag, PeerNode source,
+			byte[] headers, PartiallyReceivedBlock prb, boolean fromStore, boolean canWriteClientCache, boolean forkOnCacheable, boolean preferInsert, boolean ignoreLowBackoff, boolean realTimeFlag) {
 		if(logMINOR) Logger.minor(this, "makeInsertSender("+key+ ',' +htl+ ',' +uid+ ',' +source+",...,"+fromStore);
 		CHKInsertSender is = null;
-		is = new CHKInsertSender(key, uid, headers, htl, source, this, prb, fromStore, canWriteClientCache, forkOnCacheable, preferInsert, ignoreLowBackoff);
+		is = new CHKInsertSender(key, uid, tag, headers, htl, source, this, prb, fromStore, canWriteClientCache, forkOnCacheable, preferInsert, ignoreLowBackoff,realTimeFlag);
 		is.start();
 		// CHKInsertSender adds itself to insertSenders
 		return is;
@@ -4415,11 +3972,11 @@ public class Node implements TimeSkewDetectorCallback {
 	 * SSKInsertSender running.
 	 * @param source The node that sent the InsertRequest, or null
 	 * if it originated locally.
-	 * @param ignoreLowBackoff 
-	 * @param preferInsert 
+	 * @param ignoreLowBackoff
+	 * @param preferInsert
 	 */
-	public SSKInsertSender makeInsertSender(SSKBlock block, short htl, long uid, PeerNode source,
-			boolean fromStore, boolean canWriteClientCache, boolean canWriteDatastore, boolean forkOnCacheable, boolean preferInsert, boolean ignoreLowBackoff) {
+	public SSKInsertSender makeInsertSender(SSKBlock block, short htl, long uid, InsertTag tag, PeerNode source,
+			boolean fromStore, boolean canWriteClientCache, boolean canWriteDatastore, boolean forkOnCacheable, boolean preferInsert, boolean ignoreLowBackoff, boolean realTimeFlag) {
 		NodeSSK key = block.getKey();
 		if(key.getPubKey() == null) {
 			throw new IllegalArgumentException("No pub key when inserting");
@@ -4428,148 +3985,11 @@ public class Node implements TimeSkewDetectorCallback {
 		getPubKey.cacheKey(key.getPubKeyHash(), key.getPubKey(), false, canWriteClientCache, canWriteDatastore, false, writeLocalToDatastore);
 		Logger.minor(this, "makeInsertSender("+key+ ',' +htl+ ',' +uid+ ',' +source+",...,"+fromStore);
 		SSKInsertSender is = null;
-		is = new SSKInsertSender(block, uid, htl, source, this, fromStore, canWriteClientCache, forkOnCacheable, preferInsert, ignoreLowBackoff);
+		is = new SSKInsertSender(block, uid, tag, htl, source, this, fromStore, canWriteClientCache, forkOnCacheable, preferInsert, ignoreLowBackoff, realTimeFlag);
 		is.start();
 		return is;
 	}
-
-	public boolean lockUID(long uid, boolean ssk, boolean insert, boolean offerReply, boolean local, UIDTag tag) {
-		synchronized(runningUIDs) {
-			if(runningUIDs.containsKey(uid)) return false; // Already present.
-			runningUIDs.put(uid, tag);
-		}
-		// If these are switched around, we must remember to remove from both.
-		if(offerReply) {
-			HashMap<Long,OfferReplyTag> map = getOfferTracker(ssk);
-			innerLock(map, (OfferReplyTag)tag, uid, ssk, insert, offerReply, local);
-		} else if(insert) {
-			HashMap<Long,InsertTag> map = getInsertTracker(ssk,local);
-			innerLock(map, (InsertTag)tag, uid, ssk, insert, offerReply, local);
-		} else {
-			HashMap<Long,RequestTag> map = getRequestTracker(ssk,local);
-			innerLock(map, (RequestTag)tag, uid, ssk, insert, offerReply, local);
-		}
-		return true;
-	}
-
-	private<T extends UIDTag> void innerLock(HashMap<Long, T> map, T tag, Long uid, boolean ssk, boolean insert, boolean offerReply, boolean local) {
-		synchronized(map) {
-			if(logMINOR) Logger.minor(this, "Locking "+uid+" ssk="+ssk+" insert="+insert+" offerReply="+offerReply+" local="+local+" size="+map.size(), new Exception("debug"));
-			if(map.containsKey(uid)) {
-				Logger.error(this, "Already have UID in specific map ("+ssk+","+insert+","+offerReply+","+local+") but not in general map: trying to register "+tag+" but already have "+map.get(uid));
-			}
-			map.put(uid, tag);
-			if(logMINOR) Logger.minor(this, "Locked "+uid+" ssk="+ssk+" insert="+insert+" offerReply="+offerReply+" local="+local+" size="+map.size());
-		}
-	}
-
-	public void unlockUID(long uid, boolean ssk, boolean insert, boolean canFail, boolean offerReply, boolean local, UIDTag tag) {
-		completed(uid);
-
-		if(offerReply) {
-			HashMap<Long,OfferReplyTag> map = getOfferTracker(ssk);
-			innerUnlock(map, (OfferReplyTag)tag, uid, ssk, insert, offerReply, local, canFail);
-		} else if(insert) {
-			HashMap<Long,InsertTag> map = getInsertTracker(ssk,local);
-			innerUnlock(map, (InsertTag)tag, uid, ssk, insert, offerReply, local, canFail);
-		} else {
-			HashMap<Long,RequestTag> map = getRequestTracker(ssk,local);
-			innerUnlock(map, (RequestTag)tag, uid, ssk, insert, offerReply, local, canFail);
-		}
-
-		synchronized(runningUIDs) {
-			UIDTag oldTag = runningUIDs.get(uid);
-			if(oldTag == null) {
-				if(canFail) return;
-				throw new IllegalStateException("Could not unlock "+uid+ "! : ssk="+ssk+" insert="+insert+" canFail="+canFail+" offerReply="+offerReply+" local="+local);
-			} else if(tag != oldTag) {
-				if(canFail) return;
-				Logger.error(this, "Removing "+tag+" for "+uid+" but "+tag+" is registered!");
-				return;
-			} else {
-				runningUIDs.remove(uid);
-			}
-		}
-	}
-
-	private<T extends UIDTag> void innerUnlock(HashMap<Long, T> map, T tag, Long uid, boolean ssk, boolean insert, boolean offerReply, boolean local, boolean canFail) {
-		synchronized(map) {
-			if(logMINOR) Logger.minor(this, "Unlocking "+uid+" ssk="+ssk+" insert="+insert+" offerReply="+offerReply+" local="+local+" size="+map.size(), new Exception("debug"));
-			if(map.get(uid) != tag) {
-				if(canFail) {
-					if(logMINOR) Logger.minor(this, "Can fail and did fail: removing "+tag+" got "+map.get(uid)+" for "+uid);
-				} else {
-					Logger.error(this, "Removing "+tag+" for "+uid+" returned "+map.get(uid));
-				}
-			} else
-				map.remove(uid);
-			if(logMINOR) Logger.minor(this, "Unlocked "+uid+" ssk="+ssk+" insert="+insert+" offerReply="+offerReply+" local="+local+" size="+map.size());
-		}
-	}
-
-	private HashMap<Long, RequestTag> getRequestTracker(boolean ssk, boolean local) {
-		if(ssk) {
-			return local ? runningLocalSSKGetUIDs : runningSSKGetUIDs;
-		} else {
-			return local ? runningLocalCHKGetUIDs : runningCHKGetUIDs;
-		}
-	}
-
-	private HashMap<Long, InsertTag> getInsertTracker(boolean ssk, boolean local) {
-		if(ssk) {
-			return local ? runningLocalSSKPutUIDs : runningSSKPutUIDs;
-		} else {
-			return local ? runningLocalCHKPutUIDs : runningCHKPutUIDs;
-		}
-	}
-
-	private HashMap<Long, OfferReplyTag> getOfferTracker(boolean ssk) {
-		return ssk ? runningSSKOfferReplyUIDs : runningCHKOfferReplyUIDs;
-	}
-
-	static final int TIMEOUT = 10 * 60 * 1000;
-
-	private void startDeadUIDChecker() {
-		getTicker().queueTimedJob(deadUIDChecker, TIMEOUT);
-	}
-
-	private Runnable deadUIDChecker = new Runnable() {
-		public void run() {
-			try {
-				checkUIDs(runningLocalSSKGetUIDs);
-				checkUIDs(runningLocalCHKGetUIDs);
-				checkUIDs(runningLocalSSKPutUIDs);
-				checkUIDs(runningLocalCHKPutUIDs);
-				checkUIDs(runningSSKGetUIDs);
-				checkUIDs(runningCHKGetUIDs);
-				checkUIDs(runningSSKPutUIDs);
-				checkUIDs(runningCHKPutUIDs);
-				checkUIDs(runningSSKOfferReplyUIDs);
-				checkUIDs(runningCHKOfferReplyUIDs);
-			} finally {
-				getTicker().queueTimedJob(this, 60*1000);
-			}
-		}
-
-		private void checkUIDs(HashMap<Long, ? extends UIDTag> map) {
-			Long[] uids;
-			UIDTag[] tags;
-			synchronized(map) {
-				uids = map.keySet().toArray(new Long[map.size()]);
-				tags = map.values().toArray(new UIDTag[map.size()]);
-			}
-			long now = System.currentTimeMillis();
-			for(int i=0;i<uids.length;i++) {
-				if(now - tags[i].createdTime > TIMEOUT) {
-					tags[i].logStillPresent(uids[i]);
-					synchronized(map) {
-						map.remove(uids[i]);
-					}
-				}
-			}
-		}
-	};
-
+	
 
 	/**
 	 * @return Some status information.
@@ -4580,7 +4000,7 @@ public class Node implements TimeSkewDetectorCallback {
 			sb.append(peers.getStatus());
 		else
 			sb.append("No peers yet");
-		sb.append(getNumTransferringRequestSenders());
+		sb.append(tracker.getNumTransferringRequestSenders());
 		sb.append('\n');
 		return sb.toString();
 	}
@@ -4597,124 +4017,8 @@ public class Node implements TimeSkewDetectorCallback {
 		return sb.toString();
 	}
 
-	public int getNumSSKRequests() {
-		return runningSSKGetUIDs.size() + runningLocalSSKGetUIDs.size();
-	}
-
-	public int getNumCHKRequests() {
-		return runningCHKGetUIDs.size() + runningLocalCHKGetUIDs.size();
-	}
-
-	public int getNumSSKInserts() {
-		return runningSSKPutUIDs.size() + runningLocalSSKPutUIDs.size();
-	}
-
-	public int getNumCHKInserts() {
-		return runningCHKPutUIDs.size() + runningLocalCHKPutUIDs.size();
-	}
-
-	public int getNumLocalSSKRequests() {
-		return runningLocalSSKGetUIDs.size();
-	}
-
-	public int getNumLocalCHKRequests() {
-		return runningLocalCHKGetUIDs.size();
-	}
-
-	public int getNumRemoteSSKRequests() {
-//		synchronized(runningSSKGetUIDs) {
-//			for(Long l : runningSSKGetUIDs)
-//				Logger.minor(this, "Running remote SSK fetch: "+l);
-//		}
-		return runningSSKGetUIDs.size();
-	}
-
-	public int getNumRemoteCHKRequests() {
-		return runningCHKGetUIDs.size();
-	}
-
-	public int getNumLocalSSKInserts() {
-		return runningLocalSSKPutUIDs.size();
-	}
-
-	public int getNumLocalCHKInserts() {
-		return runningLocalCHKPutUIDs.size();
-	}
-
-	public int getNumRemoteSSKInserts() {
-		return runningSSKPutUIDs.size();
-	}
-
-	public int getNumRemoteCHKInserts() {
-		return runningCHKPutUIDs.size();
-	}
-
-	public int getNumSSKOfferReplies() {
-		return runningSSKOfferReplyUIDs.size();
-	}
-
-	public int getNumCHKOfferReplies() {
-		return runningCHKOfferReplyUIDs.size();
-	}
-
-	public int getNumTransferringRequestSenders() {
-		synchronized(transferringRequestSenders) {
-			return transferringRequestSenders.size();
-		}
-	}
-
-	public int getNumTransferringRequestHandlers() {
-		synchronized(transferringRequestHandlers) {
-			return transferringRequestHandlers.size();
-		}
-	}
-
-	/**
-	 * @return Data String for freeviz.
-	 */
-	public String getFreevizOutput() {
-		StringBuilder sb = new StringBuilder();
-
-		sb.append("\ntransferring_requests=");
-		sb.append(getNumTransferringRequestSenders());
-
-		sb.append('\n');
-
-		if (peers != null)
-			sb.append(peers.getFreevizOutput());
-
-		return sb.toString();
-	}
-
-	final LRUQueue<Long> recentlyCompletedIDs;
-
-	static final int MAX_RECENTLY_COMPLETED_IDS = 10*1000;
 	/** Length of signature parameters R and S */
 	static final int SIGNATURE_PARAMETER_LENGTH = 32;
-
-	/**
-	 * Has a request completed with this ID recently?
-	 */
-	public boolean recentlyCompleted(long id) {
-		synchronized (recentlyCompletedIDs) {
-			return recentlyCompletedIDs.contains(id);
-		}
-	}
-
-	/**
-	 * A request completed (regardless of success).
-	 */
-	void completed(long id) {
-		synchronized (recentlyCompletedIDs) {
-			recentlyCompletedIDs.push(id);
-			while(recentlyCompletedIDs.size() > MAX_RECENTLY_COMPLETED_IDS)
-				recentlyCompletedIDs.pop();
-		}
-	}
-
-	public boolean isTestnetEnabled() {
-		return testnetEnabled;
-	}
 
 	public ClientKeyBlock fetchKey(ClientKey key, boolean canReadClientCache, boolean canWriteClientCache, boolean canWriteDatastore) throws KeyVerifyException {
 		if(key instanceof ClientCHK)
@@ -4817,12 +4121,12 @@ public class Node implements TimeSkewDetectorCallback {
 
 	public boolean addPeerConnection(PeerNode pn) {
 		boolean retval = peers.addPeer(pn);
-		peers.writePeers();
+		peers.writePeersUrgent(pn.isOpennet());
 		return retval;
 	}
 
 	public void removePeerConnection(PeerNode pn) {
-		peers.disconnect(pn, true, false, false);
+		peers.disconnectAndRemove(pn, true, false, false);
 	}
 
 	public void onConnectedPeer() {
@@ -4834,19 +4138,8 @@ public class Node implements TimeSkewDetectorCallback {
 		return this.getDarknetPortNumber();
 	}
 
-	public synchronized boolean setNewestPeerLastGoodVersion( int version ) {
-		if( version > buildOldAgeUserAlert.lastGoodVersion ) {
-			if( buildOldAgeUserAlert.lastGoodVersion == 0 ) {
-				clientCore.alerts.register(buildOldAgeUserAlert);
-			}
-			buildOldAgeUserAlert.lastGoodVersion = version;
-			return true;
-		}
-		return false;
-	}
-
-	public synchronized boolean isOudated() {
-		return (buildOldAgeUserAlert.lastGoodVersion > 0);
+	public boolean isOudated() {
+		return peers.isOutdated();
 	}
 
 	private Map<Integer, NodeToNodeMessageListener> n2nmListeners = new HashMap<Integer, NodeToNodeMessageListener>();
@@ -4882,11 +4175,12 @@ public class Node implements TimeSkewDetectorCallback {
 
 	private NodeToNodeMessageListener diffNoderefListener = new NodeToNodeMessageListener() {
 
+		@Override
 		public void handleMessage(byte[] data, boolean fromDarknet, PeerNode src, int type) {
 			Logger.normal(this, "Received differential node reference node to node message from "+src.getPeer());
 			SimpleFieldSet fs = null;
 			try {
-				fs = new SimpleFieldSet(new String(data, "UTF-8"), false, true);
+				fs = new SimpleFieldSet(new String(data, "UTF-8"), false, true, false);
 			} catch (IOException e) {
 				Logger.error(this, "IOException while parsing node to node message data", e);
 				return;
@@ -4906,6 +4200,7 @@ public class Node implements TimeSkewDetectorCallback {
 
 	private NodeToNodeMessageListener fproxyN2NMListener = new NodeToNodeMessageListener() {
 
+		@Override
 		public void handleMessage(byte[] data, boolean fromDarknet, PeerNode src, int type) {
 			if(!fromDarknet) {
 				Logger.error(this, "Got N2NTM from non-darknet node ?!?!?!: from "+src);
@@ -4915,7 +4210,7 @@ public class Node implements TimeSkewDetectorCallback {
 			Logger.normal(this, "Received N2NTM from '"+darkSource.getPeer()+"'");
 			SimpleFieldSet fs = null;
 			try {
-				fs = new SimpleFieldSet(new String(data, "UTF-8"), false, true);
+				fs = new SimpleFieldSet(new String(data, "UTF-8"), false, true, false);
 			} catch (UnsupportedEncodingException e) {
 				throw new Error("Impossible: JVM doesn't support UTF-8: " + e, e);
 			} catch (IOException e) {
@@ -5016,35 +4311,33 @@ public class Node implements TimeSkewDetectorCallback {
 	}
 
 	public PeerNode[] getPeerNodes() {
-		return peers.myPeers;
+		return peers.myPeers();
 	}
 
 	public PeerNode[] getConnectedPeers() {
-		return peers.connectedPeers;
+		return peers.connectedPeers();
 	}
 
 	/**
 	 * Return a peer of the node given its ip and port, name or identity, as a String
 	 */
 	public PeerNode getPeerNode(String nodeIdentifier) {
-		PeerNode[] pn = peers.myPeers;
-		for(int i=0;i<pn.length;i++)
-		{
-			Peer peer = pn[i].getPeer();
+		for(PeerNode pn: peers.myPeers()) {
+			Peer peer = pn.getPeer();
 			String nodeIpAndPort = "";
 			if(peer != null) {
 				nodeIpAndPort = peer.toString();
 			}
-			String identity = pn[i].getIdentityString();
-			if(pn[i] instanceof DarknetPeerNode) {
-				DarknetPeerNode dpn = (DarknetPeerNode) pn[i];
+			String identity = pn.getIdentityString();
+			if(pn instanceof DarknetPeerNode) {
+				DarknetPeerNode dpn = (DarknetPeerNode) pn;
 				String name = dpn.myName;
 				if(identity.equals(nodeIdentifier) || nodeIpAndPort.equals(nodeIdentifier) || name.equals(nodeIdentifier)) {
-					return pn[i];
+					return pn;
 				}
 			} else {
 				if(identity.equals(nodeIdentifier) || nodeIpAndPort.equals(nodeIdentifier)) {
-					return pn[i];
+					return pn;
 				}
 			}
 		}
@@ -5079,7 +4372,7 @@ public class Node implements TimeSkewDetectorCallback {
 		return lm.getAverageSwapTime();
 	}
 
-	public int getSendSwapInterval() {
+	public long getSendSwapInterval() {
 		return lm.getSendSwapInterval();
 	}
 
@@ -5100,10 +4393,9 @@ public class Node implements TimeSkewDetectorCallback {
 	// using the PacketSender/Ticker. Would save a few threads.
 
 	public int getNumARKFetchers() {
-		PeerNode[] p = peers.myPeers;
 		int x = 0;
-		for(int i=0;i<p.length;i++) {
-			if(p[i].isFetchingARK()) x++;
+		for(PeerNode p: peers.myPeers()) {
+			if(p.isFetchingARK()) x++;
 		}
 		return x;
 	}
@@ -5136,7 +4428,7 @@ public class Node implements TimeSkewDetectorCallback {
 	}
 
 	public Ticker getTicker() {
-		return ps;
+		return ticker;
 	}
 
 	public int getUnclaimedFIFOSize() {
@@ -5149,8 +4441,8 @@ public class Node implements TimeSkewDetectorCallback {
 	public void connectToSeednode(SeedServerTestPeerNode node) throws OpennetDisabledException, FSParseException, PeerParseException, ReferenceSignatureVerificationException {
 		peers.addPeer(node,false,false);
 	}
-	public void connect(Node node) throws FSParseException, PeerParseException, ReferenceSignatureVerificationException {
-		peers.connect(node.darknetCrypto.exportPublicFieldSet(), darknetCrypto.packetMangler);
+	public void connect(Node node, FRIEND_TRUST trust, FRIEND_VISIBILITY visibility) throws FSParseException, PeerParseException, ReferenceSignatureVerificationException {
+		peers.connect(node.darknetCrypto.exportPublicFieldSet(), darknetCrypto.packetMangler, trust, visibility);
 	}
 
 	public short maxHTL() {
@@ -5161,7 +4453,7 @@ public class Node implements TimeSkewDetectorCallback {
 		return darknetCrypto.portNumber;
 	}
 
-	public int getOutputBandwidthLimit() {
+	public synchronized int getOutputBandwidthLimit() {
 		return outputBandwidthLimit;
 	}
 
@@ -5171,6 +4463,14 @@ public class Node implements TimeSkewDetectorCallback {
 		return inputBandwidthLimit;
 	}
 
+	/**
+	 * @return total datastore size in bytes.
+	 */
+	public synchronized long getStoreSize() {
+		return maxTotalDatastoreSize;
+	}
+
+	@Override
 	public synchronized void setTimeSkewDetectedUserAlert() {
 		if(timeSkewDetectedUserAlert == null) {
 			timeSkewDetectedUserAlert = new TimeSkewDetectedUserAlert();
@@ -5178,12 +4478,23 @@ public class Node implements TimeSkewDetectorCallback {
 		}
 	}
 
-	public File getNodeDir() {
-		return nodeDir;
-	}
+	public File getNodeDir() { return nodeDir.dir(); }
+	public File getCfgDir() { return cfgDir.dir(); }
+	public File getUserDir() { return userDir.dir(); }
+	public File getRunDir() { return runDir.dir(); }
+	public File getStoreDir() { return storeDir.dir(); }
+	public File getPluginDir() { return pluginDir.dir(); }
 
-	public DarknetPeerNode createNewDarknetNode(SimpleFieldSet fs) throws FSParseException, PeerParseException, ReferenceSignatureVerificationException {
-		return new DarknetPeerNode(fs, this, darknetCrypto, peers, false, darknetCrypto.packetMangler);
+	public ProgramDirectory nodeDir() { return nodeDir; }
+	public ProgramDirectory cfgDir() { return cfgDir; }
+	public ProgramDirectory userDir() { return userDir; }
+	public ProgramDirectory runDir() { return runDir; }
+	public ProgramDirectory storeDir() { return storeDir; }
+	public ProgramDirectory pluginDir() { return pluginDir; }
+
+
+	public DarknetPeerNode createNewDarknetNode(SimpleFieldSet fs, FRIEND_TRUST trust, FRIEND_VISIBILITY visibility) throws FSParseException, PeerParseException, ReferenceSignatureVerificationException {
+		return new DarknetPeerNode(fs, this, darknetCrypto, peers, false, darknetCrypto.packetMangler, trust, visibility);
 	}
 
 	public OpennetPeerNode createNewOpennetNode(SimpleFieldSet fs) throws FSParseException, OpennetDisabledException, PeerParseException, ReferenceSignatureVerificationException {
@@ -5199,19 +4510,15 @@ public class Node implements TimeSkewDetectorCallback {
 	public OpennetPeerNode addNewOpennetNode(SimpleFieldSet fs, ConnectionType connectionType) throws FSParseException, PeerParseException, ReferenceSignatureVerificationException {
 		// FIXME: perhaps this should throw OpennetDisabledExcemption rather than returing false?
 		if(opennet == null) return null;
-		return opennet.addNewOpennetNode(fs, connectionType);
+		return opennet.addNewOpennetNode(fs, connectionType, false);
 	}
 
-	public byte[] getOpennetIdentity() {
-		return opennet.crypto.myIdentity;
+	public byte[] getOpennetPubKeyHash() {
+		return opennet.crypto.pubKeyHash;
 	}
 
-	public byte[] getDarknetIdentity() {
-		return darknetCrypto.myIdentity;
-	}
-
-	public int estimateFullHeadersLengthOneMessage() {
-		return darknetCrypto.packetMangler.fullHeadersLengthOneMessage();
+	public byte[] getDarknetPubKeyHash() {
+		return darknetCrypto.pubKeyHash;
 	}
 
 	public synchronized boolean isOpennetEnabled() {
@@ -5314,12 +4621,25 @@ public class Node implements TimeSkewDetectorCallback {
 		}
 	}
 
+	public boolean isSeednode() {
+		return acceptSeedConnections;
+	}
+
 	/**
 	 * Returns true if the packet receiver should try to decode/process packets that are not from a peer (i.e. from a seed connection)
 	 * The packet receiver calls this upon receiving an unrecognized packet.
 	 */
-	public boolean wantAnonAuth() {
-		return opennet != null && acceptSeedConnections;
+	public boolean wantAnonAuth(boolean isOpennet) {
+		if(isOpennet)
+			return opennet != null && acceptSeedConnections;
+		else
+			return false;
+	}
+
+	// FIXME make this configurable
+	// Probably should wait until we have non-opennet anon auth so we can add it to NodeCrypto.
+	public boolean wantAnonAuthChangeIP(boolean isOpennet) {
+		return !isOpennet;
 	}
 
 	public boolean opennetDefinitelyPortForwarded() {
@@ -5346,25 +4666,6 @@ public class Node implements TimeSkewDetectorCallback {
 			return fetch((NodeSSK)key, true, canReadClientCache, false, false, forULPR, null) != null;
 	}
 
-	public int getTotalRunningUIDs() {
-		synchronized(runningUIDs) {
-			return runningUIDs.size();
-		}
-	}
-
-	public void addRunningUIDs(Vector<Long> list) {
-		synchronized(runningUIDs) {
-			list.addAll(runningUIDs.keySet());
-		}
-	}
-
-	public int getTotalRunningUIDsAlt() {
-		synchronized(runningUIDs) {
-			return this.runningCHKGetUIDs.size() + this.runningCHKPutUIDs.size() + this.runningSSKGetUIDs.size() +
-			this.runningSSKGetUIDs.size() + this.runningSSKOfferReplyUIDs.size() + this.runningCHKOfferReplyUIDs.size();
-		}
-	}
-
 	/**
 	 * Warning: does not announce change in location!
 	 */
@@ -5373,26 +4674,31 @@ public class Node implements TimeSkewDetectorCallback {
 	}
 
 	public boolean peersWantKey(Key key) {
-		return failureTable.peersWantKey(key);
+		return failureTable.peersWantKey(key, null);
 	}
 
 	private SimpleUserAlert alertMTUTooSmall;
 
-	public final RequestClient nonPersistentClient = new RequestClient() {
+	public final RequestClient nonPersistentClientBulk = new RequestClient() {
+		@Override
 		public boolean persistent() {
 			return false;
 		}
-		public void removeFrom(ObjectContainer container) {
-			throw new UnsupportedOperationException();
+		@Override
+		public boolean realTimeFlag() {
+			return false;
 		}
 	};
-
-	public void onTooLowMTU(int minAdvertisedMTU, int minAcceptableMTU) {
-		if(alertMTUTooSmall == null) {
-			alertMTUTooSmall = new SimpleUserAlert(false, l10n("tooSmallMTU"), l10n("tooSmallMTULong", new String[] { "mtu", "minMTU" }, new String[] { Integer.toString(minAdvertisedMTU), Integer.toString(minAcceptableMTU) }), l10n("tooSmallMTUShort"), UserAlert.ERROR);
-		} else return;
-		clientCore.alerts.register(alertMTUTooSmall);
-	}
+	public final RequestClient nonPersistentClientRT = new RequestClient() {
+		@Override
+		public boolean persistent() {
+			return false;
+		}
+		@Override
+		public boolean realTimeFlag() {
+			return true;
+		}
+	};
 
 	public void setDispatcherHook(NodeDispatcherCallback cb) {
 		this.dispatcher.setHook(cb);
@@ -5403,7 +4709,7 @@ public class Node implements TimeSkewDetectorCallback {
 	}
 
 	public boolean shallWeRouteAccordingToOurPeersLocation() {
-		return routeAccordingToOurPeersLocation && Version.lastGoodBuild() >= 1160;
+		return routeAccordingToOurPeersLocation;
 	}
 
 	public boolean objectCanNew(ObjectContainer container) {
@@ -5411,206 +4717,39 @@ public class Node implements TimeSkewDetectorCallback {
 		return false;
 	}
 
-	private volatile long turtleCount;
-
-	/**
-	 * Make a running request sender into a turtle request.
-	 * Backoff: when the transfer finishes, or after 10 seconds if no cancellation.
-	 * Downstream: Cancel all dependant RequestHandler's and local requests.
-	 * This also removes it from the load management code.
-	 * Registration: We track the turtles for each peer, and overall. No two turtles from the
-	 * same node may share the same key, and there is an overall limit.
-	 * @param sender
-	 */
-	public void makeTurtle(RequestSender sender) {
-		// Registration
-		// FIXME check the datastore.
-		if(!this.registerTurtleTransfer(sender)) {
-			// Too many turtles running, or already two turtles for this key (we allow two in case one peer turtles as a DoS).
-			sender.killTurtle();
-			Logger.warning(this, "Didn't make turtle (global) for key "+sender.key+" for "+sender);
-			return;
-		}
-		PeerNode from = sender.transferringFrom();
-		if(from == null) {
-			// Race condition, it has finished, avoid NPE
-			return;
-		}
-		if(!from.registerTurtleTransfer(sender)) {
-			// Too many turtles running, or already a turtle for this key.
-			// Abort it.
-			unregisterTurtleTransfer(sender);
-			sender.killTurtle();
-			Logger.warning(this, "Didn't make turtle (peer) for key "+sender.key+" for "+sender);
-			return;
-		}
-		Logger.normal(this, "TURTLING: "+sender.key+" for "+sender);
-		// Do not transfer coalesce!!
-		synchronized(transferringRequestSenders) {
-			transferringRequestSenders.remove(sender.key);
-		}
-		turtleCount++;
-
-		// Abort downstream transfers, set the turtle mode flag and set up the backoff callback.
-		sender.setTurtle();
-	}
-
-	public long getTurtleCount() {
-		return turtleCount;
-	}
-
-	private static int MAX_TURTLES = 10;
-	private static int MAX_TURTLES_PER_KEY = 2;
-
-	private HashMap<Key,RequestSender[]> turtlingTransfers = new HashMap<Key,RequestSender[]>();
-
-	private boolean registerTurtleTransfer(RequestSender sender) {
-		Key key = sender.key;
-		synchronized(turtlingTransfers) {
-			if(getNumIncomingTurtles() >= MAX_TURTLES) {
-				Logger.warning(this, "Too many turtles running globally");
-				return false;
-			}
-			if(!turtlingTransfers.containsKey(key)) {
-				turtlingTransfers.put(key, new RequestSender[] { sender });
-				Logger.normal(this, "Running turtles (a): "+getNumIncomingTurtles()+" : "+turtlingTransfers.size());
-				return true;
-			} else {
-				RequestSender[] senders = turtlingTransfers.get(key);
-				if(senders.length >= MAX_TURTLES_PER_KEY) {
-					Logger.warning(this, "Too many turtles for key globally");
-					return false;
-				}
-				for(int i=0;i<senders.length;i++) {
-					if(senders[i] == sender) {
-						Logger.error(this, "Registering turtle for "+sender+" : "+key+" twice! (globally)");
-						return false;
-					}
-				}
-				RequestSender[] newSenders = new RequestSender[senders.length+1];
-				System.arraycopy(senders, 0, newSenders, 0, senders.length);
-				newSenders[senders.length] = sender;
-				turtlingTransfers.put(key, newSenders);
-				Logger.normal(this, "Running turtles (b): "+getNumIncomingTurtles()+" : "+turtlingTransfers.size());
-				return true;
-			}
-		}
-	}
-
-	public void unregisterTurtleTransfer(RequestSender sender) {
-		Key key = sender.key;
-		synchronized(turtlingTransfers) {
-			if(!turtlingTransfers.containsKey(key)) {
-				Logger.error(this, "Removing turtle "+sender+" for "+key+" : DOES NOT EXIST IN GLOBAL TURTLES LIST");
-				return;
-			}
-			RequestSender[] senders = turtlingTransfers.get(key);
-			if(senders.length == 1 && senders[0] == sender) {
-				turtlingTransfers.remove(key);
-				return;
-			}
-			if(senders.length == 2) {
-				if(senders[0] == sender) {
-					turtlingTransfers.put(key, new RequestSender[] { senders[1] });
-				} else if(senders[1] == sender) {
-					turtlingTransfers.put(key, new RequestSender[] { senders[0] });
-				}
-				return;
-			}
-			int x = 0;
-			for(int i=0;i<senders.length;i++) {
-				if(senders[i] == sender) x++;
-			}
-			if(x == 0) {
-				Logger.error(this, "Turtle not in global register: "+sender+" for "+key);
-				return;
-			}
-			if(senders.length == x) {
-				Logger.error(this, "Lots of copies of turtle: "+x);
-				turtlingTransfers.remove(key);
-				return;
-			}
-			RequestSender[] newSenders = new RequestSender[senders.length - x];
-			int idx = 0;
-			for(RequestSender s : senders) {
-				if(s == sender) continue;
-				newSenders[idx++] = s;
-			}
-			turtlingTransfers.put(key, newSenders);
-		}
-	}
-
-	public int getNumIncomingTurtles() {
-		synchronized(turtlingTransfers) {
-			int turtles = 0;
-			for(RequestSender[] senders : turtlingTransfers.values())
-				turtles += senders.length;
-			return turtles;
-		}
-	}
-
-	public void drawClientCacheBox(HTMLNode storeSizeInfobox) {
-		HTMLNode div = storeSizeInfobox.addChild("div");
-		div.addChild("p", "Client cache max size: "+this.maxClientCacheKeys+" keys");
-		div.addChild("p", "Client cache size: CHK "+this.chkClientcache.keyCount()+" pubkey "+this.pubKeyClientcache.keyCount()+" SSK "+this.sskClientcache.keyCount());
-		div.addChild("p", "Client cache misses: CHK "+this.chkClientcache.misses()+" pubkey "+this.pubKeyClientcache.misses()+" SSK "+this.sskClientcache.misses());
-		div.addChild("p", "Client cache hits: CHK "+this.chkClientcache.hits()+" pubkey "+this.pubKeyClientcache.hits()+" SSK "+this.sskClientcache.hits());
-	}
-
-	public void drawSlashdotCacheBox(HTMLNode storeSizeInfobox) {
-		HTMLNode div = storeSizeInfobox.addChild("div");
-		div.addChild("p", "Slashdot/ULPR cache max size: "+maxSlashdotCacheKeys+" keys");
-		div.addChild("p", "Slashdot/ULPR cache size: CHK "+this.chkSlashdotcache.keyCount()+" pubkey "+this.pubKeySlashdotcache.keyCount()+" SSK "+this.sskSlashdotcache.keyCount());
-		div.addChild("p", "Slashdot/ULPR cache misses: CHK "+this.chkSlashdotcache.misses()+" pubkey "+this.pubKeySlashdotcache.misses()+" SSK "+this.sskSlashdotcache.misses());
-		div.addChild("p", "Slashdot/ULPR cache hits: CHK "+this.chkSlashdotcache.hits()+" pubkey "+this.pubKeySlashdotcache.hits()+" SSK "+this.sskSlashdotcache.hits());
-		div.addChild("p", "Slashdot/ULPR cache writes: CHK "+this.chkSlashdotcache.writes()+" pubkey "+this.pubKeySlashdotcache.writes()+" SSK "+this.sskSlashdotcache.writes());
-	}
-
-	private boolean enteredPassword;
-
+	/** Can be called to decrypt client.dat* etc, or can be called when switching from another 
+	 * security level to HIGH. */
 	public void setMasterPassword(String password, boolean inFirstTimeWizard) throws AlreadySetPasswordException, MasterKeysWrongPasswordException, MasterKeysFileSizeException, IOException {
+		MasterKeys k;
 		synchronized(this) {
-			if(enteredPassword)
-				throw new AlreadySetPasswordException();
+		    if(keys == null) {
+		        // Decrypting.
+		        keys = MasterKeys.read(masterKeysFile, secureRandom, password);
+		        databaseKey = keys.createDatabaseKey(secureRandom);
+		    } else {
+		        // Setting password when changing to HIGH from another mode.
+		        keys.changePassword(masterKeysFile, password, secureRandom);
+		        return;
+		    }
+		    k = keys;
 		}
-		if(securityLevels.getPhysicalThreatLevel() == PHYSICAL_THREAT_LEVEL.MAXIMUM)
-			Logger.error(this, "Setting password while physical threat level is at MAXIMUM???");
-		MasterKeys keys = MasterKeys.read(masterKeysFile, random, password);
-		try {
-			setPasswordInner(keys, inFirstTimeWizard);
-		} finally {
-			keys.clearAll();
-		}
+		setPasswordInner(k, inFirstTimeWizard);
 	}
 
 	private void setPasswordInner(MasterKeys keys, boolean inFirstTimeWizard) throws MasterKeysWrongPasswordException, MasterKeysFileSizeException, IOException {
+	    MasterSecret secret = keys.getPersistentMasterSecret();
+        clientCore.setupMasterSecret(secret);
 		boolean wantClientCache = false;
 		boolean wantDatabase = false;
 		synchronized(this) {
-			enteredPassword = true;
-			if(!clientCacheAwaitingPassword) {
-				if(inFirstTimeWizard) {
-					byte[] copied = new byte[keys.clientCacheMasterKey.length];
-					System.arraycopy(keys.clientCacheMasterKey, 0, copied, 0, copied.length);
-					cachedClientCacheKey = copied;
-					// Wipe it if haven't specified datastore size in 10 minutes.
-					ps.queueTimedJob(new Runnable() {
-						public void run() {
-							synchronized(Node.this) {
-								MasterKeys.clear(cachedClientCacheKey);
-								cachedClientCacheKey = null;
-							}
-						}
-
-					}, 10*60*1000);
-				}
-			} else wantClientCache = true;
-			wantDatabase = db == null;
+			wantClientCache = clientCacheAwaitingPassword;
+			wantDatabase = databaseAwaitingPassword;
+			databaseAwaitingPassword = false;
 		}
 		if(wantClientCache)
 			activatePasswordedClientCache(keys);
 		if(wantDatabase)
-			lateSetupDatabase(keys.databaseKey);
+			lateSetupDatabase(keys.createDatabaseKey(secureRandom));
 	}
 
 
@@ -5647,10 +4786,8 @@ public class Node implements TimeSkewDetectorCallback {
 		if(securityLevels.getPhysicalThreatLevel() == PHYSICAL_THREAT_LEVEL.MAXIMUM)
 			Logger.error(this, "Changing password while physical threat level is at MAXIMUM???");
 		if(masterKeysFile.exists()) {
-			MasterKeys keys = MasterKeys.read(masterKeysFile, random, oldPassword);
-			keys.changePassword(masterKeysFile, newPassword, random);
+			keys.changePassword(masterKeysFile, newPassword, secureRandom);
 			setPasswordInner(keys, inFirstTimeWizard);
-			keys.clearAll();
 		} else {
 			setMasterPassword(newPassword, inFirstTimeWizard);
 		}
@@ -5665,24 +4802,40 @@ public class Node implements TimeSkewDetectorCallback {
 	public synchronized File getMasterPasswordFile() {
 		return masterKeysFile;
 	}
+	
+    boolean hasPanicked() {
+        return hasPanicked;
+    }
 
 	public void panic() {
+	    hasPanicked = true;
+	    if(db != null) {
+	        try {
+	            db.close();
+	        } catch (Throwable t) {
+	            // Ignore
+	        }
+	        synchronized(this) {
+	            db = null;
+	        }
+	    }
 		try {
-			db.close();
-		} catch (Throwable t) {
-			// Ignore
-		}
-		synchronized(this) {
-			db = null;
-		}
-		try {
-			FileUtil.secureDelete(dbFile, random);
-			FileUtil.secureDelete(dbFileCrypt, random);
+			FileUtil.secureDelete(dbFile);
+			FileUtil.secureDelete(dbFileCrypt);
 		} catch (IOException e) {
 			// Ignore
 		}
 		dbFile.delete();
 		dbFileCrypt.delete();
+		clientCore.clientLayerPersister.panic();
+		clientCore.clientLayerPersister.killAndWaitForNotRunning();
+		try {
+            MasterKeys.killMasterKeys(getMasterPasswordFile());
+        } catch (IOException e) {
+            System.err.println("Unable to wipe master passwords key file!");
+            System.err.println("Please delete "+getMasterPasswordFile()+" to ensure that nobody can recover your old downloads.");
+        }
+		// persistent-temp will be cleaned on restart.
 	}
 
 	public void finishPanic() {
@@ -5697,25 +4850,24 @@ public class Node implements TimeSkewDetectorCallback {
 		return false;
 	}
 
-
-	public boolean isDatabaseEncrypted() {
-		return databaseEncrypted;
+	public boolean wantEncryptedDatabase() {
+	    return this.securityLevels.getPhysicalThreatLevel() != PHYSICAL_THREAT_LEVEL.LOW;
+	}
+	
+	public boolean wantNoPersistentDatabase() {
+	    return this.securityLevels.getPhysicalThreatLevel() == PHYSICAL_THREAT_LEVEL.MAXIMUM;
 	}
 
 	public boolean hasDatabase() {
-		return db != null;
+	    return !clientCore.clientLayerPersister.isKilledOrNotLoaded();
 	}
 
-
-	public synchronized boolean autoChangeDatabaseEncryption() {
-		return autoChangeDatabaseEncryption;
-	}
-
-
-	private long completeInsertsStored;
-	private long completeInsertsOldStore;
-	private long completeInsertsTotal;
-	private long completeInsertsNotStoredWouldHaveStored;	// DEBUGGING: should be 0 but can be nonzero if e.g. a request originates from a backed off node; should be very low in any case; FIXME remove eventually
+        /**
+         * @return canonical path of the database file in use.
+         */
+        public String getDatabasePath() throws IOException {
+            return clientCore.clientLayerPersister.getWriteFilename().toString();
+        }
 
 	/** Should we commit the block to the store rather than the cache?
 	 *
@@ -5744,58 +4896,179 @@ public class Node implements TimeSkewDetectorCallback {
     	double target = key.toNormalizedDouble();
     	double myDist = Location.distance(myLoc, target);
 
-    	boolean wouldHaveStored = !peers.isCloserLocation(target, MIN_UPTIME_STORE_KEY);
-
     	// First, calculate whether we would have stored it using the old formula.
-		if(wouldHaveStored)
-			completeInsertsOldStore++;
-
     	if(logMINOR) Logger.minor(this, "Should store for "+key+" ?");
     	// Don't sink store if any of the nodes we routed to, or our predecessor, is both high-uptime and closer to the target than we are.
     	if(source != null && !source.isLowUptime()) {
     		if(Location.distance(source, target) < myDist) {
     	    	if(logMINOR) Logger.minor(this, "Not storing because source is closer to target for "+key+" : "+source);
-    	    	synchronized(this) {
-    	    		completeInsertsTotal++;
-    	    		if(wouldHaveStored) {
-    	    			Logger.error(this, "Would have stored but haven't stored");
-    	    			completeInsertsNotStoredWouldHaveStored++;
-    	    		}
-    	    	}
     			return false;
     		}
     	}
     	for(PeerNode pn : routedTo) {
     		if(Location.distance(pn, target) < myDist && !pn.isLowUptime()) {
     	    	if(logMINOR) Logger.minor(this, "Not storing because peer "+pn+" is closer to target for "+key+" his loc "+pn.getLocation()+" my loc "+myLoc+" target is "+target);
-    	    	synchronized(this) {
-    	    		completeInsertsTotal++;
-    	    		if(wouldHaveStored) {
-    	    			Logger.error(this, "Would have stored but haven't stored");
-    	    			completeInsertsNotStoredWouldHaveStored++;
-    	    		}
-    	    	}
     			return false;
     		} else {
     			if(logMINOR) Logger.minor(this, "Should store maybe, peer "+pn+" loc = "+pn.getLocation()+" my loc is "+myLoc+" target is "+target+" low uptime is "+pn.isLowUptime());
     		}
-    	}
-    	synchronized(this) {
-    		completeInsertsStored++;
-    		completeInsertsTotal++;
     	}
     	if(logMINOR) Logger.minor(this, "Should store returning true for "+key+" target="+target+" myLoc="+myLoc+" peers: "+routedTo.length);
     	return true;
 	}
 
 
-	private final DecimalFormat fix3p3pct = new DecimalFormat("##0.000%");
+	public boolean getWriteLocalToDatastore() {
+		return writeLocalToDatastore;
+	}
 
-	public synchronized void drawStoreStats(HTMLNode infobox) {
-		if (completeInsertsTotal != 0) {
-			infobox.addChild("p", "Stored inserts: "+completeInsertsStored+" of "+completeInsertsTotal+" ("+fix3p3pct.format((completeInsertsStored*1.0)/completeInsertsTotal)+")");
-			infobox.addChild("p", "Would have stored: "+completeInsertsOldStore+" of "+completeInsertsTotal+" ("+fix3p3pct.format((completeInsertsOldStore*1.0)/completeInsertsTotal)+")");
-			infobox.addChild("p", "Would have stored but wasn't stored: "+completeInsertsNotStoredWouldHaveStored+" of "+completeInsertsTotal+" ("+fix3p3pct.format((completeInsertsNotStoredWouldHaveStored*1.0)/completeInsertsTotal)+")");
+	public boolean getUseSlashdotCache() {
+		return useSlashdotCache;
+	}
+
+	// FIXME remove the visibility alert after a few builds.
+
+	public void createVisibilityAlert() {
+		synchronized(this) {
+			if(showFriendsVisibilityAlert) return;
+			showFriendsVisibilityAlert = true;
+		}
+		// Wait until startup completed.
+		this.getTicker().queueTimedJob(new Runnable() {
+
+			@Override
+			public void run() {
+				config.store();
+			}
+		}, 0);
+		registerFriendsVisibilityAlert();
+	}
+	
+	private UserAlert visibilityAlert = new SimpleUserAlert(true, l10n("pleaseSetPeersVisibilityAlertTitle"), l10n("pleaseSetPeersVisibilityAlert"), l10n("pleaseSetPeersVisibilityAlert"), UserAlert.ERROR) {
+		
+		@Override
+		public void onDismiss() {
+			synchronized(Node.this) {
+				showFriendsVisibilityAlert = false;
+			}
+			config.store();
+			unregisterFriendsVisibilityAlert();
+		}
+		
+	};
+	
+	private void registerFriendsVisibilityAlert() {
+		if(clientCore == null || clientCore.alerts == null) {
+			// Wait until startup completed.
+			this.getTicker().queueTimedJob(new Runnable() {
+
+				@Override
+				public void run() {
+					registerFriendsVisibilityAlert();
+				}
+				
+			}, 0);
+			return;
+		}
+		clientCore.alerts.register(visibilityAlert);
+	}
+	
+	private void unregisterFriendsVisibilityAlert() {
+		clientCore.alerts.unregister(visibilityAlert);
+	}
+
+	public int getMinimumMTU() {
+		int mtu;
+		synchronized(this) {
+			mtu = maxPacketSize;
+		}
+		if(ipDetector != null) {
+			int detected = ipDetector.getMinimumDetectedMTU();
+			if(detected < mtu) return detected;
+		}
+		return mtu;
+	}
+
+
+	public void updateMTU() {
+		this.darknetCrypto.socket.calculateMaxPacketSize();
+		OpennetManager om = opennet;
+		if(om != null) {
+			om.crypto.socket.calculateMaxPacketSize();
 		}
 	}
+
+
+	public static boolean isTestnetEnabled() {
+		return false;
+	}
+
+
+	public MersenneTwister createRandom() {
+		byte[] buf = new byte[16];
+		random.nextBytes(buf);
+		return new MersenneTwister(buf);
+	}
+	
+	public boolean enableNewLoadManagement(boolean realTimeFlag) {
+		NodeStats stats = this.nodeStats;
+		if(stats == null) {
+			Logger.error(this, "Calling enableNewLoadManagement before Node constructor completes! FIX THIS!", new Exception("error"));
+			return false;
+		}
+		return stats.enableNewLoadManagement(realTimeFlag);
+	}
+	
+	/** FIXME move to Probe.java? */
+	public boolean enableRoutedPing() {
+		return enableRoutedPing;
+	}
+
+
+	public boolean updateIsUrgent() {
+		OpennetManager om = getOpennet();
+		if(om != null) {
+			if(om.announcer != null && om.announcer.isWaitingForUpdater())
+				return true;
+		}
+		if(peers.getPeerNodeStatusSize(PeerManager.PEER_NODE_STATUS_TOO_NEW, true) > PeerManager.OUTDATED_MIN_TOO_NEW_DARKNET)
+			return true;
+		return false;
+	}
+
+
+    public byte[] getPluginStoreKey(String storeIdentifier) {
+        DatabaseKey key;
+        synchronized(this) {
+            key = databaseKey;
+        }
+        if(key != null)
+            return key.getPluginStoreKey(storeIdentifier);
+        else
+            return null;
+    }
+
+	private void checkOutputBandwidthLimit(int obwLimit) throws InvalidConfigValueException {
+		if(obwLimit <= 0) throw new InvalidConfigValueException(l10n("bwlimitMustBePositive"));
+		if (obwLimit < minimumBandwidth) throw lowBandwidthLimit(obwLimit);
+	}
+
+	private void checkInputBandwidthLimit(int ibwLimit) throws InvalidConfigValueException {
+		// Reserved value for limit based on output limit.
+		if (ibwLimit == -1) {
+			return;
+		}
+		if(ibwLimit <= 1) throw new InvalidConfigValueException(l10n("bandwidthLimitMustBePositiveOrMinusOne"));
+		if (ibwLimit < minimumBandwidth) throw lowBandwidthLimit(ibwLimit);
+	}
+
+	public PluginManager getPluginManager() {
+		return pluginManager;
+	}
+
+
+    DatabaseKey getDatabaseKey() {
+        return databaseKey;
+    }
+    
 }

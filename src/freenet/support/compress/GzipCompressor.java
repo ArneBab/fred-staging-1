@@ -1,7 +1,5 @@
 package freenet.support.compress;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -16,9 +14,9 @@ import freenet.support.api.BucketFactory;
 import freenet.support.io.Closer;
 import freenet.support.io.CountedOutputStream;
 
-// WARNING: THIS CLASS IS STORED IN DB4O -- THINK TWICE BEFORE ADD/REMOVE/RENAME FIELDS
 public class GzipCompressor implements Compressor {
 
+	@Override
 	public Bucket compress(Bucket data, BucketFactory bf, long maxReadLength, long maxWriteLength) throws IOException, CompressionOutputSizeException {
 		Bucket output = bf.makeBucket(maxWriteLength);
 		InputStream is = null;
@@ -27,19 +25,21 @@ public class GzipCompressor implements Compressor {
 			is = data.getInputStream();
 			os = output.getOutputStream();
 			compress(is, os, maxReadLength, maxWriteLength);
+			// It is essential that the close()'s throw if there is any problem.
+			is.close(); is = null;
+			os.close(); os = null;
 		} finally {
-			if(is != null) is.close();
-			if(os != null) os.close();
+			Closer.close(is);
+			Closer.close(os);
 		}
 		return output;
 	}
 	
+	@Override
 	public long compress(InputStream is, OutputStream os, long maxReadLength, long maxWriteLength) throws IOException, CompressionOutputSizeException {
 		if(maxReadLength < 0)
 			throw new IllegalArgumentException();
-		is = new BufferedInputStream(is, 32768);
 		GZIPOutputStream gos = null;
-		os = new BufferedOutputStream(os, 32768);
 		CountedOutputStream cos = new CountedOutputStream(os);
 		try {
 			gos = new GZIPOutputStream(cos);
@@ -61,6 +61,8 @@ public class GzipCompressor implements Compressor {
 			gos.finish();
 			cos.flush();
 			gos = null;
+			if(cos.written() > maxWriteLength)
+				throw new CompressionOutputSizeException();
 			return cos.written();
 		} finally {
 			if(gos != null) {
@@ -70,62 +72,45 @@ public class GzipCompressor implements Compressor {
 		}
 	}
 
-	public Bucket decompress(Bucket data, BucketFactory bf, long maxLength, long maxCheckSizeLength, Bucket preferred) throws IOException, CompressionOutputSizeException {
-		Bucket output;
-		if(preferred != null)
-			output = preferred;
-		else
-			output = bf.makeBucket(maxLength);
-		InputStream is = null;
-		OutputStream os = null;
-		try {
-		is = data.getInputStream();
-		os = output.getOutputStream();
-		decompress(is, os, maxLength, maxCheckSizeLength);
-		os.close(); os = null;
-		is.close(); is = null;
-		return output;
-		} finally {
-			if(is != null) Closer.close(is);
-			if(os != null) Closer.close(os);
-		}
-	}
-
+	@Override
 	public long decompress(InputStream is, OutputStream os, long maxLength, long maxCheckSizeBytes) throws IOException, CompressionOutputSizeException {
-		GZIPInputStream gis = new GZIPInputStream(new BufferedInputStream(is, 32768));
-		os = new BufferedOutputStream(os, 32768);
+		GZIPInputStream gis = new GZIPInputStream(is);
 		long written = 0;
-		byte[] buffer = new byte[4096];
+		int bufSize = 32768;
+		if(maxLength > 0 && maxLength < bufSize)
+			bufSize = (int)maxLength;
+		byte[] buffer = new byte[bufSize];
 		while(true) {
-			int l = (int) Math.min(buffer.length, maxLength - written);
+			int expectedBytesRead = (int) Math.min(buffer.length, maxLength - written);
 			// We can over-read to determine whether we have over-read.
 			// We enforce maximum size this way.
 			// FIXME there is probably a better way to do this!
-			int x = gis.read(buffer, 0, buffer.length);
-			if(l < x) {
-				Logger.normal(this, "l="+l+", x="+x+", written="+written+", maxLength="+maxLength+" throwing a CompressionOutputSizeException");
+			int bytesRead = gis.read(buffer, 0, buffer.length);
+			if(expectedBytesRead < bytesRead) {
+				Logger.normal(this, "expectedBytesRead="+expectedBytesRead+", bytesRead="+bytesRead+", written="+written+", maxLength="+maxLength+" throwing a CompressionOutputSizeException");
 				if(maxCheckSizeBytes > 0) {
-					written += x;
+					written += bytesRead;
 					while(true) {
-						l = (int) Math.min(buffer.length, maxLength + maxCheckSizeBytes - written);
-						x = gis.read(buffer, 0, l);
-						if(x <= -1) throw new CompressionOutputSizeException(written);
-						if(x == 0) throw new IOException("Returned zero from read()");
-						written += x;
+						expectedBytesRead = (int) Math.min(buffer.length, maxLength + maxCheckSizeBytes - written);
+						bytesRead = gis.read(buffer, 0, expectedBytesRead);
+						if(bytesRead <= -1) throw new CompressionOutputSizeException(written);
+						if(bytesRead == 0) throw new IOException("Returned zero from read()");
+						written += bytesRead;
 					}
 				}
 				throw new CompressionOutputSizeException();
 			}
-			if(x <= -1) {
+			if(bytesRead <= -1) {
 				os.flush();
 				return written;
 			}
-			if(x == 0) throw new IOException("Returned zero from read()");
-			os.write(buffer, 0, x);
-			written += x;
+			if(bytesRead == 0) throw new IOException("Returned zero from read()");
+			os.write(buffer, 0, bytesRead);
+			written += bytesRead;
 		}
 	}
 
+	@Override
 	public int decompress(byte[] dbuf, int i, int j, byte[] output) throws CompressionOutputSizeException {
 		// Didn't work with Inflater.
 		// FIXME fix sometimes to use Inflater - format issue?
@@ -133,7 +118,8 @@ public class GzipCompressor implements Compressor {
 		ByteArrayOutputStream baos = new ByteArrayOutputStream(output.length);
 		int bytes = 0;
 		try {
-			bytes = (int)decompress(bais, baos, output.length, -1);
+			decompress(bais, baos, output.length, -1);
+			bytes = baos.size();
 		} catch (IOException e) {
 			// Impossible
 			throw new Error("Got IOException: " + e.getMessage(), e);

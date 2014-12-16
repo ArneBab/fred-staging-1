@@ -3,6 +3,9 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.node.fcp;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import com.db4o.ObjectContainer;
 import com.db4o.ObjectSet;
 import com.db4o.query.Constraint;
@@ -10,7 +13,7 @@ import com.db4o.query.Predicate;
 import com.db4o.query.Query;
 
 import freenet.node.NodeClientCore;
-import freenet.node.fcp.whiteboard.Whiteboard;
+import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
 
@@ -23,13 +26,22 @@ public class FCPPersistentRoot {
 
 	final long nodeDBHandle;
 	final FCPClient globalForeverClient;
+
+        private static volatile boolean logMINOR;
+	static {
+		Logger.registerLogThresholdCallback(new LogThresholdCallback(){
+			@Override
+			public void shouldUpdate(){
+				logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
+			}
+		});
+	}
 	
-	public FCPPersistentRoot(long nodeDBHandle, Whiteboard whiteboard, ObjectContainer container) {
-		this.nodeDBHandle = nodeDBHandle;
-		globalForeverClient = new FCPClient("Global Queue", null, true, null, ClientRequest.PERSIST_FOREVER, this, whiteboard, container);
+	protected FCPPersistentRoot() {
+	    throw new UnsupportedOperationException();
 	}
 
-	public static FCPPersistentRoot create(final long nodeDBHandle, Whiteboard whiteboard, ObjectContainer container) {
+	public static FCPPersistentRoot load(final long nodeDBHandle, ObjectContainer container) {
 		ObjectSet<FCPPersistentRoot> set = container.query(new Predicate<FCPPersistentRoot>() {
 			final private static long serialVersionUID = -8615907687034212486L;
 			@Override
@@ -47,56 +59,46 @@ public class FCPPersistentRoot {
 				System.err.println("FCPPersistentRoot exists but no globalForeverClient!");
 				container.delete(root);
 			} else {
-				root.globalForeverClient.init(container);
-				root.globalForeverClient.setWhiteboard(whiteboard);
 				return root;
 			}
 		}
-		FCPPersistentRoot root = new FCPPersistentRoot(nodeDBHandle, whiteboard, container);
-		container.store(root);
-		System.err.println("Created FCP persistent root.");
-		return root;
+		System.err.println("No FCPPersistentRoot found, not migrating old database");
+		return null;
 	}
-
-	public FCPClient registerForeverClient(final String name, NodeClientCore core, FCPConnectionHandler handler, FCPServer server, ObjectContainer container) {
-		if(Logger.shouldLog(LogLevel.MINOR, this)) Logger.minor(this, "Registering forever-client for "+name);
-		/**
-		 * FIXME DB4O:
-		 * Native queries involving strings seem to do wierd things. I was getting
-		 * the global queue returned here even though I compared with the passed-in
-		 * name! :<
-		 * FIXME reproduce and file a bug for db4o.
-		 */
+	
+	public List<FCPClient> findNonGlobalClients(NodeClientCore core, ObjectContainer container) {
+	    ArrayList<FCPClient> results = new ArrayList<FCPClient>();
 		Query query = container.query();
 		query.constrain(FCPClient.class);
-		// Don't constrain by root because that set is huge.
-		// I think that was the cause of the OOMs here...
-		Constraint con = query.descend("name").constrain(name);
-		con.and(query.descend("root").constrain(this).identity());
-		ObjectSet set = query.execute();
-		while(set.hasNext()) {
-			FCPClient client = (FCPClient) set.next();
-			container.activate(client, 1);
-			if(client.root != this) {
-				container.deactivate(client, 1);
-				continue;
-			}
-			client.setConnection(handler);
-			if(!(name.equals(client.name)))
-				Logger.error(this, "Returning "+client+" for "+name);
-			if(Logger.shouldLog(LogLevel.MINOR, this)) Logger.minor(this, "Returning "+client+" for "+name);
-			client.init(container);
-			return client;
-		}
-		FCPClient client = new FCPClient(name, handler, false, null, ClientRequest.PERSIST_FOREVER, this,server.getWhiteboard(), container);
-		container.store(client);
-		return client;
-	}
-
-	public void maybeUnregisterClient(FCPClient client, ObjectContainer container) {
-		if(!client.hasPersistentRequests(container)) {
-			client.removeFromDatabase(container);
+		ObjectSet<FCPClient> set = query.execute();
+		while(true) {
+		    try {
+		        if(set.hasNext()) {
+		            FCPClient client = set.next();
+		            try {
+		                container.activate(client, 1);
+		                if(client.root != this) {
+		                    Logger.error(this, "Ignoring client with wrong FCPPersistentRoot");
+		                    continue;
+		                }
+		                if(client.isGlobalQueue) {
+		                    Logger.error(this, "Ignoring global queue");
+		                    continue;
+		                }
+		                Logger.error(this, "Will migrate client "+client.name);
+		                results.add(client);
+		            } catch (Throwable t) {
+		                Logger.error(this, "Failed to load client: "+t, t);
+		            }
+		        } else return results;
+		    } catch (Throwable t) {
+		        Logger.error(this, "Failed to load clients: "+t, t);
+		        return results;
+		    }
 		}
 	}
 
+    public FCPClient getGlobalClient() {
+        return globalForeverClient;
+    }
 }

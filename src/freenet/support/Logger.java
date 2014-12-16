@@ -2,14 +2,18 @@ package freenet.support;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
-import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.UnsupportedEncodingException;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.regex.PatternSyntaxException;
 
+import freenet.support.FileLoggerHook.IntervalParseException;
 import freenet.support.LoggerHook.InvalidThresholdException;
 import freenet.support.io.Closer;
 
@@ -59,17 +63,20 @@ public abstract class Logger {
 			}
 	
 			// read /proc/self/stat and parse for the specified field
+			InputStream is = null;
 			BufferedReader br = null;
-			FileReader fr = null;
 			File procFile = new File("/proc/self/stat");
 			if (procFile.exists()) {
 				try {
-					fr = new FileReader(procFile);
-					br = new BufferedReader(fr);
+					is = new FileInputStream(procFile);
+					br = new BufferedReader(new InputStreamReader(is, "ISO-8859-1" /* ASCII */));
 				} catch (FileNotFoundException e1) {
 					logStatic(o, "'/proc/self/stat' not found", logToFileVerbosity);
 					procSelfStatEnabled = false;
-					fr = null;
+					br = null;
+				} catch (UnsupportedEncodingException e) {
+					// Impossible.
+					throw new Error(e);
 				}
 				if (null != br) {
 					try {
@@ -90,8 +97,9 @@ public abstract class Logger {
 							error(o, "Caught PatternSyntaxException in readLine.trim().split(\" \") of OSThread.getFieldFromProcSelfStat() while parsing '"+readLine+"'", e);
 						}
 					}
+				} else {
+					Closer.close(is);
 				}
-				Closer.close(br);
 			}
 			return null;
 		}
@@ -252,7 +260,12 @@ public abstract class Logger {
 		logger.setThreshold(level);
 		logger.setDetailedThresholds(detail);
 		FileLoggerHook fh;
-		fh = new FileLoggerHook(System.out, "d (c, t, p): m", "MMM dd, yyyy HH:mm:ss:SSS", level.name());
+		try {
+			fh = new FileLoggerHook(System.out, "d (c, t, p): m", "MMM dd, yyyy HH:mm:ss:SSS", level.name());
+		} catch (IntervalParseException e) {
+			// Impossible
+			throw new Error(e);
+		}
 		if (detail != null) fh.setDetailedThresholds(detail);
 		((LoggerHookChain) logger).addHook(fh);
 		fh.start();
@@ -291,6 +304,10 @@ public abstract class Logger {
 		logger.log(c, s, LogLevel.ERROR);
 	}
 
+	public synchronized static void error(Class<?> c, String s, Throwable t) {
+		logger.log(c, s, t, LogLevel.ERROR);
+	}
+
 	public synchronized static void error(Object o, String s) {
 		logger.log(o, s, LogLevel.ERROR);
 	}
@@ -327,8 +344,16 @@ public abstract class Logger {
 		logger.log(c, s, LogLevel.NORMAL);
 	}
 
+	public synchronized static void normal(Class<?> c, String s, Throwable t) {
+		logger.log(c, s, t, LogLevel.NORMAL);
+	}
+
 	public synchronized static void warning(Class<?> c, String s) {
 		logger.log(c, s, LogLevel.WARNING);
+	}
+
+	public synchronized static void warning(Class<?> c, String s, Throwable t) {
+		logger.log(c, s, t, LogLevel.WARNING);
 	}
 
 	public synchronized static void warning(Object o, String s) {
@@ -341,6 +366,10 @@ public abstract class Logger {
 
 	public synchronized static void logStatic(Object o, String s, LogLevel prio) {
 		logger.log(o, s, prio);
+	}
+	
+	public synchronized static void logStatic(Object o, String s, Throwable e, LogLevel prio) {
+		logger.log(o, s, e, prio);
 	}
 	
 	@Deprecated
@@ -552,6 +581,7 @@ public abstract class Logger {
 		LogThresholdCallback ltc = new LogThresholdCallback() {
 			WeakReference<Class<?>> ref = new WeakReference<Class<?>> (clazz);
 
+			@Override
 			public void shouldUpdate() {
 				Class<?> clazz = ref.get();
 				if (clazz == null) {	// class unloaded

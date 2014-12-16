@@ -11,31 +11,42 @@ import freenet.crypt.BlockCipher;
  */
 public class SessionKey {
 	
-	/** A PacketTracker may have more than one SessionKey, but a SessionKey 
-	 * may only have one PacketTracker. In other words, in some cases it is
-	 * possible to change the session key without invalidating the packet
-	 * sequence, but it is never possible to invalidate the packet sequence
-	 * without changing the session key. */
-	final PacketTracker packets;
-	
 	/** Parent PeerNode */
 	public final PeerNode pn;
-	/** Cipher to both encrypt outgoing packets with and decrypt
-	 * incoming ones. */
-	public final BlockCipher sessionCipher;
-	/** Key for above cipher, so far for debugging */
-	public final byte[] sessionKey;
+	/** Cipher to encrypt outgoing packets with */
+	public final BlockCipher outgoingCipher;
+	/** Key for outgoingCipher, so far for debugging */
+	public final byte[] outgoingKey;
 
-	SessionKey(PeerNode parent, PacketTracker tracker, BlockCipher cipher, byte[] sessionKey) {
+	/** Cipher to decrypt incoming packets */
+	public final BlockCipher incommingCipher;
+	/** Key for incommingCipher, so far for debugging */
+	public final byte[] incommingKey;
+
+	public final BlockCipher ivCipher;
+	public final byte[] ivNonce;
+	public final byte[] hmacKey;
+	
+	final long trackerID;
+	
+	public final NewPacketFormatKeyContext packetContext;
+
+	SessionKey(PeerNode parent, BlockCipher outgoingCipher, byte[] outgoingKey,
+	                BlockCipher incommingCipher, byte[] incommingKey, BlockCipher ivCipher,
+			byte[] ivNonce, byte[] hmacKey, NewPacketFormatKeyContext context, long trackerID) {
 		this.pn = parent;
-		this.packets = tracker;
-		this.sessionCipher = cipher;
-		this.sessionKey = sessionKey;
+		this.outgoingCipher = outgoingCipher;
+		this.outgoingKey = outgoingKey;
+		this.incommingCipher = incommingCipher;
+		this.incommingKey = incommingKey;
+		this.ivCipher = ivCipher;
+		this.ivNonce = ivNonce;
+		this.hmacKey = hmacKey;
+		this.packetContext = context;
+		this.trackerID = trackerID;
 	}
 	
-	@Override
-	public String toString() {
-		return super.toString()+":"+packets.toString();
+	public void disconnected() {
+		packetContext.disconnected();
 	}
-
 }

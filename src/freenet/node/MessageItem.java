@@ -5,6 +5,7 @@ package freenet.node;
 
 import freenet.io.comm.AsyncMessageCallback;
 import freenet.io.comm.ByteCounter;
+import freenet.io.comm.DMT;
 import freenet.io.comm.Message;
 import freenet.support.Logger;
 
@@ -23,18 +24,39 @@ public class MessageItem {
 	final boolean formatted;
 	final ByteCounter ctrCallback;
 	private final short priority;
+	private long cachedID;
+	private boolean hasCachedID;
+	final boolean sendLoadRT;
+	final boolean sendLoadBulk;
+	private long deadline;
 
-	public MessageItem(Message msg2, AsyncMessageCallback[] cb2, ByteCounter ctr, PeerNode pn) {
+	public MessageItem(Message msg2, AsyncMessageCallback[] cb2, ByteCounter ctr, short overridePriority) {
 		this.msg = msg2;
 		this.cb = cb2;
 		formatted = false;
 		this.ctrCallback = ctr;
 		this.submitted = System.currentTimeMillis();
-		priority = msg2.getSpec().getPriority();
-		buf = msg.encodeToPacket(pn);
+		if(overridePriority > 0)
+			priority = overridePriority;
+		else
+			priority = msg2.getPriority();
+		this.sendLoadRT = msg2.needsLoadRT();
+		this.sendLoadBulk = msg2.needsLoadBulk();
+		buf = msg.encodeToPacket();
+		if(buf.length > NewPacketFormat.MAX_MESSAGE_SIZE) {
+			// This is bad because fairness between UID's happens at the level of message queueing,
+			// and the window size is frequently very small, so if we have really big messages they
+			// could cause big problems e.g. starvation of other messages, resulting in timeouts 
+			// (especially if there are retransmits).
+			Logger.error(this, "WARNING: Message too big: "+buf.length+" for "+msg2, new Exception("error"));
+		}
 	}
 
-	public MessageItem(byte[] data, AsyncMessageCallback[] cb2, boolean formatted, ByteCounter ctr, short priority) {
+	public MessageItem(Message msg2, AsyncMessageCallback[] cb2, ByteCounter ctr) {
+		this(msg2, cb2, ctr, (short)-1);
+	}
+
+	public MessageItem(byte[] data, AsyncMessageCallback[] cb2, boolean formatted, ByteCounter ctr, short priority, boolean sendLoadRT, boolean sendLoadBulk) {
 		this.cb = cb2;
 		this.msg = null;
 		this.buf = data;
@@ -44,6 +66,8 @@ public class MessageItem {
 		this.ctrCallback = ctr;
 		this.submitted = System.currentTimeMillis();
 		this.priority = priority;
+		this.sendLoadRT = sendLoadRT;
+		this.sendLoadBulk = sendLoadBulk;
 	}
 
 	/**
@@ -70,15 +94,6 @@ public class MessageItem {
 				Logger.error(this, "Caught "+t+" reporting "+length+" sent bytes on "+this, t);
 			}
 		}
-		if(cb != null) {
-			for(int i=0;i<cb.length;i++) {
-				try {
-					cb[i].sent();
-				} catch (Throwable t) {
-					Logger.error(this, "Caught "+t+" calling sent() on "+cb[i]+" for "+this, t);
-				}
-			}
-		}
 	}
 
 	public short getPriority() {
@@ -92,13 +107,74 @@ public class MessageItem {
 
 	public void onDisconnect() {
 		if(cb != null) {
-			for(int i=0;i<cb.length;i++) {
+			for(AsyncMessageCallback cbi: cb) {
 				try {
-					cb[i].disconnected();
+					cbi.disconnected();
 				} catch (Throwable t) {
-					Logger.error(this, "Caught "+t+" calling sent() on "+cb[i]+" for "+this, t);
+					Logger.error(this, "Caught "+t+" calling sent() on "+cbi+" for "+this, t);
 				}
 			}
 		}
+	}
+
+	public void onFailed() {
+		if(cb != null) {
+			for(AsyncMessageCallback cbi: cb) {
+				try {
+					cbi.fatalError();
+				} catch (Throwable t) {
+					Logger.error(this, "Caught "+t+" calling sent() on "+cbi+" for "+this, t);
+				}
+			}
+		}
+	}
+
+	public synchronized long getID() {
+		if(hasCachedID) return cachedID;
+		cachedID = generateID();
+		hasCachedID = true;
+		return cachedID;
+	}
+	
+	private long generateID() {
+		if(msg == null) return -1;
+		Object o = msg.getObject(DMT.UID);
+		if(o == null || !(o instanceof Long)) {
+			return -1;
+		} else {
+			return (Long)o;
+		}
+	}
+
+	/** Called the first time we have sent all of the message. */
+	public void onSentAll() {
+		if(cb != null) {
+			for(AsyncMessageCallback cbi: cb) {
+				try {
+					cbi.sent();
+				} catch (Throwable t) {
+					Logger.error(this, "Caught "+t+" calling sent() on "+cbi+" for "+this, t);
+				}
+			}
+		}
+	}
+
+	/** Set the deadline for this message. Called when a message is unqueued, when
+	 * we start to send it. Used if the message does not entirely fit in the 
+	 * packet, and also if it is retransmitted.
+	 * @param time The time (in the future) to set the deadline to.
+	 */
+	public synchronized void setDeadline(long time) {
+		deadline = time;
+	}
+	
+	/** Clear the deadline for this message. */
+	public synchronized void clearDeadline() {
+		deadline = 0;
+	}
+	
+	/** Get the deadline for this message. 0 means no deadline has been set. */
+	public synchronized long getDeadline() {
+		return deadline;
 	}
 }

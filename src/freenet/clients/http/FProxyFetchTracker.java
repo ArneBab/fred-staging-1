@@ -2,11 +2,11 @@ package freenet.clients.http;
 
 import java.util.ArrayList;
 import java.util.Enumeration;
-import java.util.Vector;
 
 import freenet.client.FetchContext;
 import freenet.client.FetchException;
 import freenet.client.async.ClientContext;
+import freenet.clients.http.FProxyFetchInProgress.REFILTER_POLICY;
 import freenet.keys.FreenetURI;
 import freenet.node.RequestClient;
 import freenet.support.LogThresholdCallback;
@@ -36,14 +36,14 @@ public class FProxyFetchTracker implements Runnable {
 	private boolean queuedJob;
 	private boolean requeue;
 
-	FProxyFetchTracker(ClientContext context, FetchContext fctx, RequestClient rc) {
+	public FProxyFetchTracker(ClientContext context, FetchContext fctx, RequestClient rc) {
 		fetchers = new MultiValueTable<FreenetURI, FProxyFetchInProgress>();
 		this.context = context;
 		this.fctx = fctx;
 		this.rc = rc;
 	}
 	
-	public FProxyFetchWaiter makeFetcher(FreenetURI key, long maxSize, FetchContext fctx) throws FetchException {
+	public FProxyFetchWaiter makeFetcher(FreenetURI key, long maxSize, FetchContext fctx, REFILTER_POLICY refilterPolicy) throws FetchException {
 		FProxyFetchInProgress progress;
 		/* LOCKING:
 		 * Call getWaiter() inside the fetchers lock, since we will purge old 
@@ -54,7 +54,7 @@ public class FProxyFetchTracker implements Runnable {
 			if(waiter!=null){
 				return waiter;
 			}
-			progress = new FProxyFetchInProgress(this, key, maxSize, fetchIdentifiers++, context, fctx != null ? fctx : this.fctx, rc);
+			progress = new FProxyFetchInProgress(this, key, maxSize, fetchIdentifiers++, context, fctx != null ? fctx : this.fctx, rc, refilterPolicy);
 			fetchers.put(key, progress);
 		}
 		try {
@@ -71,6 +71,12 @@ public class FProxyFetchTracker implements Runnable {
 		// FIXME get rid of fetchers over some age
 	}
 	
+	void removeFetcher(FProxyFetchInProgress progress) {
+		synchronized(fetchers) {
+			fetchers.removeElement(progress.uri, progress);
+		}
+	}
+	
 	public FProxyFetchWaiter makeWaiterForFetchInProgress(FreenetURI key,long maxSize, FetchContext fctx){
 		FProxyFetchInProgress progress=getFetchInProgress(key, maxSize, fctx);
 		if(progress!=null){
@@ -85,16 +91,16 @@ public class FProxyFetchTracker implements Runnable {
 	 * @param fctx TODO
 	 * @return The FetchInProgress if found, null otherwise*/
 	public FProxyFetchInProgress getFetchInProgress(FreenetURI key, long maxSize, FetchContext fctx){
-		FProxyFetchInProgress progress;
 		synchronized (fetchers) {
-			if(fetchers.containsKey(key)) {
-				Object[] check = fetchers.getArray(key);
+			Object[] check = fetchers.getArray(key);
+			if(check != null) {
 				for(int i=0;i<check.length;i++) {
-					progress = (FProxyFetchInProgress) check[i];
+					FProxyFetchInProgress progress = (FProxyFetchInProgress) check[i];
 					if((progress.maxSize == maxSize && progress.notFinishedOrFatallyFinished())
 							|| progress.hasData()){
 						if(logMINOR) Logger.minor(this, "Found "+progress);
 						if(fctx != null && !progress.fetchContextEquivalent(fctx)) continue;
+						if(logMINOR) Logger.minor(this, "Using "+progress);
 						return progress;
 					} else
 						if(logMINOR) Logger.minor(this, "Skipping "+progress);
@@ -116,6 +122,7 @@ public class FProxyFetchTracker implements Runnable {
 		context.ticker.queueTimedJob(this, FProxyFetchInProgress.LIFETIME);
 	}
 
+	@Override
 	public void run() {
 		if(logMINOR) Logger.minor(this, "Removing old FProxyFetchInProgress's");
 		ArrayList<FProxyFetchInProgress> toRemove = null;
@@ -128,12 +135,11 @@ public class FProxyFetchTracker implements Runnable {
 				queuedJob = false;
 			}
 			// Horrible hack, FIXME
-			Enumeration e = fetchers.keys();
+			Enumeration<FreenetURI> e = fetchers.keys();
 			while(e.hasMoreElements()) {
 				FreenetURI uri = (FreenetURI) e.nextElement();
 				// Really horrible hack, FIXME
-				Vector<FProxyFetchInProgress> list = (Vector<FProxyFetchInProgress>) fetchers.iterateAll(uri);
-				for(FProxyFetchInProgress f : list){
+				for(FProxyFetchInProgress f : fetchers.iterateAll(uri)) {
 					// FIXME remove on the fly, although cancel must wait
 					if(f.canCancel()) {
 						if(toRemove == null) toRemove = new ArrayList<FProxyFetchInProgress>();
@@ -159,11 +165,8 @@ public class FProxyFetchTracker implements Runnable {
 			context.ticker.queueTimedJob(this, FProxyFetchInProgress.LIFETIME);
 	}
 
-	public void remove(FProxyFetchInProgress progress) {
-		synchronized(fetchers) {
-			// For some reason it can show up multiple times.
-			while(fetchers.removeElement(progress.uri, progress)) { }
-		}
+	public int makeRandomElementID() {
+		return context.fastWeakRandom.nextInt();
 	}
 
 }

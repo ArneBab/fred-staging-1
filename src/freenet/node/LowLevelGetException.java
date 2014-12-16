@@ -3,11 +3,12 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.node;
 
+import freenet.support.LightweightException;
 import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
 
-public class LowLevelGetException extends Exception {
+public class LowLevelGetException extends LightweightException {
     private static volatile boolean logDEBUG;
 
     static {
@@ -47,7 +48,7 @@ public class LowLevelGetException extends Exception {
 	/** Ran into a failure table */
 	public static final int RECENTLY_FAILED = 10;
 	
-	public static final String getMessage(int reason) {
+	public static String getMessage(int reason) {
 		switch(reason) {
 		case DECODE_FAILED:
 			return "Decode of data failed, probably was bogus at source";
@@ -82,6 +83,11 @@ public class LowLevelGetException extends Exception {
 		this.code = code;
 	}
 
+	public LowLevelGetException(int code, String message) {
+		super(message);
+		this.code = code;
+	}
+
 	public LowLevelGetException(int reason) {
 		super(getMessage(reason));
 		this.code = reason;
@@ -93,10 +99,7 @@ public class LowLevelGetException extends Exception {
 	}
 
     @Override
-    public final synchronized Throwable fillInStackTrace() {
-        if(logDEBUG || code == INTERNAL_ERROR || code == DECODE_FAILED || code == VERIFY_FAILED)
-            return super.fillInStackTrace();
-        return null;
+    protected boolean shouldFillInStackTrace() {
+        return logDEBUG || code == INTERNAL_ERROR || code == DECODE_FAILED || code == VERIFY_FAILED;
     }
-
 }

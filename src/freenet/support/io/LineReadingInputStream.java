@@ -3,9 +3,11 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.support.io;
 
+import java.io.EOFException;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Arrays;
 
 import freenet.support.HexUtil;
 
@@ -25,6 +27,7 @@ public class LineReadingInputStream extends FilterInputStream implements LineRea
 	 * @param bufferSize The initial size of the read buffer.
 	 * @param utf If true, read as UTF-8, if false, read as ISO-8859-1.
 	 */
+	@Override
 	public String readLine(int maxLength, int bufferSize, boolean utf) throws IOException {
 		if(maxLength < 1)
 			return null;
@@ -38,11 +41,17 @@ public class LineReadingInputStream extends FilterInputStream implements LineRea
 		int ctr = 0;
 		mark(maxLength + 2); // in case we have both a \r and a \n
 		while(true) {
+			assert(buf.length - ctr > 0);
 			int x = read(buf, ctr, buf.length - ctr);
-			if(x == -1) {
+			if(x < 0) {
 				if(ctr == 0)
 					return null;
 				return new String(buf, 0, ctr, utf ? "UTF-8" : "ISO-8859-1");
+			}
+			if(x == 0) {
+				// Don't busy-loop. Probably a socket closed or something.
+				// If not, it's not a salavageable situation; either way throw.
+				throw new EOFException();
 			}
 			// REDFLAG this is definitely safe with the above charsets, it may not be safe with some wierd ones.
 			int end = ctr + x;
@@ -91,9 +100,7 @@ public class LineReadingInputStream extends FilterInputStream implements LineRea
 			if(ctr >= maxLength)
 					throw new TooLongException("We reached maxLength="+maxLength+ " parsing\n "+HexUtil.bytesToHex(buf, 0, ctr) + "\n" + new String(buf, 0, ctr, utf ? "UTF-8" : "ISO-8859-1"));
 			if(ctr >= buf.length) {
-				byte[] newBuf = new byte[Math.min(buf.length * 2, maxLength)];
-				System.arraycopy(buf, 0, newBuf, 0, buf.length);
-				buf = newBuf;
+				buf = Arrays.copyOf(buf, Math.min(buf.length * 2, maxLength));
 			}
 			buf[ctr++] = (byte) x;
 		}

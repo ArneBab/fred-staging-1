@@ -6,7 +6,6 @@ import freenet.crypt.DSAPublicKey;
 import freenet.keys.NodeSSK;
 import freenet.keys.SSKBlock;
 import freenet.keys.SSKVerifyException;
-import freenet.node.GetPubkey;
 
 public class SSKStore extends StoreCallback<SSKBlock> {
 
@@ -33,8 +32,8 @@ public class SSKStore extends StoreCallback<SSKBlock> {
 		return block;
 	}
 	
-	public SSKBlock fetch(NodeSSK chk, boolean dontPromote, boolean canReadClientCache, boolean canReadSlashdotCache, BlockMetadata meta) throws IOException {
-		return store.fetch(chk.getRoutingKey(), chk.getFullKey(), dontPromote, canReadClientCache, canReadSlashdotCache, meta);
+	public SSKBlock fetch(NodeSSK chk, boolean dontPromote, boolean canReadClientCache, boolean canReadSlashdotCache, boolean ignoreOldBlocks, BlockMetadata meta) throws IOException {
+		return store.fetch(chk.getRoutingKey(), chk.getFullKey(), dontPromote, canReadClientCache, canReadSlashdotCache, ignoreOldBlocks, meta);
 	}
 
 	public void put(SSKBlock b, boolean overwrite, boolean isOldBlock) throws IOException, KeyCollisionException {

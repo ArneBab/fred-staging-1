@@ -27,7 +27,7 @@ import java.util.Arrays;
 import freenet.io.WritableToDataOutputStream;
 
 /**
- * Byte array which is limited to 32kB
+ * Byte array which is limited to 32KiB.
  */
 public class ShortBuffer implements WritableToDataOutputStream {
 
@@ -40,19 +40,27 @@ public class ShortBuffer implements WritableToDataOutputStream {
 	/**
 	 * Create a Buffer by reading a DataInputStream
 	 *
-	 * @param dis
-	 * @throws IOException
+	 * @param dis to read bytes from
+	 * @throws IllegalArgumentException If the length integer is negative.
+	 * @throws IOException error reading from dis
 	 */
 	public ShortBuffer(DataInput dis) throws IOException {
 		_length = dis.readShort();
 		if(_length < 0)
 			throw new IllegalArgumentException("Negative Length: "+_length);
-
 		_data = new byte[_length];
 		_start = 0;
 		dis.readFully(_data);
 	}
 
+	/**
+	 * Create an empty Buffer */
+	public ShortBuffer() {
+		_data = new byte[0];
+		_start = 0;
+		_length = 0;
+	}
+	
 	/**
 	 * Create a Buffer from a byte array
 	 *
@@ -85,9 +93,7 @@ public class ShortBuffer implements WritableToDataOutputStream {
 		if ((_start == 0) && (_length == _data.length)) {
 			return _data;
 		} else {
-			byte[] r = new byte[_length];
-			System.arraycopy(_data, _start, r, 0, _length);
-			return r;
+			return Arrays.copyOfRange(_data, _start, _start+_length);
 		}
 	}
 
@@ -108,6 +114,7 @@ public class ShortBuffer implements WritableToDataOutputStream {
 		return _data[pos + _start];
 	}
 
+	@Override
 	public void writeToDataOutputStream(DataOutputStream stream) throws IOException {
 		stream.writeShort(_length);
 		stream.write(_data, _start, _length);

@@ -3,15 +3,14 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.support;
 
-import com.db4o.ObjectContainer;
-
 import freenet.client.async.ClientContext;
+import freenet.client.async.RequestSelectionTreeNode;
 
 public interface RandomGrabArrayItemExclusionList {
 	
 	/**
 	 * Whether this item can be returned right now.
 	 */
-	public boolean exclude(RandomGrabArrayItem item, ObjectContainer container, ClientContext context);
+	public long exclude(RandomGrabArrayItem item, ClientContext context, long now);
 
 }

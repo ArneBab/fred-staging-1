@@ -9,16 +9,22 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.util.ArrayList;
 import java.util.Properties;
+import java.util.regex.Pattern;
 
 import org.tanukisoftware.wrapper.WrapperManager;
 
 import freenet.l10n.NodeL10n;
+import freenet.node.NodeInitException;
+import freenet.node.updater.MainJarDependenciesChecker.Dependency;
+import freenet.node.updater.MainJarDependenciesChecker.MainJarDependencies;
+import freenet.support.io.Closer;
 
 /**
  * Handles the wrapper.conf, essentially.
  */
-class UpdateDeployContext {
+public class UpdateDeployContext {
 
 	public static class UpdateCatastropheException extends Exception {
 
@@ -36,16 +42,15 @@ class UpdateDeployContext {
 	}
 
 	File mainJar;
-	File extJar;
 	int mainClasspathNo;
-	int extClasspathNo;
 	File newMainJar;
-	File newExtJar;
+	File backupMainJar;
 	boolean mainJarAbsolute;
-	boolean extJarAbsolute;
+	final MainJarDependencies deps;
 	
-	UpdateDeployContext() throws UpdaterParserException {
+	UpdateDeployContext(MainJarDependencies deps) throws UpdaterParserException {
 		Properties p = WrapperManager.getProperties();
+		this.deps = deps;
 		
 		for(int propNo=1;true;propNo++) {
 			String prop = p.getProperty("wrapper.java.classpath."+propNo);
@@ -53,21 +58,10 @@ class UpdateDeployContext {
 			File f = new File(prop);
 			boolean isAbsolute = f.isAbsolute();
 			String name = f.getName().toLowerCase();
-			if(extJar == null) {
-				if(name.equals("freenet-ext.jar.new")) {
-					extJar = f;
-					newExtJar = new File(extJar.getParent(), "freenet-ext.jar");
-					extJarAbsolute = isAbsolute;
-					extClasspathNo = propNo;
-					continue;
-				} else if(name.equals("freenet-ext.jar")) {
-					extJar = f;
-					newExtJar = new File(extJar.getParent(), "freenet-ext.jar.new");
-					extClasspathNo = propNo;
-					continue;
-				}
-			}
 			if(mainJar == null) {
+				if(name.equals("freenet-ext.jar") || name.equals("freenet-ext.jar.new") || (name.startsWith("freenet-ext") && name.endsWith(".jar")))
+					// Don't match freenet-ext.jar!
+					continue;
 				// Try to match it
 				if((name.startsWith("freenet") && (name.endsWith(".jar")))) {
 					mainJar = f;
@@ -83,14 +77,13 @@ class UpdateDeployContext {
 					continue;
 				}
 			}
+			// Else try to match from dependencies.
+			
 		}
 		
-		if(mainJar == null && extJar == null)
-			throw new UpdaterParserException(l10n("cannotUpdateNoJars"));
 		if(mainJar == null)
-			throw new UpdaterParserException(l10n("cannotUpdateNoMainJar", "extFilename", extJar.toString()));
-		if(extJar == null)
-			throw new UpdaterParserException(l10n("cannotUpdateNoExtJar", "mainFilename", mainJar.toString()));
+			throw new UpdaterParserException(l10n("cannotUpdateNoMainJar"));
+		backupMainJar = new File(mainJar.getParent(), "freenet.jar.bak");
 	}
 
 	private String l10n(String key) {
@@ -113,21 +106,24 @@ class UpdateDeployContext {
 		return newMainJar;
 	}
 
-	File getExtJar() {
-		return extJar;
-	}
-	
-	File getNewExtJar() {
-		return newExtJar;
-	}
-
-	void rewriteWrapperConf(boolean writtenNewJar, boolean writtenNewExt) throws IOException, UpdateCatastropheException, UpdaterParserException {
+	void rewriteWrapperConf(boolean writtenNewJar) throws IOException, UpdateCatastropheException, UpdaterParserException {
 		
 		// Rewrite wrapper.conf
 		// Don't just write it out from properties; we want to keep it as close to what it was as possible.
 
 		File oldConfig = new File("wrapper.conf");
 		File newConfig = new File("wrapper.conf.new");
+		
+		if(!oldConfig.exists()) {
+			File wrapperDir = new File("wrapper");
+			if(wrapperDir.exists() && wrapperDir.isDirectory()) {
+				File o = new File(wrapperDir, "wrapper.conf");
+				if(o.exists()) {
+					oldConfig = o;
+					newConfig = new File(wrapperDir, "wrapper.conf.new");
+				}
+			}
+		}
 		
 		FileInputStream fis = new FileInputStream(oldConfig);
 		BufferedInputStream bis = new BufferedInputStream(fis);
@@ -140,43 +136,110 @@ class UpdateDeployContext {
 
 		String line;
 			
-		boolean writtenMain = false;
-		boolean writtenExt = false;
 		boolean writtenReload = false;
+		/** On Windows, we need the anchor file option explicitly. */
+		boolean writtenAnchor = false;
+		/** Write the anchor polling interval too if it doesn't exist already */
+		boolean writtenAnchorInterval = false;
 		
 		String newMain = mainJarAbsolute ? newMainJar.getAbsolutePath() : newMainJar.getPath();
-		String newExt = extJarAbsolute ? newExtJar.getAbsolutePath() : newExtJar.getPath();
+		
+		String mainRHS = null;
+		
+		ArrayList<String> otherLines = new ArrayList<String>();
+		ArrayList<String> classpath = new ArrayList<String>();
+		
+		// We MUST put the ext (and all other dependencies) before the main jar, 
+		// or auto-update of freenet-ext.jar on Windows won't work.
+		// The main jar refers to freenet-ext.jar so that java -jar freenet.jar works.
+		// Therefore, on Windows, if we update freenet-ext.jar, it will use freenet.jar and freenet-ext.jar
+		// and freenet-ext.jar.new as well. The old freenet-ext.jar will take precedence, and we won't be
+		// able to overwrite either of them, so we'll just restart every 5 minutes forever!
 		
 		while((line = br.readLine()) != null) {
+		    /** The values are case sensitive, but the keys aren't */
+		    String lowcaseLine = line.toLowerCase();
+			// The classpath numbers are not reliable.
+			// We have to check the content.
 			
-			if(line.startsWith("wrapper.java.classpath.")) {
-				if(writtenNewJar && line.startsWith("wrapper.java.classpath."+mainClasspathNo+'=')) {
-					bw.write("wrapper.java.classpath."+mainClasspathNo+'='+newMain+'\n');
-					System.err.println("Rewritten wrapper.conf for main jar");
-					writtenMain = true;
-				} else if(writtenNewExt && line.startsWith("wrapper.java.classpath."+extClasspathNo+'=')) {
-					bw.write("wrapper.java.classpath."+extClasspathNo+'='+newExt+'\n');
-					System.err.println("Rewritten wrapper.conf for ext jar");
-					writtenExt = true;
-				} else {
-					bw.write(line+'\n');
+			boolean dontWrite = false;
+			
+			if(lowcaseLine.startsWith("wrapper.java.classpath.")) {
+				line = line.substring("wrapper.java.classpath.".length());
+				int idx = line.indexOf('=');
+				if(idx != -1) {
+					// Ignore the numbers.
+					String rhs = line.substring(idx+1);
+					dontWrite = true;
+					if(rhs.equals("freenet.jar") || rhs.equals("freenet.jar.new") || 
+							rhs.equals("freenet-stable-latest.jar") || rhs.equals("freenet-stable-latest.jar.new") ||
+							rhs.equals("freenet-testing-latest.jar") || rhs.equals("freenet-testing-latest.jar.new")) {
+						if(writtenNewJar)
+							mainRHS = newMain;
+						else
+							mainRHS = rhs;
+					} else {
+						// Is it on the list of dependencies?
+						Dependency dep = findDependencyByRHSFilename(new File(rhs));
+						if(dep != null) {
+						    if(dep.oldFilename() != null)
+						        System.out.println("Found old dependency "+dep.oldFilename());
+						    else
+						        System.out.println("Found new dependency "+dep.newFilename());
+						} else { // dep == null
+						    System.out.println("Found unknown jar in classpath, will keep: "+rhs);
+							// If not, it's something the user has added, we just keep it.
+							classpath.add(rhs);
+						}
+					}
 				}
-			} else if(line.equalsIgnoreCase("wrapper.restart.reload_configuration=TRUE")) {
+			} else if(lowcaseLine.equals("wrapper.restart.reload_configuration=true")) {
 				writtenReload = true;
-				bw.write(line+'\n');
-			} else
-				bw.write(line+'\n');
+			} else if(lowcaseLine.startsWith("wrapper.anchorfile=")) {
+			    writtenAnchor = true;
+			} else if(lowcaseLine.startsWith("wrapper.anchor.poll_interval=")) {
+			    writtenAnchorInterval = true;
+			}
+			if(!dontWrite)
+				otherLines.add(line);
 		}
 		br.close();
 		
-		if(!((writtenMain || !writtenNewJar) && (writtenExt || !writtenNewExt))) {
+		// Write classpath first
+		
+		if(mainRHS == null) {
 			throw new UpdaterParserException(l10n("updateFailedNonStandardConfig", 
-					new String[] { "main", "ext" }, new String[] { Boolean.toString(writtenMain), Boolean.toString(writtenExt) } ));
+					new String[] { "main" }, new String[] { Boolean.toString(mainRHS != null) } ));
 		}
+		
+		// As above, we need to write ALL the dependencies BEFORE we write the main jar.
+		int count = 1; // Classpath is 1-based.
+		for(Dependency d : deps.dependencies) {
+		    System.out.println("Writing dependency "+d.newFilename()+" priority "+d.order());
+			bw.write("wrapper.java.classpath."+count+"="+d.newFilename()+'\n');
+			count++;
+		}
+		
+		// Write the main jar.
+		bw.write("wrapper.java.classpath."+count+"="+mainRHS+'\n');
+		count++;
+		for(String s : classpath) {
+			bw.write("wrapper.java.classpath."+count+"="+s+'\n');
+			count++;
+		}
+		
+		for(String s : otherLines)
+			bw.write(s+'\n');
 
 		if(!writtenReload) {
 			// Add it.
-			bw.write("wrapper.restart.reload_configuration=TRUE");
+			bw.write("wrapper.restart.reload_configuration=TRUE\n");
+		}
+		if(!writtenAnchor) {
+		    bw.write("wrapper.anchorfile=Freenet.anchor\n");
+		}
+		if(!writtenAnchorInterval) {
+		    bw.write("wrapper.anchor.poll_interval=1\n");
 		}
 		
 		bw.close();
@@ -192,8 +255,145 @@ class UpdateDeployContext {
 		
 		// New config installed.
 		
-		System.err.println("Rewritten wrapper.conf for"+(writtenNewJar ? (" new main jar: "+newMainJar) : "")+(writtenNewExt ? (" new ext jar: "+newExtJar): ""));
+		System.err.println("Rewritten wrapper.conf for build "+deps.build+" and "+deps.dependencies.size()+" dependencies.");
+	}
+
+	private Dependency findDependencyByRHSFilename(File rhs) {
+		String rhsName = rhs.getName().toLowerCase();
+		// Check for files already in use.
+		for(Dependency dep : deps.dependencies) {
+			File f = dep.oldFilename();
+			if(f == null) {
+				// Not in use.
+				continue;
+			}
+			if(rhs.equals(f)) return dep;
+			if(rhsName.equals(f.getName().toLowerCase())) return dep;
+		}
+		// It may be already on the classpath even though it's a new file officially.
+        for(Dependency dep : deps.dependencies) {
+            File f = dep.newFilename();
+            if(rhs.equals(f)) return dep;
+            if(rhsName.equals(f.getName().toLowerCase())) return dep;
+        }
+        // Slightly more expensive test.
+		for(Dependency dep : deps.dependencies) {
+			Pattern p = dep.regex();
+			if(p != null) {
+				if(p.matcher(rhs.getName().toLowerCase()).matches()) return dep;
+			}
+		}
+		return null;
+	}
+
+	public enum CHANGED {
+		ALREADY, // Found the comment, so it has already been changed
+		SUCCESS, // Succeeded
+		FAIL // Failed e.g. due to unable to write wrapper.conf.
+	}
+
+	public static CHANGED tryIncreaseMemoryLimit(int extraMemoryMB,
+			String markerComment) {
+		// Rewrite wrapper.conf
+		// Don't just write it out from properties; we want to keep it as close to what it was as possible.
+
+		File oldConfig = new File("wrapper.conf");
+		File newConfig = new File("wrapper.conf.new");
 		
+		if(!oldConfig.exists()) {
+			File wrapperDir = new File("wrapper");
+			if(wrapperDir.exists() && wrapperDir.isDirectory()) {
+				File o = new File(wrapperDir, "wrapper.conf");
+				if(o.exists()) {
+					oldConfig = o;
+					newConfig = new File(wrapperDir, "wrapper.conf.new");
+				}
+			}
+		}
+		
+		FileInputStream fis = null;
+		BufferedInputStream bis = null;
+		InputStreamReader isr = null;
+		BufferedReader br = null;
+		FileOutputStream fos = null;
+		OutputStreamWriter osw = null;
+		BufferedWriter bw = null;
+		
+		boolean success = false;
+		
+		try {
+		
+		fis = new FileInputStream(oldConfig);
+		bis = new BufferedInputStream(fis);
+		isr = new InputStreamReader(bis);
+		br = new BufferedReader(isr);
+		
+		fos = new FileOutputStream(newConfig);
+		osw = new OutputStreamWriter(fos);
+		bw = new BufferedWriter(osw);
+
+		String line;
+		
+		while((line = br.readLine()) != null) {
+			
+			if(line.equals("#" + markerComment))
+				return CHANGED.ALREADY;
+			
+			if(line.startsWith("wrapper.java.maxmemory=")) {
+				try {
+					int memoryLimit = Integer.parseInt(line.substring("wrapper.java.maxmemory=".length()));
+					int newMemoryLimit = memoryLimit + extraMemoryMB;
+					// There have been some cases where really high limits have caused the JVM to do bad things.
+					if(newMemoryLimit > 2048) newMemoryLimit = 2048;
+					bw.write('#' + markerComment + '\n');
+					bw.write("wrapper.java.maxmemory="+newMemoryLimit+'\n');
+					success = true;
+					continue;
+				} catch (NumberFormatException e) {
+					// Grrrrr!
+				}
+			}
+			
+			bw.write(line+'\n');
+		}
+		br.close();
+		
+		} catch (IOException e) {
+			newConfig.delete();
+			System.err.println("Unable to rewrite wrapper.conf with new memory limit.");
+			return CHANGED.FAIL;
+		} finally {
+			Closer.close(br);
+			Closer.close(isr);
+			Closer.close(bis);
+			Closer.close(fis);
+			Closer.close(bw);
+			Closer.close(osw);
+			Closer.close(fos);
+		}
+		
+		if(success) {
+			if(!newConfig.renameTo(oldConfig)) {
+				if(!oldConfig.delete()) {
+					System.err.println("Unable to move rewritten wrapper.conf with new memory limit "+newConfig+" over old config "+oldConfig+" : unable to delete old config");
+					return CHANGED.FAIL;
+				}
+				if(!newConfig.renameTo(oldConfig)) {
+					System.err.println("Old wrapper.conf deleted but new wrapper.conf cannot be renamed!");
+					System.err.println("FREENET WILL NOT START UNTIL YOU RENAME "+newConfig+" to "+oldConfig);
+					System.exit(NodeInitException.EXIT_BROKE_WRAPPER_CONF);
+				}
+			}
+			System.err.println("Rewritten wrapper.conf for new memory limit");
+			return CHANGED.SUCCESS;
+		} else {
+			newConfig.delete();
+			return CHANGED.FAIL;
+		}
+	}
+
+	public File getBackupJar() {
+		return backupMainJar;
 	}
 
 }

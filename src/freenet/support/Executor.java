@@ -1,7 +1,7 @@
 /**
  * @author toad
  * To the extent that this is copyrightable, it's part of Freenet and licensed
- * under GPL2 or later. However, it's a trivial interface taken from Sun JDK 1.5,
+ * under GPL2 or later. However, it's a trivial interface taken from Sun/Oracle JDK 1.5,
  * and we will use that when we migrate to 1.5.
  */
 package freenet.support;
@@ -13,6 +13,7 @@ package freenet.support;
 public interface Executor extends java.util.concurrent.Executor {
 
 	/** Execute a job. */
+	@Override
 	public void execute(Runnable job);
 	public void execute(Runnable job, String jobName);
 	public void execute(Runnable job, String jobName, boolean fromTicker);

@@ -23,6 +23,8 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 
+import freenet.node.PrioRunnable;
+import freenet.support.Executor;
 import freenet.support.Logger;
 
 /**
@@ -33,23 +35,30 @@ import freenet.support.Logger;
  */
 public final class MessageFilter {
 
+	private static volatile boolean logMINOR;
+
+	static {
+		Logger.registerClass(MessageFilter.class);
+	}
+
     public static final String VERSION = "$Id: MessageFilter.java,v 1.7 2005/08/25 17:28:19 amphibian Exp $";
 
     private boolean _matched;
     private PeerContext _droppedConnection;
-	private MessageType _type;
-    private HashMap<String, Object> _fields = new HashMap<String, Object>();
-    private List<String> _fieldList = new LinkedList<String>();
+    private MessageType _type;
+    private final HashMap<String, Object> _fields = new HashMap<String, Object>();
+    private final List<String> _fieldList = new LinkedList<String>();
     private PeerContext _source;
     private long _timeout;
     /** If true, timeouts are relative to the start of waiting, if false, they are relative to
      * the time of calling setTimeout() */
     private boolean _timeoutFromWait;
-    private int _initialTimeout;
+    private long _initialTimeout;
     private MessageFilter _or;
     private Message _message;
     private long _oldBootID;
     private AsyncMessageFilterCallback _callback;
+    private ByteCounter _ctr;
     private boolean _setTimeout = false;
 
     private MessageFilter() {
@@ -71,7 +80,7 @@ public final class MessageFilter {
         	if(waitFor && _callback != null)
         		throw new IllegalStateException("Cannot wait on a MessageFilter with a callback!");
     		if(!_setTimeout)
-    			Logger.error(this, "No timeout set on filter "+this, new Exception("error"));
+			throw new IllegalStateException("No timeout set on filter " + this + "; cannot wait.");
     		if(_initialTimeout > 0 && _timeoutFromWait)
     			_timeout = System.currentTimeMillis() + _initialTimeout;
     	}
@@ -97,7 +106,7 @@ public final class MessageFilter {
      * @param timeout The time before this filter expires in ms
      * @return This message filter
      */
-	public MessageFilter setTimeout(int timeout) {
+	public MessageFilter setTimeout(long timeout) {
 		_setTimeout = true;
 		_initialTimeout = timeout;
 		_timeout = System.currentTimeMillis() + timeout;
@@ -161,42 +170,78 @@ public final class MessageFilter {
 		return this;
 	}
 
+	/**
+	 * Modifies the filter so that it returns true if either it or the filter in the argument returns true.
+	 * Multiple combinations must be nested: such as filter1.or(filter2.or(filter3))).
+	 * @return reference to this, the modified filter.
+	 */
 	public MessageFilter or(MessageFilter or) {
 		if((or != null) && (_or != null) && or != _or) {
-			// FIXME maybe throw? this is almost certainly a bug, and a nasty one too!
-			Logger.error(this, "or() replacement: "+_or+" -> "+or, new Exception("error"));
+			throw new IllegalStateException("Setting a second .or() on the same filter will replace the " +
+			    "existing one, not add another. " + _or + " would be replaced by " + or + ".");
+		}
+		if(or._initialTimeout != _initialTimeout) {
+			Logger.error(this, "Message filters being or()ed have different timeouts! This is very dangerous! This is "+this+" or is "+or);
+			// FIXME throw new IllegalArgumentException()
 		}
 		_or = or;
 		return this;
 	}
 
-	public MessageFilter setAsyncCallback(AsyncMessageFilterCallback cb) {
+	public MessageFilter setAsyncCallback(AsyncMessageFilterCallback cb, ByteCounter ctr) {
 		_callback = cb;
+		_ctr = ctr;
 		return this;
 	}
 	
-	public boolean match(Message m) {
-		if ((_or != null) && (_or.match(m))) {
-			return true;
+	enum MATCHED {
+		MATCHED,
+		TIMED_OUT,
+		TIMED_OUT_AND_MATCHED,
+		NONE
+	}
+	
+	public MATCHED match(Message m, long now) {
+		return match(m, false, now);
+	}
+	
+	public MATCHED match(Message m, boolean noTimeout, long now) {
+		if(_or != null) {
+			MATCHED matched = _or.match(m, noTimeout, now);
+			if(matched != MATCHED.NONE)
+				return matched; // Filter is matched once only. That includes timeouts.
 		}
+		
 		if ((_type != null) && (!_type.equals(m.getSpec()))) {
-			return false;
+			// Timeout immediately, but don't check the callback, so we still need the periodic check.
+			if(_timeout < now)
+				return MATCHED.TIMED_OUT;
+			return MATCHED.NONE;
 		}
 		if ((_source != null) && (!_source.equals(m.getSource()))) {
-			return false;
+			if(_timeout < now)
+				return MATCHED.TIMED_OUT;
+			return MATCHED.NONE;
 		}
 		synchronized (_fields) {
 			for (String fieldName : _fieldList) {
 				if (!m.isSet(fieldName)) {
-					return false;
+					if(_timeout < now)
+						return MATCHED.TIMED_OUT;
+					return MATCHED.NONE;
 				}
 				if (!_fields.get(fieldName).equals(m.getFromPayload(fieldName))) {
-					return false;
+					if(_timeout < now)
+						return MATCHED.TIMED_OUT;
+					return MATCHED.NONE;
 				}
 			}
 		}
-		if(reallyTimedOut(System.currentTimeMillis())) return false;
-		return true;
+		if((!noTimeout) && reallyTimedOut(now)) {
+			if(logMINOR) Logger.minor(this, "Matched but timed out: "+this);
+			return MATCHED.TIMED_OUT_AND_MATCHED;
+		}
+		return MATCHED.MATCHED;
 	}
 
 	public boolean matched() {
@@ -236,11 +281,12 @@ public final class MessageFilter {
     public synchronized void setMessage(Message message) {
         //Logger.debug(this, "setMessage("+message+") on "+this, new Exception("debug"));
         _message = message;
-        _matched = _message != null;
+        // Avoid race conditions where it is removed from the filter list because of a timeout but not woken up.
+        _matched = true;
         notifyAll();
     }
 
-    public int getInitialTimeout() {
+    public long getInitialTimeout() {
         return _initialTimeout;
     }
     
@@ -287,13 +333,34 @@ public final class MessageFilter {
      * Caller must verify _matchesDroppedConnection and _source.
      * @param ctx
      */
-    public void onDroppedConnection(PeerContext ctx) {
+    public void onDroppedConnection(final PeerContext ctx, Executor executor) {
+    	final AsyncMessageFilterCallback cb;
     	synchronized(this) {
+    		cb = _callback;
     		_droppedConnection = ctx;
     		notifyAll();
+    		_ctr = null;
     	}
-    	if(_callback != null)
-    		_callback.onDisconnect(ctx);
+    	if(cb != null) {
+    		if(cb instanceof SlowAsyncMessageFilterCallback) {
+    			executor.execute(new PrioRunnable() {
+
+					@Override
+					public void run() {
+						cb.onDisconnect(ctx);
+					}
+
+
+					@Override
+					public int getPriority() {
+						return ((SlowAsyncMessageFilterCallback)cb).getPriority();
+					}
+					
+    			});
+    		} else {
+    			cb.onDisconnect(ctx);
+    		}
+    	}
     }
 
     /**
@@ -301,43 +368,101 @@ public final class MessageFilter {
      * Caller must verify _matchesDroppedConnection and _source.
      * @param ctx
      */
-    public void onRestartedConnection(PeerContext ctx) {
+    public void onRestartedConnection(final PeerContext ctx, Executor executor) {
+    	final AsyncMessageFilterCallback cb;
     	synchronized(this) {
     		_droppedConnection = ctx;
+    		cb = _callback;
     		notifyAll();
+    		_ctr = null;
     	}
-    	if(_callback != null)
-    		_callback.onRestarted(ctx);
+    	if(cb != null) {
+    		if(cb instanceof SlowAsyncMessageFilterCallback) {
+    			executor.execute(new PrioRunnable() {
+
+					@Override
+					public void run() {
+						cb.onRestarted(ctx);
+					}
+
+
+					@Override
+					public int getPriority() {
+						return ((SlowAsyncMessageFilterCallback)cb).getPriority();
+					}
+					
+    			});
+    		} else {
+    			cb.onRestarted(ctx);
+    		}
+    	}
     }
 
     /**
      * Notify waiters that we have been matched.
      * Hopefully no locks will be held at this point by the caller.
      */
-	public void onMatched() {
-		Message msg;
-		AsyncMessageFilterCallback cb;
+	public void onMatched(Executor executor) {
+		final Message msg;
+		final AsyncMessageFilterCallback cb;
+		ByteCounter ctr;
 		synchronized(this) {
 			msg = _message;
 			cb = _callback;
+			ctr = _ctr;
 			// Clear matched before calling callback in case we are re-added.
 			if(_callback != null)
 				clearMatched();
 		}
 		if(cb != null) {
-			cb.onMatched(msg);
+			if(cb instanceof SlowAsyncMessageFilterCallback)
+				executor.execute(new PrioRunnable() {
+
+					@Override
+					public void run() {
+						cb.onMatched(msg);
+					}
+
+					@Override
+					public int getPriority() {
+						return ((SlowAsyncMessageFilterCallback)cb).getPriority();
+					}
+					
+				}, "Slow callback for "+cb);
+			else
+				cb.onMatched(msg);
+			if(ctr != null)
+				ctr.receivedBytes(msg._receivedByteCount);
 		}
 	}
 
 	/**
 	 * Notify waiters that we have timed out.
 	 */
-	public void onTimedOut() {
+	public void onTimedOut(Executor executor) {
+		final AsyncMessageFilterCallback cb;
 		synchronized(this) {
 			notifyAll();
+			cb = _callback;
 		}
-		if(_callback != null)
-			_callback.onTimeout();
+		if(cb != null) {
+			if(cb instanceof SlowAsyncMessageFilterCallback) {
+				executor.execute(new PrioRunnable() {
+
+					@Override
+					public void run() {
+						cb.onTimeout();
+					}
+
+					@Override
+					public int getPriority() {
+						return ((SlowAsyncMessageFilterCallback)cb).getPriority();
+					}
+					
+				});
+			} else
+				cb.onTimeout();
+		}
 	}
 
 	/**
@@ -355,5 +480,9 @@ public final class MessageFilter {
 		if(_or != null)
 			return _or.anyConnectionsDropped();
 		return false;
+	}
+
+	public synchronized boolean hasCallback() {
+		return _callback != null;
 	}
 }

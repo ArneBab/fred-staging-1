@@ -1,20 +1,27 @@
 package freenet.node;
 
+import static java.util.concurrent.TimeUnit.MINUTES;
+
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 
 import freenet.support.Logger;
-import freenet.support.OOMHandler;
 import freenet.support.SimpleFieldSet;
-import freenet.support.Logger.LogLevel;
+import freenet.support.Ticker;
 import freenet.support.io.Closer;
 import freenet.support.io.FileUtil;
 
 class Persister implements Runnable {
+        private static volatile boolean logMINOR;
+        static {
+            Logger.registerClass(Persister.class);
+        }
 
-	Persister(Persistable t, File persistTemp, File persistTarget, PacketSender ps) {
+        static final long PERIOD = MINUTES.toMillis(15);
+
+	Persister(Persistable t, File persistTemp, File persistTarget, Ticker ps) {
 		this.persistable = t;
 		this.persistTemp = persistTemp;
 		this.persistTarget = persistTarget;
@@ -22,13 +29,13 @@ class Persister implements Runnable {
 	}
 	
 	// Subclass must set the others later
-	protected Persister(Persistable t, PacketSender ps) {
+	protected Persister(Persistable t, Ticker ps) {
 		this.persistable = t;
 		this.ps = ps;
 	}
 	
 	final Persistable persistable;
-	private final PacketSender ps;
+	private final Ticker ps;
 	File persistTemp;
 	File persistTarget;
 	private boolean started;
@@ -39,41 +46,38 @@ class Persister implements Runnable {
 		}
 	}
 
+	@Override
 	public void run() {
 		freenet.support.Logger.OSThread.logPID(this);
 		try {
 			persistThrottle();
-		} catch (OutOfMemoryError e) {
-			OOMHandler.handleOOM(e);
-			System.err.println("Will restart ThrottlePersister...");
 		} catch (Throwable t) {
 			Logger.error(this, "Caught in ThrottlePersister: "+t, t);
 			System.err.println("Caught in ThrottlePersister: "+t);
 			t.printStackTrace();
 			System.err.println("Will restart ThrottlePersister...");
 		}
-		ps.queueTimedJob(this, 60*1000);
+		ps.queueTimedJob(this, PERIOD);
 	}
 	
 	private void persistThrottle() {
-		boolean logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
-		if(logMINOR) Logger.minor(this, "Trying to persist throttles...");
+		if (logMINOR) {
+			Logger.minor(this, "Trying to persist throttles...");
+		}
 		SimpleFieldSet fs = persistable.persistThrottlesToFieldSet();
+		FileOutputStream fos = null;
 		try {
-			FileOutputStream fos = new FileOutputStream(persistTemp);
-			try {
-				fs.writeTo(fos);
-				fos.close();
-				FileUtil.renameTo(persistTemp, persistTarget);
-			} catch (IOException e) {
-				persistTemp.delete();
-			} finally {
-				Closer.close(fos);
-			}
+			fos = new FileOutputStream(persistTemp);
+			fs.writeToBigBuffer(fos);
+			fos.close();
+			FileUtil.renameTo(persistTemp, persistTarget);
 		} catch (FileNotFoundException e) {
-			Logger.error(this, "Could not store throttle data to disk: "+e, e);
-			return;
-                }
+			Logger.error(this, "Could not store throttle data to disk: " + e, e);
+		} catch (IOException e) {
+			persistTemp.delete();
+		} finally {
+			Closer.close(fos);
+		}
 	}
 
 	public SimpleFieldSet read() {
@@ -101,6 +105,14 @@ class Persister implements Runnable {
 			}
 			started = true;
 		}
+		SemiOrderedShutdownHook.get().addEarlyJob(new Thread() {
+			
+			public void run() {
+				System.out.println("Writing "+persistTarget+" on shutdown");
+				persistThrottle();
+			}
+			
+		});
 		run();
 	}
 

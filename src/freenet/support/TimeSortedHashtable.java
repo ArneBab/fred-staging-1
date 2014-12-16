@@ -6,7 +6,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * Variant on LRUHashtable which provides an efficient how-many-since-time-T operation.
+ * Variant on LRUMap which provides an efficient how-many-since-time-T operation.
  */
 public class TimeSortedHashtable<T extends Comparable<T>>  {
 	public TimeSortedHashtable() {
@@ -23,6 +23,7 @@ public class TimeSortedHashtable<T extends Comparable<T>>  {
 		long time;
 		final T value;
 		
+		@Override
 		public int compareTo(Element<T> o) {
 			if(time > o.time) return 1;
 			if(time < o.time) return -1;
@@ -119,14 +120,14 @@ public class TimeSortedHashtable<T extends Comparable<T>>  {
 	}
 
 	// FIXME this is broken if timestamp != -1
-	public final synchronized <E> Object[] pairsAfter(long timestamp, E[] valuesArray) {
+	public final synchronized Object[] pairsAfter(long timestamp, T[] valuesArray) {
     	Set<Element<T>> s = elements.tailSet(new Element<T>(timestamp, null));
     	Long[] timeArray = new Long[s.size()];
     	
     	int i = 0;
     	for (Element<T> e : s) {
     		timeArray[i] = e.time;
-    		valuesArray[i] = (E) e.value;
+    		valuesArray[i] = e.value;
     		i++;
     	}
     	

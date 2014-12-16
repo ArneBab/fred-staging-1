@@ -3,8 +3,6 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.node;
 
-import com.db4o.ObjectContainer;
-
 /**
  * Must be implemented by any client object returned by SendableRequest.getClient().
  * Mostly this is for scheduling, but it does have one key purpose: to identify whether
@@ -17,7 +15,13 @@ public interface RequestClient {
 	 * Is this request persistent? **Must not change!**
 	 */
 	public boolean persistent();
-
-	public void removeFrom(ObjectContainer container);
+	
+	/** Send the request with the real time flag enabled? Real-time requests are given 
+	 * a higher priority in data transfers, but fewer of them are accepted. They are 
+	 * optimised for latency rather than throughput, and are expected to be bursty rather
+	 * than continual.
+	 * **Must not change!**
+	 */
+	public boolean realTimeFlag();
 
 }

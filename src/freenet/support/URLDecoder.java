@@ -22,8 +22,8 @@ public class URLDecoder
 {
     // test harness
     public static void main(String[] args) throws URLEncodedFormatException {
-	for (int i = 0; i < args.length; i++) {
-	    System.out.println(args[i] + " -> " + decode(args[i], false));
+	for (String arg: args) {
+	    System.out.println(arg + " -> " + decode(arg, false));
 	}
     }
 
@@ -78,7 +78,7 @@ public class URLDecoder
 				}
 			} else {
 				try {
-					byte[] encoded = (""+c).getBytes("UTF-8");
+					byte[] encoded = String.valueOf(c).getBytes("UTF-8");
 					decodedBytes.write(encoded, 0, encoded.length);
 				} catch (UnsupportedEncodingException e) {
 					throw new Error("Impossible: JVM doesn't support UTF-8: " + e, e);

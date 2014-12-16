@@ -3,12 +3,11 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.node;
 
-import com.db4o.ObjectContainer;
+import static java.util.concurrent.TimeUnit.MINUTES;
 
-import freenet.client.FECQueue;
 import freenet.client.async.ChosenBlock;
 import freenet.client.async.ClientContext;
-import freenet.keys.ClientKey;
+import freenet.client.async.ClientRequestSelector;
 import freenet.keys.Key;
 
 public interface RequestScheduler {
@@ -22,26 +21,15 @@ public interface RequestScheduler {
 	 * */
 	public void succeeded(BaseSendableGet get, boolean persistent);
 
-	/**
-	 * After a key has been requested a few times, it is added to the cooldown queue for
-	 * a fixed period, since it would be pointless to rerequest it (especially given ULPRs).
-	 * Note that while a key is on the cooldown queue its requestors will still be told if
-	 * it is found by ULPRs or back door coalescing.
-	 * @param key The key to be added.
-	 * @return The time at which the key will leave the cooldown queue.
-	 */
-	long queueCooldown(ClientKey key, SendableGet getter, ObjectContainer container);
-
 	/** Once a key has been requested a few times, don't request it again for 30 minutes. 
 	 * To do so would be pointless given ULPRs, and just waste bandwidth. */
-	public static final long COOLDOWN_PERIOD = 30*60*1000;
+	public static final long COOLDOWN_PERIOD = MINUTES.toMillis(30);
 	/** The number of times a key can be requested before triggering the cooldown period. 
 	 * Note: If you don't want your requests to be subject to cooldown (e.g. in fproxy), make 
 	 * your max retry count less than this (and more than -1). */
 	public static final int COOLDOWN_RETRIES = 3;
-	public long countTransientQueuedRequests();
-
-	public void queueFillRequestStarterQueue();
+	
+	public long countQueuedRequests();
 
 	public KeysFetchingLocally fetchingKeys();
 
@@ -51,8 +39,6 @@ public interface RequestScheduler {
 	
 	public void callFailure(SendableInsert insert, LowLevelPutException exception, int prio, boolean persistent);
 	
-	public FECQueue getFECQueue();
-
 	public ClientContext getContext();
 	
 	public boolean addToFetching(Key key);
@@ -67,12 +53,28 @@ public interface RequestScheduler {
 	 */
 	public abstract boolean isRunningOrQueuedPersistentRequest(SendableRequest request);
 	
-	public boolean hasFetchingKey(Key key);
+	/**
+	 * Check whether a key is already being fetched. If it is, optionally remember who is
+	 * asking so we can wake them up (on the cooldown queue) when the key fetch completes.
+	 * @param key
+	 * @param getterWaiting
+	 * @param persistent
+	 * @param container
+	 * @return
+	 */
+	public boolean hasFetchingKey(Key key, BaseSendableGet getterWaiting, boolean persistent);
 
-	public void start(NodeClientCore core);
+	public boolean addRunningInsert(SendableInsert insert, SendableRequestItemKey token);
 
-	public boolean addTransientInsertFetching(SendableInsert insert, Object token);
+	public void removeRunningInsert(SendableInsert insert, SendableRequestItemKey token);
 
-	public void removeTransientInsertFetching(SendableInsert insert, Object token);
+	public void wakeStarter();
+
+	/* FIXME SECURITY When/if introduce tunneling or similar mechanism for starting requests
+	 * at a distance this will need to be reconsidered. See the comments on the caller in 
+	 * RequestHandler (onAbort() handler). */
+	public boolean wantKey(Key key);
+
+    public ClientRequestSelector getSelector();
 
 }

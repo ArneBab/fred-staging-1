@@ -2,6 +2,7 @@ package freenet.support;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.util.Random;
@@ -9,7 +10,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import org.spaceroots.mantissa.random.MersenneTwister;
+import freenet.support.math.MersenneTwister;
 
 public abstract class BloomFilter {
 	protected ByteBuffer filter;
@@ -18,7 +19,11 @@ public abstract class BloomFilter {
 	protected final int k;
 	protected final int length;
 
-	protected ReadWriteLock lock = new ReentrantReadWriteLock();
+	protected transient ReadWriteLock lock = new ReentrantReadWriteLock();
+	
+	public void init() {
+		lock = new ReentrantReadWriteLock();
+	}
 
 	public static BloomFilter createFilter(int length, int k, boolean counting) {
 		if (length == 0)
@@ -206,7 +211,39 @@ public abstract class BloomFilter {
 	}
 
 	@Override
-	protected void finalize() {
+	protected void finalize() throws Throwable {
 		close();
+                super.finalize();
 	}
+	
+	public int getSizeBytes() {
+		return filter.capacity();
+	}
+	
+	public int getLength() {
+		return length;
+	}
+	
+	public int getFilledCount() {
+		int x = 0;
+		for(int i=0;i<length;i++)
+			if(getBit(i)) x++;
+		return x;
+	}
+	
+    public int copyTo(byte[] buf, int offset) {
+        lock.readLock().lock();
+        try {
+            int capacity = filter.capacity();
+            System.arraycopy(filter.array(), filter.arrayOffset(), buf, offset, capacity);
+            return capacity;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
+    public void writeTo(OutputStream cos) throws IOException {
+        cos.write(filter.array(), filter.arrayOffset(), filter.capacity());
+    }
+
 }

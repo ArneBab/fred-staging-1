@@ -1,26 +1,24 @@
 package freenet.node.simulator;
 
+import static java.util.concurrent.TimeUnit.HOURS;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.io.PrintStream;
 import java.net.MalformedURLException;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.List;
-import java.util.Locale;
 import java.util.TimeZone;
 
 import freenet.client.ClientMetadata;
 import freenet.client.FetchException;
+import freenet.client.FetchException.FetchExceptionMode;
 import freenet.client.HighLevelSimpleClient;
 import freenet.client.InsertBlock;
 import freenet.client.InsertException;
@@ -29,11 +27,11 @@ import freenet.keys.FreenetURI;
 import freenet.node.Node;
 import freenet.node.NodeStarter;
 import freenet.node.Version;
-import freenet.support.Fields;
 import freenet.support.Logger;
-import freenet.support.PooledExecutor;
 import freenet.support.Logger.LogLevel;
+import freenet.support.PooledExecutor;
 import freenet.support.api.Bucket;
+import freenet.support.api.RandomAccessBucket;
 import freenet.support.io.Closer;
 import freenet.support.io.FileUtil;
 
@@ -44,25 +42,17 @@ import freenet.support.io.FileUtil;
  * @author Matthew Toseland <toad@amphibian.dyndns.org> (0xE43DA450)
  *
  */
-public class LongTermMHKTest {
+public class LongTermMHKTest extends LongTermTest {
 	
 	private static final int TEST_SIZE = 64 * 1024;
 
-	private static final int EXIT_NO_SEEDNODES = 257;
-	private static final int EXIT_FAILED_TARGET = 258;
-	private static final int EXIT_THREW_SOMETHING = 261;
 	private static final int EXIT_DIFFERENT_URI = 262;
 
 	private static final int DARKNET_PORT1 = 5010;
 	private static final int OPENNET_PORT1 = 5011;
-	private static final int DARKNET_PORT2 = 5012;
-	private static final int OPENNET_PORT2 = 5013;
 	
 	/** Delta - the number of days we wait before fetching. */
 	private static final int DELTA = 7;
-
-	private static final DateFormat dateFormat = new SimpleDateFormat("yyyy.MM.dd", Locale.US);
-	private static final GregorianCalendar today = (GregorianCalendar) Calendar.getInstance(TimeZone.getTimeZone("GMT"));
 
 	public static void main(String[] args) {
 		if (args.length < 1 || args.length > 2) {
@@ -129,12 +119,12 @@ public class LongTermMHKTest {
 
 			// Create four CHKs
 			
-			Bucket single = randomData(node);
-			Bucket[] mhks = new Bucket[3];
+			RandomAccessBucket single = randomData(node);
+			RandomAccessBucket[] mhks = new RandomAccessBucket[3];
 			
 			for(int i=0;i<mhks.length;i++) mhks[i] = randomData(node);
 			
-			client = node.clientCore.makeClient((short) 0);
+			client = node.clientCore.makeClient((short) 0, false, false);
 
 			System.err.println("Inserting single block 3 times");
 			
@@ -162,7 +152,7 @@ public class LongTermMHKTest {
 					successes++;
 				} catch (InsertException e) {
 					e.printStackTrace();
-					csvLine.add(FetchException.getShortMessage(e.getMode()));
+					csvLine.add(InsertException.getShortMessage(e.getMode()));
 					csvLine.add("N/A");
 					System.out.println("INSERT FAILED: "+e+" for insert "+i+" for single block");
 				}
@@ -195,7 +185,7 @@ public class LongTermMHKTest {
 					successes++;
 				} catch (InsertException e) {
 					e.printStackTrace();
-					csvLine.add(FetchException.getShortMessage(e.getMode()));
+					csvLine.add(InsertException.getShortMessage(e.getMode()));
 					csvLine.add("N/A");
 					System.out.println("INSERT FAILED: "+e+" for MHK #"+i);
 				}
@@ -218,7 +208,7 @@ public class LongTermMHKTest {
 			FreenetURI singleURI = null;
 			FreenetURI[] mhkURIs = new FreenetURI[3];
 			fis = new FileInputStream(file);
-			BufferedReader br = new BufferedReader(new InputStreamReader(fis));
+			BufferedReader br = new BufferedReader(new InputStreamReader(fis, ENCODING));
 			String line = null;
 			int linesTooShort = 0, linesBroken = 0, linesNoNumber = 0, linesNoURL = 0, linesNoFetch = 0;
 			int total = 0, singleKeysSucceeded = 0, mhkSucceeded = 0;
@@ -230,7 +220,7 @@ public class LongTermMHKTest {
 				//System.out.println("LINE: "+line);
 				String[] split = line.split("!");
 				Date date = dateFormat.parse(split[0]);
-				GregorianCalendar calendar = new GregorianCalendar();
+				GregorianCalendar calendar = new GregorianCalendar(TimeZone.getTimeZone("GMT"));
 				calendar.setTime(date);
 				System.out.println("Date: "+dateFormat.format(calendar.getTime()));
 				GregorianCalendar target = (GregorianCalendar) today.clone();
@@ -294,7 +284,7 @@ public class LongTermMHKTest {
 					linesNoURL++;
 					continue;
 				}
-				if(target.getTimeInMillis() == calendar.getTimeInMillis()) {
+				if(Math.abs(target.getTimeInMillis() - calendar.getTimeInMillis()) < HOURS.toMillis(12)) {
 					System.out.println("Found row for target date "+dateFormat.format(target.getTime())+" : "+dateFormat.format(calendar.getTime()));
 					System.out.println("Version: "+split[1]);
 					match = true;
@@ -375,8 +365,8 @@ public class LongTermMHKTest {
 						csvLine.add(String.valueOf(t2 - t1));
 						fetched = true;
 					} catch (FetchException e) {
-						if (e.getMode() != FetchException.ALL_DATA_NOT_FOUND
-								&& e.getMode() != FetchException.DATA_NOT_FOUND)
+						if (e.getMode() != FetchExceptionMode.ALL_DATA_NOT_FOUND
+								&& e.getMode() != FetchExceptionMode.DATA_NOT_FOUND)
 							e.printStackTrace();
 						csvLine.add(FetchException.getShortMessage(e.getMode()));
 						System.err.println("FAILED PULL FOR SINGLE URI: "+e);
@@ -392,8 +382,8 @@ public class LongTermMHKTest {
 						System.out.println("PULL-TIME FOR MHK #"+i+":" + (t2 - t1));
 						csvLine.add(String.valueOf(t2 - t1));
 					} catch (FetchException e) {
-						if (e.getMode() != FetchException.ALL_DATA_NOT_FOUND
-								&& e.getMode() != FetchException.DATA_NOT_FOUND)
+						if (e.getMode() != FetchExceptionMode.ALL_DATA_NOT_FOUND
+								&& e.getMode() != FetchExceptionMode.DATA_NOT_FOUND)
 							e.printStackTrace();
 						csvLine.add(FetchException.getShortMessage(e.getMode()));
 						System.err.println("FAILED PULL FOR MHK #"+i+": "+e);
@@ -418,26 +408,16 @@ public class LongTermMHKTest {
 			Closer.close(fis);
 
 			if(!dumpOnly) {
-				try {
-					FileOutputStream fos = new FileOutputStream(file, true);
-					PrintStream ps = new PrintStream(fos);
-					
-					ps.println(Fields.commaList(csvLine.toArray(), '!'));
-					
-					ps.close();
-					fos.close();
-				} catch (IOException e) {
-					e.printStackTrace();
-					exitCode = EXIT_THREW_SOMETHING;
-				}
+				writeToStatusLog(file, csvLine);
 			}
 			System.exit(exitCode);
 		}
 	}	
 	
-	private static Bucket randomData(Node node) throws IOException {
-		Bucket data = node.clientCore.tempBucketFactory.makeBucket(TEST_SIZE);
+	private static RandomAccessBucket randomData(Node node) throws IOException {
+	    RandomAccessBucket data = node.clientCore.tempBucketFactory.makeBucket(TEST_SIZE);
 		OutputStream os = data.getOutputStream();
+		try {
 		byte[] buf = new byte[4096];
 		for (long written = 0; written < TEST_SIZE;) {
 			node.fastWeakRandom.nextBytes(buf);
@@ -445,7 +425,9 @@ public class LongTermMHKTest {
 			os.write(buf, 0, toWrite);
 			written += toWrite;
 		}
+		} finally {
 		os.close();
+		}
 		return data;
 	}
 

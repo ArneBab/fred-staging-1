@@ -9,8 +9,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 
-import freenet.support.Logger;
-
 /**
  * @author Iakin
  * A class for retrieveing details about the CPU using the CPUID assembly instruction.
@@ -150,27 +148,33 @@ public class CPUID {
 	}
 	protected static class AMDInfoImpl extends CPUIDCPUInfo implements AMDCPUInfo
 	{
+		@Override
 		public boolean IsK6Compatible()
 		{
 			return (getCPUFamily() >= 5) && (getCPUModel() >= 6);
 		}
+		@Override
 		public boolean IsK6_2_Compatible()
 		{
 			return (getCPUFamily() >= 5) && (getCPUModel() >= 8);
 		}
+		@Override
 		public boolean IsK6_3_Compatible()
 		{
 			return (getCPUFamily() >= 5) && (getCPUModel() >= 9);
 		}
+		@Override
 		public boolean IsAthlonCompatible()
 		{
 			return getCPUFamily() >= 6;
 		}
+		@Override
 		public boolean IsAthlon64Compatible()
 		{
 			return (getCPUFamily() == 15) && (getCPUExtendedFamily() == 0);
 		}
 
+		@Override
 		public String getCPUModelString() throws UnknownCPUException
 		{
 			if(getCPUFamily() == 4){
@@ -262,26 +266,32 @@ public class CPUID {
 
 	protected static class IntelInfoImpl extends CPUIDCPUInfo implements IntelCPUInfo
 	{
+		@Override
 		public boolean IsPentiumCompatible()
 		{
 			return getCPUFamily() >= 5;
 		}
+		@Override
 		public boolean IsPentiumMMXCompatible()
 		{
 			return IsPentium2Compatible() || ((getCPUFamily() == 5) && ((getCPUModel() ==4) || (getCPUModel() == 8)));
 		}
+		@Override
 		public boolean IsPentium2Compatible()
 		{
 			return (getCPUFamily() > 6) || ((getCPUFamily() == 6) && (getCPUModel() >=3));
 		}
+		@Override
 		public boolean IsPentium3Compatible()
 		{
 			return (getCPUFamily() > 6) || ((getCPUFamily() == 6) && (getCPUModel() >=7));
 		}
+		@Override
 		public boolean IsPentium4Compatible()
 		{
 			return getCPUFamily() >= 15;
 		}
+		@Override
 		public String getCPUModelString() throws UnknownCPUException {
 			if(getCPUFamily() == 4){
 				switch(getCPUModel()){
@@ -415,9 +425,11 @@ public class CPUID {
      * If it can find a custom built jcpuid.dll / libjcpuid.so, it'll use that.  Otherwise
      * it'll try to look in the classpath for the correct library (see loadFromResource).
      * If the user specifies -Djcpuid.enable=false it'll skip all of this.</p>
+     * 
+     * FIXME: Is it a good idea to trust the classpath that much?
      *
      */
-    private static final void loadNative() {
+    private static void loadNative() {
     	try{
         String wantedProp = System.getProperty("jcpuid.enable", "true");
         boolean wantNative = "true".equalsIgnoreCase(wantedProp);
@@ -455,7 +467,7 @@ public class CPUID {
      * @return true if it was loaded successfully, else false
      *
      */
-    private static final boolean loadGeneric() {
+    private static boolean loadGeneric() {
         try {
             System.loadLibrary(getLibraryMiddlePart());
             return true;
@@ -476,7 +488,7 @@ public class CPUID {
      * @return true if it was loaded successfully, else false
      *
      */
-    private static final boolean loadFromResource() {
+    private static boolean loadFromResource() {
         String resourceName = getResourceName();
         if (resourceName == null) return false;
         URL resource = CPUID.class.getClassLoader().getResource(resourceName);
@@ -493,7 +505,7 @@ public class CPUID {
             try{
             	outFile = File.createTempFile("jcpuid", "lib.tmp");
                 }catch (IOException e){
-            	Logger.error("CPUID", "Can't create the temporary file in "+System.getProperty("java.io.tmpdir")+" trying something else now.");
+            	System.err.println("freenet.support.CPUInformation.CPUID: Can't create the temporary file in "+System.getProperty("java.io.tmpdir")+" trying something else now.");
             	outFile = new File("cpuid-lib.tmp");
             }
             FileOutputStream fos = new FileOutputStream(outFile);
@@ -526,13 +538,13 @@ public class CPUID {
         }
     }
     
-    private static final String getResourceName()
+    private static String getResourceName()
     {
     	String pname = CPUID.class.getPackage().getName().replace('.','/');
     	return pname+ '/' +getLibraryPrefix()+getLibraryMiddlePart()+ '.' +getLibrarySuffix();
     }
     
-    private static final String getLibraryPrefix()
+    private static String getLibraryPrefix()
     {
     	boolean isWindows =System.getProperty("os.name").toLowerCase().indexOf("windows") != -1;
     	if(isWindows)
@@ -541,7 +553,7 @@ public class CPUID {
     		return "lib";
     }
 
-    private static final String getLibraryMiddlePart(){
+    private static String getLibraryMiddlePart(){
     	boolean isWindows =(System.getProperty("os.name").toLowerCase().indexOf("windows") != -1);
     	boolean isLinux =(System.getProperty("os.name").toLowerCase().indexOf("linux") != -1);
     	boolean isFreebsd =(System.getProperty("os.name").toLowerCase().indexOf("freebsd") != -1);
@@ -557,7 +569,7 @@ public class CPUID {
 		throw new RuntimeException("Dont know jcpuid library name for os type '"+System.getProperty("os.name")+ '\'');
     }
     
-    private static final String getLibrarySuffix()
+    private static String getLibrarySuffix()
     {
     	boolean isWindows =System.getProperty("os.name").toLowerCase().indexOf("windows") != -1;
     	if(isWindows)

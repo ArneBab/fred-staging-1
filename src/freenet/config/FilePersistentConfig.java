@@ -3,6 +3,7 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.config;
 
+import freenet.support.LogThresholdCallback;
 import java.io.BufferedInputStream;
 import java.io.EOFException;
 import java.io.File;
@@ -33,11 +34,26 @@ public class FilePersistentConfig extends PersistentConfig {
 	final File tempFilename;
 	final protected String header;
 	protected final Object storeSync = new Object();
+	protected boolean writeOnFinished;
+
+        private static volatile boolean logMINOR;
+	static {
+		Logger.registerLogThresholdCallback(new LogThresholdCallback(){
+			@Override
+			public void shouldUpdate(){
+				logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
+			}
+		});
+	}
 
 	public static FilePersistentConfig constructFilePersistentConfig(File f) throws IOException {
+		return constructFilePersistentConfig(f, null);
+	}
+
+	public static FilePersistentConfig constructFilePersistentConfig(File f, String header) throws IOException {
 		File filename = f;
 		File tempFilename = new File(f.getPath()+".tmp");
-		return new FilePersistentConfig(load(filename, tempFilename), filename, tempFilename);
+		return new FilePersistentConfig(load(filename, tempFilename), filename, tempFilename, header);
 	}
 
 	static SimpleFieldSet load(File filename, File tempFilename) throws IOException {
@@ -121,7 +137,7 @@ public class FilePersistentConfig extends PersistentConfig {
 	@Override
 	public void store() {
 		if(!finishedInit) {
-			Logger.minor(this, "Initialization not finished, refusing to write config", new Exception("error"));
+			writeOnFinished = true;
 			return;
 		}
 		try {
@@ -142,15 +158,14 @@ public class FilePersistentConfig extends PersistentConfig {
 			throw new IllegalStateException("SHOULD NOT HAPPEN!!");
 
 		SimpleFieldSet fs = exportFieldSet();
-		if(Logger.shouldLog(LogLevel.MINOR, this))
+		if(logMINOR)
 			Logger.minor(this, "fs = " + fs);
 		FileOutputStream fos = null;
 		try {
 			fos = new FileOutputStream(tempFilename);
 			synchronized(this) {
-				//fs.setHeader(header); // TODO put this back in the next stable build (after 1245)
-				// ie. after the lenient parser is more widely deployed
-				fs.writeTo(fos);
+				fs.setHeader(header);
+				fs.writeToBigBuffer(fos);
 			}
 			fos.close();
 			fos = null;
@@ -158,6 +173,14 @@ public class FilePersistentConfig extends PersistentConfig {
 		}
 		finally {
 			Closer.close(fos);
+		}
+	}
+	
+	public void finishedInit() {
+		super.finishedInit();
+		if(writeOnFinished) {
+			writeOnFinished = false;
+			store();
 		}
 	}
 }

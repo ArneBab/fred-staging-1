@@ -5,10 +5,9 @@ package freenet.store;
 
 import java.io.IOException;
 
-import com.sleepycat.je.DatabaseException;
-
 import freenet.crypt.DSAPublicKey;
 import freenet.keys.KeyVerifyException;
+import freenet.node.stats.StoreAccessStats;
 
 /**
  * @author toad
@@ -40,7 +39,8 @@ public abstract class StoreCallback<T extends StorableBlock> {
 
 
 	
-	/** Called once when first connecting to a FreenetStore. Package-local. */
+	/** Called when first connecting to a FreenetStore. If the FreenetStore is a wrapper, it can be
+	 * called more than once, but the last call will determine which store we use. */
 	public void setStore(FreenetStore<T> store) {
 		this.store = store;
 	}
@@ -58,7 +58,7 @@ public abstract class StoreCallback<T extends StorableBlock> {
 	public abstract T construct(byte[] data, byte[] headers, byte[] routingKey, byte[] fullKey, boolean canReadClientCache, boolean canReadSlashdotCache, BlockMetadata meta, DSAPublicKey knownPubKey)
 	        throws KeyVerifyException;
 	
-	public void setMaxKeys(long maxStoreKeys, boolean shrinkNow) throws DatabaseException, IOException {
+	public void setMaxKeys(long maxStoreKeys, boolean shrinkNow) throws IOException {
 		store.setMaxKeys(maxStoreKeys, shrinkNow);
 	}
     
@@ -88,4 +88,15 @@ public abstract class StoreCallback<T extends StorableBlock> {
 
 	/** Generate a routing key from a full key */
 	public abstract byte[] routingKeyFromFullKey(byte[] keyBuf);
+
+	public StoreAccessStats getSessionAccessStats() {
+		return store.getSessionAccessStats();
+	}
+
+	/** Overall session access stats. We don't store the uptime in the datastore, so the
+	 * caller will have to pass in its own estimate of total uptime.
+	 * @return Null if not supported. */
+	public StoreAccessStats getTotalAccessStats() {
+		return store.getTotalAccessStats();
+	}
 }

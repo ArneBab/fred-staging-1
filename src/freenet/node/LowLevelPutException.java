@@ -3,6 +3,8 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.node;
 
+import freenet.keys.KeyBlock;
+
 public class LowLevelPutException extends Exception {
 	private static final long serialVersionUID = 1L;
 	/** An internal error occurred */
@@ -20,7 +22,9 @@ public class LowLevelPutException extends Exception {
 	/** Failure code */
 	public final int code;
 	
-	static final String getMessage(int reason) {
+	private KeyBlock collidedBlock;
+	
+	static String getMessage(int reason) {
 		switch(reason) {
 		case INTERNAL_ERROR:
 			return "Internal error - probably a bug";
@@ -46,6 +50,20 @@ public class LowLevelPutException extends Exception {
 	public LowLevelPutException(int reason) {
 		super(getMessage(reason));
 		this.code = reason;
+	}
+	
+	public LowLevelPutException(KeyBlock collided) {
+		super(getMessage(COLLISION));
+		this.code = COLLISION;
+		collidedBlock = collided;
+	}
+	
+	public synchronized void setCollidedBlock(KeyBlock block) {
+		collidedBlock = block;
+	}
+	
+	public synchronized KeyBlock getCollidedBlock() {
+		return collidedBlock;
 	}
 	
 }
