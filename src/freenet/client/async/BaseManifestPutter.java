@@ -1257,8 +1257,8 @@ public abstract class BaseManifestPutter extends ManifestPutter {
 		return guessMime(name, me.mimeOverride);
 	}
 
-	protected final ClientMetadata guessMime(String name, String mimetype) {
-		String mimeType = mimetype;
+	protected final ClientMetadata guessMime(String name, String mimeOverride) {
+		String mimeType = mimeOverride;
 		if((mimeType == null) && (name != null))
 			mimeType = DefaultMIMETypes.guessMIMEType(name, true);
 		ClientMetadata cm;
