@@ -1526,8 +1526,12 @@ public abstract class BaseManifestPutter extends ManifestPutter {
 		/** FIXME what is going on here? Why do we need to add a JokerPutHandler, when a lot of code just
 		 * calls addItem()? */
 		public void addArchiveItem(ContainerBuilder archive, String name, ManifestElement element, boolean isDefaultDoc) {
+			addArchiveItem(archive, name, element.fullName, element, isDefaultDoc);
+		}
+
+		public void addArchiveItem(ContainerBuilder archive, String name, String fullName, ManifestElement element, boolean isDefaultDoc) {
 			assert(element.getData() != null);
-			archive.addItem(name, new ManifestElement(element, name, name), false);
+			archive.addItem(name, new ManifestElement(element, name), false);
 			PutHandler ph = new JokerPutHandler(BaseManifestPutter.this, selfHandle, name, guessMime(name, element.mimeOverride));
 			putHandlersTransformMap.put(ph, currentDir);
 			perContainerPutHandlersWaitingForMetadata.get(selfHandle).add(ph);

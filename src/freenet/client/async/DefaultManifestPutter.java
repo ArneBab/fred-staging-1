@@ -159,7 +159,7 @@ public class DefaultManifestPutter extends BaseManifestPutter {
 					Object o = entry.getValue();
 					if (o instanceof ManifestElement) {
 						ManifestElement me = (ManifestElement)o;
-						containerBuilder.addItem(name, prefix+name, me, name.equals(defaultName));
+						containerBuilder.addArchiveItem(containerBuilder, name, prefix+name, me, name.equals(defaultName));
 					} else {
 						tmpSize += 512;
 					}
@@ -174,7 +174,7 @@ public class DefaultManifestPutter extends BaseManifestPutter {
 						if (me.getSize() > DEFAULT_MAX_CONTAINERITEMSIZE)
 							containerBuilder.addExternal(name, me.getData(), me.getMimeTypeOverride(), name.equals(defaultName));
 						else
-							containerBuilder.addItem(name, prefix+name, me, name.equals(defaultName));
+							containerBuilder.addArchiveItem(containerBuilder, name, prefix+name, me, name.equals(defaultName));
 					} else {
 						tmpSize += 512;
 					}
@@ -294,7 +294,7 @@ public class DefaultManifestPutter extends BaseManifestPutter {
 				long size = ContainerSizeEstimator.tarItemSize(me.getSize());
 				if ((me.getSize() <= DEFAULT_MAX_CONTAINERITEMSIZE) && 
 						(size < (maxSize-(tmpSize+minUsageForFiles-512 /* this one */)))) {
-					containerBuilder.addItem(name, prefix+name, me, name.equals(defaultName));
+					containerBuilder.addArchiveItem(containerBuilder, name, prefix+name, me, name.equals(defaultName));
 					tmpSize += size;
 					minUsageForFiles -= 512;
 				} else {
@@ -381,7 +381,7 @@ public class DefaultManifestPutter extends BaseManifestPutter {
 			Object o = entry.getValue();
 			if(o instanceof ManifestElement) {
 				ManifestElement element = (ManifestElement) o;
-				containerBuilder.addItem(name, prefix+name, element, name.equals(defaultName));
+				containerBuilder.addArchiveItem(containerBuilder, name, prefix+name, element, name.equals(defaultName));
 			} else {
 				@SuppressWarnings("unchecked")
 				HashMap<String,Object> hm = (HashMap<String,Object>)o;
@@ -402,7 +402,7 @@ public class DefaultManifestPutter extends BaseManifestPutter {
 				if (element.getSize() > DEFAULT_MAX_CONTAINERITEMSIZE)
 					containerBuilder.addExternal(name, element.getData(), element.getMimeTypeOverride(), name.equals(defaultName));
 				else
-					containerBuilder.addItem(name, prefix+name, element, name.equals(defaultName));
+					containerBuilder.addArchiveItem(containerBuilder, name, prefix+name, element, name.equals(defaultName));
 				continue;
 			} else {
 				@SuppressWarnings("unchecked")
