@@ -126,7 +126,7 @@ public class ManifestElement implements Serializable {
 		return mimeOverride;
 	}
 	/**
-	 * A MIME type to feed into ClientMetadata. Returns null for the default mime type.
+	 * A MIME type to feed into ClientMetadata.
 	 */
 	public String getMimeType() {
 		String mimeType = mimeOverride;
