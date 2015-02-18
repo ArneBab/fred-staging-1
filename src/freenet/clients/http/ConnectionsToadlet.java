@@ -396,13 +396,13 @@ public abstract class ConnectionsToadlet extends Toadlet {
 				jsBuf.append( "    theobj.value=\"update_notes\";\n" );
 				jsBuf.append( "  }\n" );
 				// copypaste javascript from http://stackoverflow.com/a/7251104/7666
-				jsBuf.append( "	function checkAll(bx) {" );
-				jsBuf.append( "		var cbs = document.getElementsByClassName('darknet_connections')[0].getElementsByTagName('input');" );
-				jsBuf.append( "		for(var i=0; i < cbs.length; i++) {" );
-				jsBuf.append( "			if(cbs[i].type == 'checkb') {" );
-				jsBuf.append( "				cbs[i].checked = bx.checked;" );
-				jsBuf.append( "			}" );
-				jsBuf.append( "		}" );
+				jsBuf.append( "  function checkAll(bx) {\n" );
+				jsBuf.append( "    var cbs = document.getElementsByClassName(\"darknet_connections\")[0].getElementsByTagName(\"input\");\n" );
+				jsBuf.append( "	   for(var i=0; i < cbs.length; i++) {\n" );
+				jsBuf.append( "	     if(cbs[i].type == \"checkbox\") {\n" );
+				jsBuf.append( "	       cbs[i].checked = bx.checked;\n" );
+				jsBuf.append( "	     }\n" );
+				jsBuf.append( "    }\n" );
 				}
 				contentNode.addChild("script", "type", "text/javascript").addChild("%", jsBuf.toString());
 			}
@@ -440,11 +440,10 @@ public abstract class ConnectionsToadlet extends Toadlet {
 					peerTable = peerTableInfoboxContent.addChild("table", "class", "darknet_connections");
 				}
 				HTMLNode peerTableHeaderRow = peerTable.addChild("tr");
-				if(enablePeerActions){
-					if(fProxyJavascriptEnabled){
+				if(enablePeerActions) {
+					if(fProxyJavascriptEnabled) {
 						peerTableHeaderRow.addChild("th").addChild("input", new String[] { "type", "onclick" }, new String[] { "checkbox", "checkAll(this)" });
-					}
-					else{
+					} else {
 						peerTableHeaderRow.addChild("th");
 					}
 				}
