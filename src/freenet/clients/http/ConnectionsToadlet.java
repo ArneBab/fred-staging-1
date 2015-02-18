@@ -403,7 +403,7 @@ public abstract class ConnectionsToadlet extends Toadlet {
 				jsBuf.append( "	       cbs[i].checked = bx.checked;\n" );
 				jsBuf.append( "	     }\n" );
 				jsBuf.append( "    }\n" );
-				}
+				jsBuf.append( "  }\n" );
 				contentNode.addChild("script", "type", "text/javascript").addChild("%", jsBuf.toString());
 			}
 			HTMLNode peerTableInfobox = contentNode.addChild("div", "class", "infobox infobox-normal");
