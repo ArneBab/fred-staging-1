@@ -5,8 +5,6 @@ to http://127.0.0.1:8888/
 
 ## INTRODUCTION
 
-The Freenet Project is very pleased to announce the release of Freenet 0.7.0.
-
 Freenet is software designed to allow the free exchange of information over the 
 Internet without fear of censorship, or reprisal. To achieve this Freenet makes it 
 very difficult for adversaries to reveal the identity, either of the person 
