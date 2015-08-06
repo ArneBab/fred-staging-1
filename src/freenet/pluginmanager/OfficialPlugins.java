@@ -12,6 +12,9 @@ import freenet.keys.FreenetURI;
 /**
  * Container for Freenet’s official plugins.
  *
+ * FIXME: Connectivity essential plugins shouldn't have their minimum version increased!
+ * @see https://bugs.freenetproject.org/view.php?id=6600
+ *
  * @author <a href="mailto:bombe@pterodactylus.net">David ‘Bombe’ Roden</a>
  */
 public class OfficialPlugins {
@@ -69,8 +72,10 @@ public class OfficialPlugins {
 			addPlugin("UPnP")
 					.inGroup("connectivity")
 					.essential()
+                    .recommendedVersion(10006)
 					.minimumVersion(10003)
-					.loadedFrom("CHK@ICSu1tgnNxJ0bApWkL-fQFswbfi9KPnmWI3Is4eq0iw,Sj1N3zdDHBbL3Uc3~eY4elqWwSP7IR1uHrKVR2-nA0s,AAMC--8/UPnP-10006.jar");
+					.loadedFrom(
+                        "CHK@ICSu1tgnNxJ0bApWkL-fQFswbfi9KPnmWI3Is4eq0iw,Sj1N3zdDHBbL3Uc3~eY4elqWwSP7IR1uHrKVR2-nA0s,AAMC--8/UPnP-10006.jar");
 			addPlugin("XMLLibrarian")
 					.inGroup("index")
 					.minimumVersion(26)
@@ -205,6 +210,10 @@ public class OfficialPlugins {
     }
 
 		private void addCurrentPluginDescription() {
+            if(recommendedVersion == 0 && minimumVersion > 0)
+                recommendedVersion = minimumVersion;
+            if(minimumVersion == 0 && recommendedVersion > 0)
+                minimumVersion = recommendedVersion;
 			officialPlugins.put(name, createOfficialPluginDescription());
 		}
 
