@@ -1,17 +1,17 @@
 package freenet.client.async;
 
 import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.Serializable;
 import java.net.MalformedURLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 
-import com.db4o.ObjectContainer;
-
 import freenet.keys.ClientCHK;
-import freenet.keys.Key;
 import freenet.keys.NodeCHK;
 import freenet.support.Logger;
+import freenet.support.Fields;
 
 /** Contains the keys for a splitfile segment, in an efficient compressed form. These are 
  * not changed, so the object never needs to be stored once created; this is good as it is
@@ -22,9 +22,10 @@ import freenet.support.Logger;
  * 
  * @author toad
  */
-public class SplitFileSegmentKeys implements Cloneable {
+public class SplitFileSegmentKeys implements Cloneable, Serializable {
 	
-	public final int dataBlocks;
+    private static final long serialVersionUID = 1L;
+    public final int dataBlocks;
 	public final int checkBlocks;
 	/** Modern splitfiles have a common decrypt key */
 	public final byte[] commonDecryptKey;
@@ -56,42 +57,46 @@ public class SplitFileSegmentKeys implements Cloneable {
 			extraBytesForKeys = new byte[EXTRA_BYTES_LENGTH * (dataBlocks + checkBlocks)];
 		}
 	}
+	
+	protected SplitFileSegmentKeys() {
+        // For serialization.
+	    dataBlocks = 0;
+	    checkBlocks = 0;
+	    commonDecryptKey = null;
+	    commonExtraBytes = null;
+	    routingKeys = null;
+	    decryptKeys = null;
+	    extraBytesForKeys = null;
+	}
 
 	public int getBlockNumber(ClientCHK key, boolean[] ignoreSlots) {
 		byte[] rkey = key.getRoutingKey();
 		byte[] ckey = null;
 		byte[] extra = null;
-		// Arrays.equals() doesn't do offsets, so implement ourselves
 		int x = 0;
-outer:	for(int i=0;i<(dataBlocks + checkBlocks);i++) {
+		for(int i=0;i<(dataBlocks + checkBlocks);i++) {
 			int oldX = x;
 			x += NodeCHK.KEY_LENGTH;
 			if(ignoreSlots != null && ignoreSlots[i]) {
 				continue;
 			}
-			for(int j=0;j<NodeCHK.KEY_LENGTH;j++) {
-				if(routingKeys[j + oldX] != rkey[j])
-					continue outer;
-			}
+			if(!Fields.byteArrayEqual(routingKeys, rkey, oldX, 0, NodeCHK.KEY_LENGTH))
+				continue;
 			if(ckey == null) ckey = key.getCryptoKey();
 			assert(ClientCHK.CRYPTO_KEY_LENGTH == NodeCHK.KEY_LENGTH);
 			// FIXME USE THE RIGHT CONSTANT, DONT ASSUME THE TWO LENGTHS ARE THE SAME
 			if(commonDecryptKey != null) {
 				if(!Arrays.equals(commonDecryptKey, ckey)) continue;
 			} else {
-				for(int j=0;j<NodeCHK.KEY_LENGTH;j++) {
-					if(decryptKeys[j + oldX] != ckey[j])
-						continue outer;
-				}
+				if(!Fields.byteArrayEqual(decryptKeys,ckey,oldX,0,NodeCHK.KEY_LENGTH))
+					continue;
 			}
 			if(extra == null) extra = key.getExtra();
 			if(commonExtraBytes != null) {
 				if(!Arrays.equals(commonExtraBytes, extra)) continue;
 			} else {
-				int offset = i * EXTRA_BYTES_LENGTH;
-				for(int j=0;j<EXTRA_BYTES_LENGTH;j++) {
-					if(extraBytesForKeys[j + offset] != extra[j]) continue outer;
-				}
+				if(!Fields.byteArrayEqual(extraBytesForKeys, extra, i * EXTRA_BYTES_LENGTH, 0, EXTRA_BYTES_LENGTH))
+					continue;
 			}
 			return i;
 		}
@@ -100,18 +105,15 @@ outer:	for(int i=0;i<(dataBlocks + checkBlocks);i++) {
 	
 	public int getBlockNumber(NodeCHK key, boolean[] ignoreSlots) {
 		byte[] rkey = key.getRoutingKey();
-		// Arrays.equals() doesn't do offsets, so implement ourselves
 		int x = 0;
-outer:	for(int i=0;i<(dataBlocks + checkBlocks);i++) {
+		for(int i=0;i<(dataBlocks + checkBlocks);i++) {
 			int oldX = x;
 			x += NodeCHK.KEY_LENGTH;
 			if(ignoreSlots != null && ignoreSlots[i]) {
 				continue;
 			}
-			for(int j=0;j<NodeCHK.KEY_LENGTH;j++) {
-				if(routingKeys[j + oldX] != rkey[j])
-					continue outer;
-			}
+			if(!Fields.byteArrayEqual(routingKeys, rkey, oldX, 0, NodeCHK.KEY_LENGTH))
+				continue;
 			return i;
 		}
 		return -1;
@@ -120,18 +122,15 @@ outer:	for(int i=0;i<(dataBlocks + checkBlocks);i++) {
 	public int[] getBlockNumbers(NodeCHK key, boolean[] ignoreSlots) {
 		ArrayList<Integer> results = null;
 		byte[] rkey = key.getRoutingKey();
-		// Arrays.equals() doesn't do offsets, so implement ourselves
 		int x = 0;
-outer:	for(int i=0;i<(dataBlocks + checkBlocks);i++) {
+		for(int i=0;i<(dataBlocks + checkBlocks);i++) {
 			int oldX = x;
 			x += NodeCHK.KEY_LENGTH;
 			if(ignoreSlots != null && ignoreSlots[i]) {
 				continue;
 			}
-			for(int j=0;j<NodeCHK.KEY_LENGTH;j++) {
-				if(routingKeys[j + oldX] != rkey[j])
-					continue outer;
-			}
+			if(!Fields.byteArrayEqual(routingKeys, rkey, oldX, 0, NodeCHK.KEY_LENGTH))
+				continue;
 			if(results == null) results = new ArrayList<Integer>();
 			results.add(i);
 		}
@@ -161,26 +160,24 @@ outer:	for(int i=0;i<(dataBlocks + checkBlocks);i++) {
 		byte[] decryptKey;
 		if(commonDecryptKey != null) {
 			if(copy) {
-				decryptKey = new byte[ClientCHK.CRYPTO_KEY_LENGTH];
-				System.arraycopy(commonDecryptKey, 0, decryptKey, 0, ClientCHK.CRYPTO_KEY_LENGTH);
+				decryptKey = commonDecryptKey.clone();
 			} else {
 				decryptKey = commonDecryptKey;
 			}
 		} else {
-			decryptKey = new byte[ClientCHK.CRYPTO_KEY_LENGTH];
-			System.arraycopy(decryptKeys, x * ClientCHK.CRYPTO_KEY_LENGTH, decryptKey, 0, ClientCHK.CRYPTO_KEY_LENGTH);
+			int offset = x * ClientCHK.CRYPTO_KEY_LENGTH;
+			decryptKey = Arrays.copyOfRange(decryptKeys, offset, offset + ClientCHK.CRYPTO_KEY_LENGTH);
 		}
 		byte[] extra;
 		if(commonExtraBytes != null) {
 			if(copy) {
-				extra = new byte[EXTRA_BYTES_LENGTH];
-				System.arraycopy(commonExtraBytes, 0, extra, 0, EXTRA_BYTES_LENGTH);
+				extra = commonExtraBytes.clone();
 			} else {
 				extra = commonExtraBytes;
 			}
 		} else {
-			extra = new byte[EXTRA_BYTES_LENGTH];
-			System.arraycopy(extraBytesForKeys, x * EXTRA_BYTES_LENGTH, extra, 0, EXTRA_BYTES_LENGTH);
+			int offset = x * EXTRA_BYTES_LENGTH;
+			extra = Arrays.copyOfRange(extraBytesForKeys, offset, offset + EXTRA_BYTES_LENGTH);
 		}
 		try {
 			return new ClientCHK(routingKey, decryptKey, extra);
@@ -191,14 +188,14 @@ outer:	for(int i=0;i<(dataBlocks + checkBlocks);i++) {
 	}
 
 	private NodeCHK getNodeKey(int x, boolean copy) {
-		byte[] routingKey = new byte[32];
-		System.arraycopy(routingKeys, x * NodeCHK.KEY_LENGTH, routingKey, 0, NodeCHK.KEY_LENGTH);
+		int xr = x * NodeCHK.KEY_LENGTH;
+		byte[] routingKey = Arrays.copyOfRange(routingKeys, xr, xr + NodeCHK.KEY_LENGTH);
 		byte[] extra;
 		if(commonExtraBytes != null) {
 			extra = commonExtraBytes;
 		} else {
-			extra = new byte[EXTRA_BYTES_LENGTH];
-			System.arraycopy(extraBytesForKeys, x * EXTRA_BYTES_LENGTH, extra, 0, EXTRA_BYTES_LENGTH);
+			int xe = x * EXTRA_BYTES_LENGTH;
+			extra = Arrays.copyOfRange(extraBytesForKeys, xe, xe + EXTRA_BYTES_LENGTH);
 		}
 		
 		byte cryptoAlgorithm = ClientCHK.getCryptoAlgorithmFromExtra(extra);
@@ -233,6 +230,39 @@ outer:	for(int i=0;i<(dataBlocks + checkBlocks);i++) {
 		}
 	}
 
+	public void writeKeys(DataOutputStream dos, boolean check) throws IOException {
+		int count = check ? checkBlocks : dataBlocks;
+		int offset = check ? dataBlocks : 0;
+		if(commonDecryptKey != null) {
+			int rkOffset = offset * NodeCHK.KEY_LENGTH;
+			for(int i=0;i<count;i++) {
+				dos.write(routingKeys, rkOffset, NodeCHK.KEY_LENGTH);
+				rkOffset += NodeCHK.KEY_LENGTH;
+			}
+		} else {
+			int rkOffset = offset * NodeCHK.KEY_LENGTH;
+			int extraOffset = offset * EXTRA_BYTES_LENGTH;
+			assert(NodeCHK.KEY_LENGTH == ClientCHK.CRYPTO_KEY_LENGTH);
+			for(int i=0;i<count;i++) {
+				dos.write(extraBytesForKeys, extraOffset, EXTRA_BYTES_LENGTH);
+				extraOffset += EXTRA_BYTES_LENGTH;
+				dos.write(routingKeys, rkOffset, NodeCHK.KEY_LENGTH);
+				dos.write(decryptKeys, rkOffset, NodeCHK.KEY_LENGTH);
+				rkOffset += NodeCHK.KEY_LENGTH;
+			}
+		}
+	}
+	
+    public static int storedKeysLength(int dataBlocks, int checkBlocks, boolean commonDecryptKey) {
+        // FIXME URGENT Implement a unit test for storedKeysLength() vs writeKeys() vs readKeys().
+        int blocks = dataBlocks + checkBlocks;
+        if(commonDecryptKey) {
+            return blocks * NodeCHK.KEY_LENGTH;
+        } else {
+            return blocks * (EXTRA_BYTES_LENGTH + NodeCHK.KEY_LENGTH*2);
+        }
+    }
+
 	public int getDataBlocks() {
 		return dataBlocks;
 	}
@@ -254,10 +284,6 @@ outer:	for(int i=0;i<(dataBlocks + checkBlocks);i++) {
 		}
 	}
 
-	public void removeFrom(ObjectContainer container) {
-		container.delete(this);
-	}
-
 	public NodeCHK[] listNodeKeys(boolean[] foundKeys, boolean copy) {
 		ArrayList<NodeCHK> list = new ArrayList<NodeCHK>();
 		for(int i=0;i<dataBlocks+checkBlocks;i++) {
@@ -276,5 +302,50 @@ outer:	for(int i=0;i<(dataBlocks + checkBlocks);i++) {
 			throw new Error("Yes it is!");
 		}
 	}
+
+	// Not often used, not very efficient, but overriding equals() requires overriding hashCode().
+    @Override
+    public int hashCode() {
+        final int prime = 31;
+        int result = 1;
+        result = prime * result + checkBlocks;
+        result = prime * result + Arrays.hashCode(commonDecryptKey);
+        result = prime * result + Arrays.hashCode(commonExtraBytes);
+        result = prime * result + dataBlocks;
+        result = prime * result + Arrays.hashCode(decryptKeys);
+        result = prime * result + Arrays.hashCode(extraBytesForKeys);
+        result = prime * result + Arrays.hashCode(routingKeys);
+        return result;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj)
+            return true;
+        if (obj == null)
+            return false;
+        if (getClass() != obj.getClass())
+            return false;
+        SplitFileSegmentKeys other = (SplitFileSegmentKeys) obj;
+        if (checkBlocks != other.checkBlocks)
+            return false;
+        if (!Arrays.equals(commonDecryptKey, other.commonDecryptKey))
+            return false;
+        if (!Arrays.equals(commonExtraBytes, other.commonExtraBytes))
+            return false;
+        if (dataBlocks != other.dataBlocks)
+            return false;
+        if (!Arrays.equals(decryptKeys, other.decryptKeys))
+            return false;
+        if (!Arrays.equals(extraBytesForKeys, other.extraBytesForKeys))
+            return false;
+        if (!Arrays.equals(routingKeys, other.routingKeys))
+            return false;
+        return true;
+    }
+
+    public int totalKeys() {
+        return checkBlocks + dataBlocks;
+    }
 
 }

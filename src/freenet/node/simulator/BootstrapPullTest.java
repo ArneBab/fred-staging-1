@@ -10,7 +10,7 @@ import java.io.OutputStreamWriter;
 import java.net.InetAddress;
 import java.net.Socket;
 
-import org.spaceroots.mantissa.random.MersenneTwister;
+import freenet.support.math.MersenneTwister;
 
 import freenet.client.FetchException;
 import freenet.client.HighLevelSimpleClient;
@@ -109,7 +109,7 @@ public class BootstrapPullTest {
 
         // Fetch the data
         long startFetchTime = System.currentTimeMillis();
-        HighLevelSimpleClient client = secondNode.clientCore.makeClient((short)0);
+        HighLevelSimpleClient client = secondNode.clientCore.makeClient((short)0, false, false);
         try {
 			client.fetch(uri);
 		} catch (FetchException e) {
@@ -128,7 +128,7 @@ public class BootstrapPullTest {
 	    	try {
 	    		if(secondNode != null)
 	    			secondNode.park();
-	    	} catch (Throwable t1) {};
+	    	} catch (Throwable t1) {}
 	    	System.exit(EXIT_THREW_SOMETHING);
 	    }
 	}

@@ -15,6 +15,7 @@ import freenet.l10n.NodeL10n;
 import freenet.support.io.FileUtil;
 
 /**
+ * @author kurmiashish
  * This class would verify whether the BMP header is valid or not
  Reference:
  http://www.fastgraph.com/help/bmp_header_format.html
@@ -84,6 +85,7 @@ public class BMPFilter implements ContentDataFilter {
 	}
 
 
+	@Override
 	public void readFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
 			FilterCallback cb) throws DataFilterException, IOException {
 		DataInputStream dis = new DataInputStream(input);
@@ -142,12 +144,15 @@ public class BMPFilter implements ContentDataFilter {
 
 		if(compression_type==0) {
 			// Verifying the file size w.r.t. image dimensions(width and height), bitDepth with imagedatasize(including padding).
-			int bytesperline=(int)Math.ceil((imageWidth*bitDepth)/8);
-			int paddingperline=0;
-			if(bytesperline%4!=0) {
-				paddingperline=4-bytesperline%4;
+			int bitsPerLine = imageWidth * bitDepth;
+
+			//Lines are padded to a 4 byte boundary
+			if(bitsPerLine % 32 != 0) {
+				bitsPerLine += 32 - bitsPerLine % 32;
 			}
-			int calculatedsize= (int)Math.ceil((imageWidth*imageHeight*bitDepth)/8)+paddingperline*imageHeight;
+
+			int bytesPerLine = bitsPerLine / 8;
+			int calculatedsize = bytesPerLine * imageHeight;
 			if(calculatedsize!=imagedatasize) {
 				throwHeaderError(l10n("InvalidImageDataSizeT"), l10n("InvalidImageDataSizeD" ));
 			}
@@ -171,6 +176,7 @@ public class BMPFilter implements ContentDataFilter {
 		throw new DataFilterException(shortReason, shortReason, message);
 	}
 
+	@Override
 	public void writeFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
 			FilterCallback cb) throws DataFilterException, IOException {
 		return;

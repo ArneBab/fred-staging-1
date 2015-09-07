@@ -2,6 +2,7 @@
 package freenet.support.transport.ip;
 
 import java.net.DatagramSocket;
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
@@ -12,8 +13,10 @@ import java.util.List;
 
 import freenet.io.AddressIdentifier;
 import freenet.node.NodeIPDetector;
+import freenet.support.Executor;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
+import freenet.support.io.InetAddressComparator;
 
 /**
  * A class to autodetect our IP address(es)
@@ -21,15 +24,21 @@ import freenet.support.Logger.LogLevel;
 
 public class IPAddressDetector implements Runnable {
 	
+	private static volatile boolean logDEBUG;
+
+	static {
+		Logger.registerClass(IPAddressDetector.class);
+	}
+	
 	//private String preferedAddressString = null;
-	private final int interval;
+	private final long interval;
 	private final NodeIPDetector detector;
         /**
          * 
          * @param interval
          * @param detector
          */
-        public IPAddressDetector(int interval, NodeIPDetector detector) {
+        public IPAddressDetector(long interval, NodeIPDetector detector) {
 		this.interval = interval;
 		this.detector = detector;
 	}
@@ -50,33 +59,49 @@ public class IPAddressDetector implements Runnable {
 
 	InetAddress[] lastAddressList = null;
 	long lastDetectedTime = -1;
-
-	/** 
-	 * Fetches the currently detected IP address. If not detected yet a detection is forced
-	 * @return Detected ip address
+	
+	/** Fetch the currently detected IP address. If not detected yet, run the
+	 * detection. DO NOT callback to detector.redetectAddresses().
+	 * @return
 	 */
-	public InetAddress[] getAddress() {
-		return getAddress(interval);
-	}
-
-	/**
-	 * Get the IP address
-         * @param recheckTime
-         * @return Detected ip address
-	 */
-	public InetAddress[] getAddress(long recheckTime) {
-		if(System.currentTimeMillis() > (lastDetectedTime + recheckTime))
+	public InetAddress[] getAddressNoCallback() {
+		if(System.currentTimeMillis() > (lastDetectedTime + interval)) {
 			checkpoint();
+		}
 		return lastAddressList == null ? new InetAddress[0] : lastAddressList;
 	}
 
+	/** 
+	 * Fetches the currently detected IP address. If not detected yet a detection is forced.
+	 * If the IP address list changes, call the callback on the detector, off-thread, using the
+	 * given Executor. This method is intended to be called by code other than the detector 
+	 * itself.
+	 * @return Detected ip addresses
+	 */
+	public InetAddress[] getAddress(Executor executor) {
+		assert(executor != null);
+		if(System.currentTimeMillis() > (lastDetectedTime + interval)) {
+			if(checkpoint()) {
+				executor.execute(new Runnable() {
+
+					@Override
+					public void run() {
+						detector.redetectAddress();
+					}
+					
+				});
+			}
+		}
+		return lastAddressList == null ? new InetAddress[0] : lastAddressList;
+	}
+	
 	boolean old = false;
 
 	/**
 	 * Execute a checkpoint - detect our internet IP address and log it
 	 */
-	protected synchronized void checkpoint() {
-		boolean logDEBUG = Logger.shouldLog(LogLevel.DEBUG, this);
+	protected synchronized boolean checkpoint() {
+		final boolean logDEBUG = IPAddressDetector.logDEBUG;
 		List<InetAddress> addrs = new ArrayList<InetAddress>();
 
 		Enumeration<java.net.NetworkInterface> interfaces = null;
@@ -98,10 +123,41 @@ public class IPAddressDetector implements Runnable {
 					Logger.debug(
 						this,
 						"Scanning NetworkInterface " + iface.getDisplayName());
+				int ifaceMTU = 0;
+                try {
+                    if (!iface.isLoopback()) {
+                        ifaceMTU = iface.getMTU(); //MTU is retrieved directly instead of using
+                        //a plugin
+                        if (logDEBUG)
+                            Logger.debug(
+                                         this,
+                                         "MTU = " + ifaceMTU);
+                    }
+                } catch (SocketException e) {
+                    Logger.error(
+                                this,
+                                 "SocketException trying to retrieve the MTU NetworkInterfaces: "+e,
+                                 e);
+                    ifaceMTU = 0; //code for ignoring this MTU
+                }
 				Enumeration<InetAddress> ee = iface.getInetAddresses();
 				while (ee.hasMoreElements()) {
-
+				    
 					InetAddress addr = ee.nextElement();
+					//telling the NodeIPDetector object about the MTU only if MTU != 0
+					// MTU = 0 means error in retrieving it
+					//FIXME: We should(n't) report MTU for local IPs
+					if (ifaceMTU > 0)
+					    detector.reportMTU(ifaceMTU, addr instanceof Inet6Address);
+
+					if ((addr instanceof Inet6Address) && !(addr.isLinkLocalAddress() || IPUtil.isSiteLocalAddress(addr))) {
+						try {
+							// strip scope_id from global addresses
+							addr = InetAddress.getByAddress(addr.getAddress());
+						} catch(UnknownHostException e) {
+							// ignore/impossible
+						}
+					}
 					addrs.add(addr);
 					if (logDEBUG)
 						Logger.debug(
@@ -122,19 +178,25 @@ public class IPAddressDetector implements Runnable {
 					"Finished scanning interfaces");
 		}
 
-		// FIXME: what are we doing here? lastInetAddress is always null.
 		InetAddress[] oldAddressList = lastAddressList;
 		onGetAddresses(addrs);
 		lastDetectedTime = System.currentTimeMillis();
-		if(oldAddressList != lastAddressList && (oldAddressList == null && lastAddressList != null ||
-				oldAddressList != null && lastAddressList != null && !Arrays.equals(oldAddressList, lastAddressList))) {
-			// Something changed.
-			// Yes I know it could just have changed the order, but this is unlikely hopefully. FIXME.
-			detector.redetectAddress();
-		}
+		return addressListChanged(oldAddressList, lastAddressList);
 	}
 
-        /**
+	private boolean addressListChanged(InetAddress[] oldList,
+			InetAddress[] newList) {
+		if(oldList == null) return newList != null;
+		if(oldList == newList) return false;
+		if(oldList.length != newList.length) return true;
+		InetAddress[] a = Arrays.copyOf(oldList, oldList.length);
+		InetAddress[] b = Arrays.copyOf(newList, newList.length);
+		Arrays.sort(a, InetAddressComparator.COMPARATOR);
+		Arrays.sort(b, InetAddressComparator.COMPARATOR);
+		return !Arrays.deepEquals(a, b);
+	}
+
+		/**
          *
          * @return
          */
@@ -176,8 +238,8 @@ public class IPAddressDetector implements Runnable {
 	 *            Vector of InetAddresses
 	 */
 	protected void onGetAddresses(List<InetAddress> addrs) {
+		final boolean logDEBUG = IPAddressDetector.logDEBUG;
 		List<InetAddress> output = new ArrayList<InetAddress>();
-		boolean logDEBUG = Logger.shouldLog(LogLevel.DEBUG, this);
 		if (logDEBUG)
 			Logger.debug(
 				this,
@@ -215,6 +277,7 @@ public class IPAddressDetector implements Runnable {
 		lastAddressList = output.toArray(new InetAddress[output.size()]);
 	}
 
+	@Override
 	public void run() {
 		freenet.support.Logger.OSThread.logPID(this);
 		while(true) {
@@ -224,7 +287,9 @@ public class IPAddressDetector implements Runnable {
 				// Ignore
 			}
 			try {
-				checkpoint();
+				if(checkpoint()) {
+					detector.redetectAddress();
+				}
 			} catch (Throwable t) {
 				Logger.error(this, "Caught "+t, t);
 			}

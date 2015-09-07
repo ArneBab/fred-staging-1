@@ -1,44 +1,40 @@
 package freenet.node.simulator;
 
+import static java.util.concurrent.TimeUnit.HOURS;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.io.PrintStream;
 import java.net.MalformedURLException;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.List;
-import java.util.Locale;
 import java.util.TimeZone;
-
-import com.db4o.ObjectContainer;
 
 import freenet.client.ClientMetadata;
 import freenet.client.FetchContext;
 import freenet.client.FetchException;
+import freenet.client.FetchException.FetchExceptionMode;
 import freenet.client.FetchWaiter;
 import freenet.client.HighLevelSimpleClient;
 import freenet.client.InsertBlock;
 import freenet.client.InsertException;
+import freenet.client.InsertException.InsertExceptionMode;
 import freenet.crypt.RandomSource;
 import freenet.keys.FreenetURI;
 import freenet.node.Node;
 import freenet.node.NodeStarter;
 import freenet.node.RequestClient;
 import freenet.node.Version;
-import freenet.support.Fields;
 import freenet.support.Logger;
-import freenet.support.PooledExecutor;
 import freenet.support.Logger.LogLevel;
-import freenet.support.api.Bucket;
+import freenet.support.PooledExecutor;
+import freenet.support.api.RandomAccessBucket;
 import freenet.support.io.Closer;
 import freenet.support.io.FileUtil;
 
@@ -47,7 +43,7 @@ import freenet.support.io.FileUtil;
  * days, for n in 0...8.
  * @author Matthew Toseland <toad@amphibian.dyndns.org> (0xE43DA450)
  */
-public class LongTermManySingleBlocksTest {
+public class LongTermManySingleBlocksTest extends LongTermTest {
 	
 	public static class InsertBatch {
 
@@ -71,8 +67,8 @@ public class LongTermManySingleBlocksTest {
 		class BatchInsert implements Runnable {
 
 			private final InsertBlock block;
-			private boolean finished = false;
-			private boolean started = false;
+			//private boolean finished = false;
+			//private boolean started = false;
 			private long insertTime;
 			private InsertException failed;
 			private FreenetURI uri;
@@ -87,10 +83,11 @@ public class LongTermManySingleBlocksTest {
 				t.start();
 			}
 
+			@Override
 			public void run() {
 				synchronized(InsertBatch.this) {
 					runningInserts++;
-					started = true;
+					//started = true;
 					System.out.println("Starting insert: running "+runningInserts);
 				}
 				long t1 = 0, t2 = 0;
@@ -105,8 +102,8 @@ public class LongTermManySingleBlocksTest {
 				} finally {
 					synchronized(InsertBatch.this) {
 						runningInserts--;
-						System.out.println("Stopping insert: running "+runningInserts);
-						finished = true;
+						System.out.println("Completed insert: running "+runningInserts);
+						//finished = true;
 						if(thisURI != null) {
 							uri = thisURI;
 							insertTime = t2 - t1;
@@ -114,7 +111,7 @@ public class LongTermManySingleBlocksTest {
 							if(f != null)
 								failed = f;
 							else
-								f = new InsertException(InsertException.INTERNAL_ERROR);
+								f = new InsertException(InsertExceptionMode.INTERNAL_ERROR);
 						}
 							
 						InsertBatch.this.notifyAll();
@@ -160,19 +157,12 @@ public class LongTermManySingleBlocksTest {
 
 	private static final int TEST_SIZE = 32 * 1024;
 
-	private static final int EXIT_NO_SEEDNODES = 257;
-	private static final int EXIT_FAILED_TARGET = 258;
-	private static final int EXIT_THREW_SOMETHING = 261;
-
 	private static final int DARKNET_PORT1 = 9010;
 	private static final int OPENNET_PORT1 = 9011;
 	
 	private static final int MAX_N = 8;
 	
 	private static final int INSERTED_BLOCKS = 32;
-
-	private static final DateFormat dateFormat = new SimpleDateFormat("yyyy.MM.dd", Locale.US);
-	private static final GregorianCalendar today = (GregorianCalendar) Calendar.getInstance(TimeZone.getTimeZone("GMT"));
 
 	public static void main(String[] args) {
 		if (args.length < 1 || args.length > 2) {
@@ -232,7 +222,7 @@ public class LongTermManySingleBlocksTest {
 			System.out.println("SEED-TIME:" + (t2 - t1));
 			csvLine.add(String.valueOf(t2 - t1));
 
-			HighLevelSimpleClient client = node.clientCore.makeClient((short) 0);
+			HighLevelSimpleClient client = node.clientCore.makeClient((short) 0, false, false);
 
 			int successes = 0;
 			
@@ -246,7 +236,7 @@ public class LongTermManySingleBlocksTest {
 				
 				System.err.println("Inserting block "+i);
 				
-				Bucket single = randomData(node);
+				RandomAccessBucket single = randomData(node);
 				
 				InsertBlock block = new InsertBlock(single, new ClientMetadata(), FreenetURI.EMPTY_CHK_URI);
 				
@@ -266,7 +256,7 @@ public class LongTermManySingleBlocksTest {
 					System.out.println("Pushed block "+i+" : "+uris[i]+" in "+times[i]);
 					successes++;
 				} else {
-					csvLine.add(FetchException.getShortMessage(errors[i].getMode()));
+					csvLine.add(InsertException.getShortMessage(errors[i].getMode()));
 					csvLine.add("N/A");
 					System.out.println("Failed to push block "+i+" : "+errors[i]);
 				}
@@ -281,24 +271,24 @@ public class LongTermManySingleBlocksTest {
 			fctx.maxSplitfileBlockRetries = 0;
 			RequestClient requestContext = new RequestClient() {
 
+				@Override
 				public boolean persistent() {
 					return false;
 				}
 
-				public void removeFrom(ObjectContainer container) {
-					// Ignore.
+				@Override
+				public boolean realTimeFlag() {
+					return false;
 				}
 				
 			};
 			
 			// PARSE FILE AND FETCH OLD STUFF IF APPROPRIATE
 			
-			FreenetURI singleURI = null;
 			FreenetURI[] mhkURIs = new FreenetURI[3];
 			fis = new FileInputStream(file);
-			BufferedReader br = new BufferedReader(new InputStreamReader(fis));
+			BufferedReader br = new BufferedReader(new InputStreamReader(fis, ENCODING));
 			String line = null;
-			int total = 0, singleKeysSucceeded = 0, mhkSucceeded = 0;
 			GregorianCalendar target = (GregorianCalendar) today.clone();
 			target.set(Calendar.HOUR_OF_DAY, 0);
 			target.set(Calendar.MINUTE, 0);
@@ -314,14 +304,14 @@ public class LongTermManySingleBlocksTest {
 			int[] totalSuccessfulFetchesByDelta = new int[MAX_N+1];
 			long[] totalFetchTimeByDelta = new long[MAX_N+1];
 			
+loopOverLines:
 			while((line = br.readLine()) != null) {
 				
-				singleURI = null;
 				for(int i=0;i<mhkURIs.length;i++) mhkURIs[i] = null;
 				//System.out.println("LINE: "+line);
 				String[] split = line.split("!");
 				Date date = dateFormat.parse(split[0]);
-				GregorianCalendar calendar = new GregorianCalendar();
+				GregorianCalendar calendar = new GregorianCalendar(TimeZone.getTimeZone("GMT"));
 				calendar.setTime(date);
 				System.out.println("Date: "+dateFormat.format(calendar.getTime()));
 				calendar.set(Calendar.HOUR_OF_DAY, 0);
@@ -337,6 +327,8 @@ public class LongTermManySingleBlocksTest {
 				if(split.length < 4) continue;
 				
 				int token = 3;
+				
+				if(split.length < token + INSERTED_BLOCKS * 2) continue;
 			
 				for(int i=0;i<INSERTED_BLOCKS;i++) {
 					try {
@@ -354,7 +346,7 @@ public class LongTermManySingleBlocksTest {
 					System.out.println("Key insert "+i+" : "+insertedURIs[i]+" in "+insertTimes[i]);
 				}
 				for(int i=0;i<targets.length;i++) {
-					if(targets[i].getTimeInMillis() == calendar.getTimeInMillis()) {
+					if(Math.abs(targets[i].getTimeInMillis() - calendar.getTimeInMillis()) < HOURS.toMillis(12)) {
 						System.out.println("Found row for target date "+((1<<i)-1)+" days ago.");
 						System.out.println("Version: "+split[1]);
 						csvLine.add(Integer.toString(i));
@@ -362,14 +354,14 @@ public class LongTermManySingleBlocksTest {
 						int inserted = 0;
 						for(int j=0;j<INSERTED_BLOCKS;j++) {
 							if(insertedURIs[j] == null) {
-								csvLine.add("");
+								csvLine.add("INSERT FAILED");
 								continue;
 							}
 							inserted++;
 							try {
 								t1 = System.currentTimeMillis();
-								FetchWaiter fw = new FetchWaiter();
-								client.fetch(insertedURIs[j], 32768, requestContext, fw, fctx);
+								FetchWaiter fw = new FetchWaiter(requestContext);
+								client.fetch(insertedURIs[j], 32768, fw, fctx);
 								fw.waitForCompletion();
 								t2 = System.currentTimeMillis();
 								
@@ -377,8 +369,8 @@ public class LongTermManySingleBlocksTest {
 								csvLine.add(String.valueOf(t2 - t1));
 								pulled++;
 							} catch (FetchException e) {
-								if (e.getMode() != FetchException.ALL_DATA_NOT_FOUND
-										&& e.getMode() != FetchException.DATA_NOT_FOUND)
+								if (e.getMode() != FetchExceptionMode.ALL_DATA_NOT_FOUND
+										&& e.getMode() != FetchExceptionMode.DATA_NOT_FOUND)
 									e.printStackTrace();
 								csvLine.add(FetchException.getShortMessage(e.getMode()));
 								System.err.println("FAILED PULL FOR BLOCK "+j+": "+e);
@@ -389,7 +381,15 @@ public class LongTermManySingleBlocksTest {
 				}
 				
 				while(split.length > token + INSERTED_BLOCKS) {
-					int delta = Integer.parseInt(split[token]);
+					int delta;
+					try {
+						delta = Integer.parseInt(split[token]);
+					} catch (NumberFormatException e) {
+						System.err.println("Unable to parse token "+token+" = \""+token+"\"");
+						System.err.println("This is supposed to be a delta");
+						System.err.println("Skipping the rest of the line for date "+dateFormat.format(calendar.getTime()));
+						continue loopOverLines;
+					}
 					System.out.println("Delta: "+((1<<delta)-1)+" days");
 					token++;
 					int totalFetchTime = 0;
@@ -410,7 +410,6 @@ public class LongTermManySingleBlocksTest {
 						}
 						token++;
 					}
-					total++;
 					totalFetchesByDelta[delta] += totalFetches;
 					totalSuccessfulFetchesByDelta[delta] += totalSuccesses;
 					totalFetchTimeByDelta[delta] += totalFetchTime;
@@ -443,27 +442,17 @@ public class LongTermManySingleBlocksTest {
 			} catch (Throwable tt) {
 			}
 			Closer.close(fis);
+			writeToStatusLog(file, csvLine);
 
-			try {
-				FileOutputStream fos = new FileOutputStream(file, true);
-				PrintStream ps = new PrintStream(fos);
-
-				ps.println(Fields.commaList(csvLine.toArray(), '!'));
-
-				ps.close();
-				fos.close();
-			} catch (IOException e) {
-				e.printStackTrace();
-				exitCode = EXIT_THREW_SOMETHING;
-			}
-			
+			System.out.println("Exiting with status "+exitCode);
 			System.exit(exitCode);
 		}
 	}	
 	
-	private static Bucket randomData(Node node) throws IOException {
-		Bucket data = node.clientCore.tempBucketFactory.makeBucket(TEST_SIZE);
+	private static RandomAccessBucket randomData(Node node) throws IOException {
+	    RandomAccessBucket data = node.clientCore.tempBucketFactory.makeBucket(TEST_SIZE);
 		OutputStream os = data.getOutputStream();
+		try {
 		byte[] buf = new byte[4096];
 		for (long written = 0; written < TEST_SIZE;) {
 			node.fastWeakRandom.nextBytes(buf);
@@ -471,7 +460,9 @@ public class LongTermManySingleBlocksTest {
 			os.write(buf, 0, toWrite);
 			written += toWrite;
 		}
+		} finally {
 		os.close();
+		}
 		return data;
 	}
 

@@ -3,9 +3,11 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.support;
 
-import java.util.Collection;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.MINUTES;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
-import com.db4o.ObjectContainer;
+import java.util.Collection;
 
 import freenet.client.FetchException;
 import freenet.client.FetchResult;
@@ -45,7 +47,7 @@ public abstract class TransferThread implements PrioRunnable, ClientGetCallback,
 	public TransferThread(Node myNode, HighLevelSimpleClient myClient, String myName) {
 		mNode = myNode;
 		mClient = myClient;
-		mClientContext = mNode.clientCore.clientContext;;
+		mClientContext = mNode.clientCore.clientContext;
 		mTBF = mNode.clientCore.tempBucketFactory;
 		mName = myName;
 		
@@ -62,10 +64,12 @@ public abstract class TransferThread implements PrioRunnable, ClientGetCallback,
 	}
 	
 	/** Specify the priority of this thread. Priorities to return can be found in class NativeThread. */
+	@Override
 	public abstract int getPriority();
 
+	@Override
 	public void run() {
-		long sleepTime = 1 * 1000;
+		long sleepTime = SECONDS.toMillis(1);
 		try {
 			Logger.debug(this, "Loop running...");
 			iterate();
@@ -75,7 +79,7 @@ public abstract class TransferThread implements PrioRunnable, ClientGetCallback,
 			Logger.error(this, "Error in iterate() or getSleepTime() probably", e);
 		}
 		finally {
-			Logger.debug(this, "Loop finished. Sleeping for " + (sleepTime/(1000*60)) + " minutes.");
+			Logger.debug(this, "Loop finished. Sleeping for " + MINUTES.convert(sleepTime, MILLISECONDS) + " minutes.");
 			mTicker.queueTimedJob(this, mName, sleepTime, false, true);
 		}
 	}
@@ -101,7 +105,7 @@ public abstract class TransferThread implements PrioRunnable, ClientGetCallback,
 			int fcounter = 0;
 			for(ClientGetter fetch : fetches) {
 				/* This calls onFailure which removes the fetch from mFetches on the same thread, therefore we need to copy to an array */
-				fetch.cancel(null, mNode.clientCore.clientContext);
+				fetch.cancel(mNode.clientCore.clientContext);
 				++fcounter;
 			}
 			
@@ -116,7 +120,7 @@ public abstract class TransferThread implements PrioRunnable, ClientGetCallback,
 			int icounter = 0;
 			for(BaseClientPutter insert : inserts) {
 				/* This calls onFailure which removes the fetch from mFetches on the same thread, therefore we need to copy to an array */
-				insert.cancel(null, mNode.clientCore.clientContext);
+				insert.cancel(mNode.clientCore.clientContext);
 				++icounter;
 			}
 			Logger.debug(this, "Stopped " + icounter + " current inserts.");
@@ -193,36 +197,33 @@ public abstract class TransferThread implements PrioRunnable, ClientGetCallback,
 	/**
 	 * You have to do "finally { removeFetch() }" when using this function.
 	 */
-	public abstract void onSuccess(FetchResult result, ClientGetter state, ObjectContainer container);
+	@Override
+	public abstract void onSuccess(FetchResult result, ClientGetter state);
 
 	/**
 	 * You have to do "finally { removeFetch() }" when using this function.
 	 */
-	public abstract void onFailure(FetchException e, ClientGetter state, ObjectContainer container);
+	@Override
+	public abstract void onFailure(FetchException e, ClientGetter state);
 
 	/* Inserts */
 	
 	/**
 	 * You have to do "finally { removeInsert() }" when using this function.
 	 */
-	public abstract void onSuccess(BaseClientPutter state, ObjectContainer container);
+	@Override
+	public abstract void onSuccess(BaseClientPutter state);
 
 	/**
 	 * You have to do "finally { removeInsert() }" when using this function.
 	 */
-	public abstract void onFailure(InsertException e, BaseClientPutter state, ObjectContainer container);
+	@Override
+	public abstract void onFailure(InsertException e, BaseClientPutter state);
 
-	public abstract void onFetchable(BaseClientPutter state, ObjectContainer container);
+	@Override
+	public abstract void onFetchable(BaseClientPutter state);
 
-	public abstract void onGeneratedURI(FreenetURI uri, BaseClientPutter state, ObjectContainer container);
+	@Override
+	public abstract void onGeneratedURI(FreenetURI uri, BaseClientPutter state);
 
-	/** Called when freenet.async thinks that the request should be serialized to
-	 * disk, if it is a persistent request. */
-	public abstract void onMajorProgress(ObjectContainer container);
-
-	public boolean objectCanNew(ObjectContainer container) {
-		Logger.error(this, "Not storing TransferThread in database", new Exception("error"));
-		return false;
-	}
-	
 }

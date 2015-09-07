@@ -1,26 +1,37 @@
 package freenet.support.io;
 
-import java.io.File;
+import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.Serializable;
 
+import freenet.client.async.ClientContext;
 import freenet.support.Logger;
-import freenet.support.SimpleFieldSet;
-import freenet.support.api.Bucket;
+import freenet.support.api.RandomAccessBucket;
 
-public class PersistentTempFileBucket extends TempFileBucket {
+public class PersistentTempFileBucket extends TempFileBucket implements Serializable {
 
-	public PersistentTempFileBucket(long id, FilenameGenerator generator) {
-		this(id, generator, true);
+    private static final long serialVersionUID = 1L;
+    
+    transient PersistentFileTracker tracker;
+    
+    private static volatile boolean logMINOR;
+    static {
+        Logger.registerClass(PersistentTempFileBucket.class);
+    }
+
+    public PersistentTempFileBucket(long id, FilenameGenerator generator, PersistentFileTracker tracker) {
+		this(id, generator, tracker, true);
 	}
 	
-	protected PersistentTempFileBucket(long id, FilenameGenerator generator, boolean deleteOnFree) {
+	protected PersistentTempFileBucket(long id, FilenameGenerator generator, PersistentFileTracker tracker, boolean deleteOnFree) {
 		super(id, generator, deleteOnFree);
+		this.tracker = tracker;
 	}
-
-	@Override
-	protected boolean deleteOnFinalize() {
-		// Do not delete on finalize
-		return false;
+	
+	protected PersistentTempFileBucket() {
+	    // For serialization.
 	}
 	
 	@Override
@@ -29,47 +40,57 @@ public class PersistentTempFileBucket extends TempFileBucket {
 		return false;
 	}
 	
-	public static Bucket create(SimpleFieldSet fs, PersistentFileTracker f) throws CannotCreateFromFieldSetException {
-		String tmp = fs.get("Filename");
-		if(tmp == null) throw new CannotCreateFromFieldSetException("No filename");
-		File file = FileUtil.getCanonicalFile(new File(tmp));
-		long id = f.getID(file);
-		if(id == -1)
-			throw new CannotCreateFromFieldSetException("Cannot derive persistent temp file id from filename "+file);
-		tmp = fs.get("Length");
-		if(tmp == null) throw new CannotCreateFromFieldSetException("No length");
-		long length;
-		try {
-			length = Long.parseLong(tmp);
-			if(length !=  file.length())
-				throw new CannotCreateFromFieldSetException("Invalid length: should be "+length+" actually "+file.length()+" on "+file);
-		} catch (NumberFormatException e) {
-			throw new CannotCreateFromFieldSetException("Corrupt length "+tmp, e);
-		}
-		Bucket bucket = new PersistentTempFileBucket(id, f.getGenerator(), true);
-		if(file.exists()) // no point otherwise!
-			f.register(file);
-		return bucket;
+	static final int BUFFER_SIZE = 4096;
+	
+	@Override
+	public OutputStream getOutputStreamUnbuffered() throws IOException {
+	    OutputStream os = super.getOutputStreamUnbuffered();
+	    os = new DiskSpaceCheckingOutputStream(os, tracker, getFile(), BUFFER_SIZE);
+	    return os;
 	}
 	
 	@Override
-	public SimpleFieldSet toFieldSet() {
-		if(deleteOnFinalize()) return null;
-		SimpleFieldSet fs = super.toFieldSet();
-		fs.putOverwrite("Type", "PersistentTempFileBucket");
-		fs.put("FilenameID", filenameID);
-		return fs;
+	public OutputStream getOutputStream() throws IOException {
+	    return new BufferedOutputStream(getOutputStreamUnbuffered(), BUFFER_SIZE);
 	}
 	
 	/** Must override createShadow() so it creates a persistent bucket, which will have
 	 * deleteOnExit() = deleteOnFinalize() = false.
 	 */
 	@Override
-	public Bucket createShadow() throws IOException {
-		PersistentTempFileBucket ret = new PersistentTempFileBucket(filenameID, generator, false);
+	public RandomAccessBucket createShadow() {
+		PersistentTempFileBucket ret = new PersistentTempFileBucket(filenameID, generator, tracker, false);
 		ret.setReadOnly();
 		if(!getFile().exists()) Logger.error(this, "File does not exist when creating shadow: "+getFile());
 		return ret;
 	}
 	
+    @Override
+    protected void innerResume(ClientContext context) throws ResumeFailedException {
+        super.innerResume(context);
+        if(logMINOR) Logger.minor(this, "Resuming "+this, new Exception("debug"));
+        tracker = context.persistentFileTracker;
+        tracker.register(getFile());
+    }
+    
+    @Override
+    protected boolean persistent() {
+        return true;
+    }
+    
+    public static final int MAGIC = 0x2ffdd4cf;
+    
+    protected int magic() {
+        return MAGIC;
+    }
+    
+    protected PersistentTempFileBucket(DataInputStream dis) throws IOException, StorageFormatException {
+        super(dis);
+    }
+
+    @Override
+    protected long getPersistentTempID() {
+        return filenameID;
+    }
+
 }

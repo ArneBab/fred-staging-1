@@ -11,7 +11,7 @@ import freenet.support.SimpleFieldSet;
  *
  * A filter on BootstrappingDecayingRunningAverage which makes it aware of the circular keyspace.
  */
-public class DecayingKeyspaceAverage implements RunningAverage {
+public final class DecayingKeyspaceAverage implements RunningAverage, Cloneable {
 
 	private static final long serialVersionUID = 5129429614949179428L;
 	/**
@@ -35,11 +35,13 @@ public class DecayingKeyspaceAverage implements RunningAverage {
          */
         public DecayingKeyspaceAverage(BootstrappingDecayingRunningAverage a) {
 		//check the max/min values? ignore them?
-		avg = (BootstrappingDecayingRunningAverage) a.clone();
+		avg = a.clone();
 	}
 
 	@Override
-	public synchronized Object clone() {
+	public synchronized DecayingKeyspaceAverage clone() {
+		// Override clone() for deep copy.
+		// Implement Cloneable to shut up findbugs.
 		return new DecayingKeyspaceAverage(avg);
 	}
 
@@ -47,6 +49,7 @@ public class DecayingKeyspaceAverage implements RunningAverage {
          *
          * @return
          */
+        @Override
         public synchronized double currentValue() {
 		return avg.currentValue();
 	}
@@ -55,6 +58,7 @@ public class DecayingKeyspaceAverage implements RunningAverage {
          *
          * @param d
          */
+        @Override
         public synchronized void report(double d) {
 		if((d < 0.0) || (d > 1.0))
 			//Just because we use non-normalized locations doesn't mean we can accept them.
@@ -78,6 +82,7 @@ public class DecayingKeyspaceAverage implements RunningAverage {
 			avg.setCurrentValue(Location.normalize(newValue));
 	}
 
+	@Override
 	public synchronized double valueIfReported(double d) {
 		if((d < 0.0) || (d > 1.0))
 			throw new IllegalArgumentException("Not a valid normalized key: " + d);
@@ -87,6 +92,7 @@ public class DecayingKeyspaceAverage implements RunningAverage {
 		return Location.normalize(avg.valueIfReported(superValue + diff));
 	}
 
+	@Override
 	public synchronized long countReports() {
 		return avg.countReports();
 	}
@@ -95,6 +101,7 @@ public class DecayingKeyspaceAverage implements RunningAverage {
          *
          * @param d
          */
+        @Override
         public void report(long d) {
 		throw new IllegalArgumentException("KeyspaceAverage does not like longs");
 	}

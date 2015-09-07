@@ -10,13 +10,15 @@ import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.util.HashSet;
+import java.util.regex.Pattern;
 
 import freenet.client.filter.HTMLFilter.ParsedTag;
+import freenet.clients.http.ExternalLinkToadlet;
 import freenet.clients.http.HTTPRequestImpl;
 import freenet.clients.http.StaticToadlet;
 import freenet.keys.FreenetURI;
 import freenet.l10n.NodeL10n;
-import freenet.support.HTMLEncoder;
+import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.URIPreEncoder;
 import freenet.support.URLDecoder;
@@ -25,7 +27,6 @@ import freenet.support.Logger.LogLevel;
 import freenet.support.api.HTTPRequest;
 
 public class GenericReadFilterCallback implements FilterCallback, URIProcessor {
-	public static final String magicHTTPEscapeString = "_CHECKED_HTTP_";
 	public static final HashSet<String> allowedProtocols;
 	
 	static {
@@ -46,20 +47,35 @@ public class GenericReadFilterCallback implements FilterCallback, URIProcessor {
 	private URI strippedBaseURI;
 	private final FoundURICallback cb;
 	private final TagReplacerCallback trc;
-	
-	public GenericReadFilterCallback(URI uri, FoundURICallback cb,TagReplacerCallback trc) {
+
+	/** Provider for link filter exceptions. */
+	private final LinkFilterExceptionProvider linkFilterExceptionProvider;
+
+        private static volatile boolean logMINOR;
+	static {
+		Logger.registerLogThresholdCallback(new LogThresholdCallback(){
+			@Override
+			public void shouldUpdate(){
+				logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
+			}
+		});
+	}
+
+	public GenericReadFilterCallback(URI uri, FoundURICallback cb,TagReplacerCallback trc, LinkFilterExceptionProvider linkFilterExceptionProvider) {
 		this.baseURI = uri;
 		this.cb = cb;
 		this.trc=trc;
+		this.linkFilterExceptionProvider = linkFilterExceptionProvider;
 		setStrippedURI(uri.toString());
 	}
 	
-	public GenericReadFilterCallback(FreenetURI uri, FoundURICallback cb,TagReplacerCallback trc) {
+	public GenericReadFilterCallback(FreenetURI uri, FoundURICallback cb,TagReplacerCallback trc, LinkFilterExceptionProvider linkFilterExceptionProvider) {
 		try {
 			this.baseURI = uri.toRelativeURI();
 			setStrippedURI(baseURI.toString());
 			this.cb = cb;
 			this.trc=trc;
+			this.linkFilterExceptionProvider = linkFilterExceptionProvider;
 		} catch (URISyntaxException e) {
 			throw new Error(e);
 		}
@@ -79,6 +95,7 @@ public class GenericReadFilterCallback implements FilterCallback, URIProcessor {
 			strippedBaseURI = baseURI;
 	}
 
+	@Override
 	public String processURI(String u, String overrideType) throws CommentException {
 		return processURI(u, overrideType, false, false);
 	}
@@ -87,27 +104,33 @@ public class GenericReadFilterCallback implements FilterCallback, URIProcessor {
 	//  unreserved    = ALPHA / DIGIT / "-" / "." / "_" / "~"
 	protected static final String UNRESERVED = "[a-zA-Z0-9\\-\\._~]";
 	//  pct-encoded   = "%" HEXDIG HEXDIG
-	protected static final String PCT_ENCODED = "%[0-9A-Fa-f][0-9A-Fa-f]";
+	protected static final String PCT_ENCODED = "(?:%[0-9A-Fa-f][0-9A-Fa-f])";
 	//  sub-delims    = "!" / "$" / "&" / "'" / "(" / ")"
 	//                / "*" / "+" / "," / ";" / "="
 	protected static final String SUB_DELIMS  = "[\\!\\$&'\\(\\)\\*\\+,;=]";
 	//  pchar         = unreserved / pct-encoded / sub-delims / ":" / "@"
-	protected static final String PCHAR      = "(" + UNRESERVED + "|" + PCT_ENCODED + "|" + SUB_DELIMS + "|[:@])";
+	protected static final String PCHAR      = "(?>" + UNRESERVED + "|" + PCT_ENCODED + "|" + SUB_DELIMS + "|[:@])";
 	//  fragment      = *( pchar / "/" / "?" )
-	protected static final String FRAGMENT   = "(" + PCHAR + "|\\/|\\?)*";
+	protected static final String FRAGMENT   = "(?>" + PCHAR + "|\\/|\\?)*";
 
-	public String processURI(String u, String overrideType, boolean noRelative, boolean inline) throws CommentException {
-		if(u.matches("^#" + FRAGMENT + "$")) {
+	private static final Pattern anchorRegex;
+	static {
+	    anchorRegex = Pattern.compile("^#" + FRAGMENT + "$");
+	}
+
+	@Override
+	public String processURI(String u, String overrideType, boolean forBaseHref, boolean inline) throws CommentException {
+		if(anchorRegex.matcher(u).matches()) {
 			// Hack for anchors, see #710
 			return u;
 		}
 		
+		boolean noRelative = forBaseHref;
 		// evil hack, see #2451 and r24565,r24566
 		u = u.replaceAll(" #", " %23");
 		
 		URI uri;
 		URI resolved;
-		boolean logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
 		try {
 			if(logMINOR) Logger.minor(this, "Processing "+u);
 			uri = URIPreEncoder.encodeURI(u).normalize();
@@ -128,29 +151,39 @@ public class GenericReadFilterCallback implements FilterCallback, URIProcessor {
 		String path = uri.getPath();
 		
 		HTTPRequest req = new HTTPRequestImpl(uri, "GET");
-		if (path != null){
-			if(path.equals("/") && req.isParameterSet("newbookmark")){
+		if (path != null) {
+			if (path.equals("/") && req.isParameterSet("newbookmark") && !forBaseHref) {
 				// allow links to the root to add bookmarks
 				String bookmark_key = req.getParam("newbookmark");
 				String bookmark_desc = req.getParam("desc");
 				String bookmark_activelink = req.getParam("hasAnActivelink", "");
 
-				bookmark_key = HTMLEncoder.encode(bookmark_key);
-				bookmark_desc = HTMLEncoder.encode(bookmark_desc);
+				try {
+					FreenetURI furi = new FreenetURI(bookmark_key);
+					bookmark_key = furi.toString();
+					bookmark_desc = URLEncoder.encode(bookmark_desc, "UTF-8");
+				} catch (UnsupportedEncodingException e) {
+					// impossible, UTF-8 is always supported
+				} catch (MalformedURLException e) {
+					throw new CommentException("Invalid Freenet URI: " + e);
+				}
 
 				String url = "/?newbookmark="+bookmark_key+"&desc="+bookmark_desc;
-				if (!bookmark_activelink.equals("")) {
-					bookmark_activelink = HTMLEncoder.encode(bookmark_activelink);
-					url = url+"&hasAnActivelink=true";
+				if (bookmark_activelink.equals("true")) {
+					url = url + "&hasAnActivelink=true";
 				}
 				return url;
 			} else if(path.startsWith(StaticToadlet.ROOT_URL)) {
 				// @see bug #2297
 				return path;
+			} else if (linkFilterExceptionProvider != null) {
+				if (linkFilterExceptionProvider.isLinkExcepted(uri)) {
+					return path + ((uri.getQuery() != null) ? ("?" + uri.getQuery()) : "");
+				}
 			}
 		}
 		
-		String reason = "";
+		String reason = l10n("deletedURI");
 		
 		// Try as an absolute URI
 		
@@ -200,7 +233,7 @@ public class GenericReadFilterCallback implements FilterCallback, URIProcessor {
 				}
 			}
 			
-			if(!isAbsolute) {
+			if((!isAbsolute) && (!forBaseHref)) {
 				
 				// Relative URI
 				
@@ -214,7 +247,7 @@ public class GenericReadFilterCallback implements FilterCallback, URIProcessor {
 					while(p.startsWith("/")) p = p.substring(1);
 					FreenetURI furi = new FreenetURI(p, true);
 					if(logMINOR) Logger.minor(this, "Parsed: "+furi);
-					return processURI(furi, uri, overrideType, noRelative, inline);
+					return processURI(furi, uri, overrideType, forBaseHref, inline);
 				} catch (MalformedURLException e) {
 					if(logMINOR) Logger.minor(this, "Malformed URL (b): "+e, e);
 					if(e.getMessage() != null) {
@@ -230,8 +263,10 @@ public class GenericReadFilterCallback implements FilterCallback, URIProcessor {
 		
 		uri = origURI;
 		
+		if(forBaseHref)
+			throw new CommentException(l10n("bogusBaseHref"));
 		if(GenericReadFilterCallback.allowedProtocols.contains(uri.getScheme()))
-			return "/?"+GenericReadFilterCallback.magicHTTPEscapeString+ '=' +uri;
+			return ExternalLinkToadlet.escape(uri.toString());
 		else {
 			if(uri.getScheme() == null) {
 				throw new CommentException(reason);
@@ -240,6 +275,7 @@ public class GenericReadFilterCallback implements FilterCallback, URIProcessor {
 		}
 	}
 	
+	@Override
 	public String makeURIAbsolute(String uri) throws URISyntaxException{
 		return baseURI.resolve(URIPreEncoder.encodeURI(uri).normalize()).toASCIIString();
 	}
@@ -315,7 +351,7 @@ public class GenericReadFilterCallback implements FilterCallback, URIProcessor {
 			
 			if(!noRelative)
 				uri = strippedBaseURI.relativize(uri);
-			if(Logger.shouldLog(LogLevel.MINOR, this))
+			if(logMINOR)
 				Logger.minor(this, "Returning "+uri.toASCIIString()+" from "+path+" from baseURI="+baseURI+" stripped base uri="+strippedBaseURI.toString());
 			return uri.toASCIIString();
 		} catch (URISyntaxException e) {
@@ -344,6 +380,7 @@ public class GenericReadFilterCallback implements FilterCallback, URIProcessor {
 		return finishProcess(req, overrideType, '/' + furi.toString(false, false), uri, noRelative);
 	}
 
+	@Override
 	public String onBaseHref(String baseHref) {
 		String ret;
 		try {
@@ -366,6 +403,7 @@ public class GenericReadFilterCallback implements FilterCallback, URIProcessor {
 		}
 	}
 
+	@Override
 	public void onText(String s, String type) {
 		if(cb != null)
 			cb.onText(s, type, baseURI);
@@ -380,18 +418,16 @@ public class GenericReadFilterCallback implements FilterCallback, URIProcessor {
 	 * Anything that is hazardous should be protected through formPassword.
 	 * @throws CommentException If the form element could not be parsed and the user should be told.
 	 */
+	@Override
 	public String processForm(String method, String action) throws CommentException {
 		if(action == null) return null;
 		if(method == null) method = "GET";
 		method = method.toUpperCase();
 		if(!(method.equals("POST") || method.equals("GET"))) 
 			return null; // no irregular form sending methods
-		// Everything is allowed to / - updating the node, shutting it down, everything.
-		// Why? Becuase it's all protected by formPassword anyway.
-		// FIXME whitelist? Most things are okay if the user is prompted for a confirmation...
 		// FIXME what about /downloads/ /friends/ etc?
 		// Allow access to Library for searching, form passwords are used for actions such as adding bookmarks
-		if(action.equals("/") || action.equals("/library/"))
+		if(action.equals("/library/"))
 			return action;
 		try {
 			URI uri = URIPreEncoder.encodeURI(action);
@@ -415,6 +451,7 @@ public class GenericReadFilterCallback implements FilterCallback, URIProcessor {
 	/** Processes a tag. It calls the TagReplacerCallback if present.
 	 * @param pt - The tag, that needs to be processed
 	 * @return The replacement for the tag, or null, if no replacement needed*/
+	@Override
 	public String processTag(ParsedTag pt) {
 		if(trc!=null){
 			return trc.processTag(pt,this);
@@ -423,8 +460,9 @@ public class GenericReadFilterCallback implements FilterCallback, URIProcessor {
 		}
 	}
 
-	public static String escapeURL(String uri) {
-		return "/?" + magicHTTPEscapeString + '=' + uri;
+	@Override
+	public void onFinished() {
+		if(cb != null)
+			cb.onFinishedPage();
 	}
-	
 }

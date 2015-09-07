@@ -3,6 +3,8 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.clients.http.bookmark;
 
+import static java.util.concurrent.TimeUnit.MINUTES;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -10,12 +12,10 @@ import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 
-import com.db4o.ObjectContainer;
-
 import freenet.client.async.ClientContext;
-import freenet.client.async.ClientGetter;
 import freenet.client.async.USKCallback;
 import freenet.clients.http.FProxyToadlet;
 import freenet.keys.FreenetURI;
@@ -25,9 +25,10 @@ import freenet.node.FSParseException;
 import freenet.node.NodeClientCore;
 import freenet.node.RequestClient;
 import freenet.node.RequestStarter;
+import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
-import freenet.support.SimpleFieldSet;
 import freenet.support.Logger.LogLevel;
+import freenet.support.SimpleFieldSet;
 import freenet.support.io.Closer;
 import freenet.support.io.FileUtil;
 
@@ -37,32 +38,46 @@ public class BookmarkManager implements RequestClient {
 	private final NodeClientCore node;
 	private final USKUpdatedCallback uskCB = new USKUpdatedCallback();
 	public static final BookmarkCategory MAIN_CATEGORY = new BookmarkCategory("/");
+	public static final BookmarkCategory DEFAULT_CATEGORY = new BookmarkCategory("\\");
 	private final HashMap<String, Bookmark> bookmarks = new HashMap<String, Bookmark>();
-	private final File bookmarksFile = new File("bookmarks.dat").getAbsoluteFile();
-	private final File backupBookmarksFile = new File(bookmarksFile.getParentFile(), bookmarksFile.getName() + ".bak");
+	private final File bookmarksFile;
+	private final File backupBookmarksFile;
 	private boolean isSavingBookmarks = false;
+	private boolean isSavingBookmarksLazy = false;
 	static {
 		String name = "freenet/clients/http/staticfiles/defaultbookmarks.dat";
 		SimpleFieldSet defaultBookmarks = null;
 		InputStream in = null;
 		try {
-			ClassLoader loader = ClassLoader.getSystemClassLoader();
+			ClassLoader loader = BookmarkManager.class.getClassLoader();
 
 			// Returns null on lookup failures:
 			in = loader.getResourceAsStream(name);
 			if(in != null)
 				defaultBookmarks = SimpleFieldSet.readFrom(in, false, false);
 		} catch(Exception e) {
-			Logger.error("BookmarkManager", "Error while loading the default bookmark file from " + name + " :" + e.getMessage(), e);
+			Logger.error(BookmarkManager.class, "Error while loading the default bookmark file from " + name + " :" + e.getMessage(), e);
 		} finally {
 			Closer.close(in);
 			DEFAULT_BOOKMARKS = defaultBookmarks;
 		}
 	}
 
-	public BookmarkManager(NodeClientCore n) {
+        private static volatile boolean logMINOR;
+	static {
+		Logger.registerLogThresholdCallback(new LogThresholdCallback(){
+			@Override
+			public void shouldUpdate(){
+				logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
+			}
+		});
+	}
+
+	public BookmarkManager(NodeClientCore n, boolean publicGateway) {
 		putPaths("/", MAIN_CATEGORY);
 		this.node = n;
+		this.bookmarksFile = n.node.userDir().file("bookmarks.dat");
+		this.backupBookmarksFile = n.node.userDir().file("bookmarks.dat.bak");
 
 		try {
 			// Read the backup file if necessary
@@ -89,12 +104,11 @@ public class BookmarkManager implements RequestClient {
 				Logger.error(this, "Error reading the backup bookmark file !" + e.getMessage(), e);
 			}
 		}
-	}
-
-	private static volatile boolean logMINOR;
-
-	static {
-		Logger.registerClass(ClientGetter.class);
+		//populate defaults for hosts without full access permissions if we're in gateway mode.
+		if (publicGateway) {
+			putPaths("\\", DEFAULT_CATEGORY);
+			readBookmarks(DEFAULT_CATEGORY, DEFAULT_BOOKMARKS);
+		}
 	}
 
 	public void reAddDefaultBookmarks() {
@@ -105,14 +119,16 @@ public class BookmarkManager implements RequestClient {
 
 	private class USKUpdatedCallback implements USKCallback {
 
-		public void onFoundEdition(long edition, USK key, ObjectContainer container, ClientContext context, boolean wasMetadata, short codec, byte[] data, boolean newKnownGood, boolean newSlotToo) {
+		@Override
+		public void onFoundEdition(long edition, USK key, ClientContext context, boolean wasMetadata, short codec, byte[] data, boolean newKnownGood, boolean newSlotToo) {
 			if(!newKnownGood) {
 				FreenetURI uri = key.copy(edition).getURI();
-				node.makeClient(PRIORITY_PROGRESS).prefetch(uri, 60*60*1000, FProxyToadlet.MAX_LENGTH, null, PRIORITY);
+				node.makeClient(PRIORITY_PROGRESS, false, false).prefetch(uri, MINUTES.toMillis(60), FProxyToadlet.MAX_LENGTH_WITH_PROGRESS, null, PRIORITY_PROGRESS);
 				return;
 			}
 			List<BookmarkItem> items = MAIN_CATEGORY.getAllItems();
 			boolean matched = false;
+			boolean updated = false;
 			for(int i = 0; i < items.size(); i++) {
 				if(!"USK".equals(items.get(i).getKeyType()))
 					continue;
@@ -124,23 +140,26 @@ public class BookmarkManager implements RequestClient {
 					if(usk.equals(key, false)) {
 						if(logMINOR) Logger.minor(this, "Updating bookmark for "+furi+" to edition "+edition);
 						matched = true;
-						items.get(i).setEdition(edition, node);
+						BookmarkItem item = items.get(i);
+						updated |= item.setEdition(edition, node);
 						// We may have bookmarked the same site twice, so continue the search.
 					}
 				} catch(MalformedURLException mue) {
 				}
 			}
-			if(matched) {
-				storeBookmarks();
-			} else {
+			if(updated) {
+				storeBookmarksLazy();
+			} else if(!matched) {
 				Logger.error(this, "No match for bookmark "+key+" edition "+edition);
 			}
 		}
 
+		@Override
 		public short getPollingPriorityNormal() {
 			return PRIORITY;
 		}
 
+		@Override
 		public short getPollingPriorityProgress() {
 			return PRIORITY_PROGRESS;
 		}
@@ -154,7 +173,7 @@ public class BookmarkManager implements RequestClient {
 		if(path.equals("/"))
 			return "/";
 
-		return path.substring(0, path.substring(0, path.length() - 1).lastIndexOf("/")) + "/";
+		return path.substring(0, path.substring(0, path.length() - 1).lastIndexOf('/')) + "/";
 	}
 
 	public Bookmark getBookmarkByPath(String path) {
@@ -179,7 +198,7 @@ public class BookmarkManager implements RequestClient {
 	}
 
 	public void addBookmark(String parentPath, Bookmark bookmark) {
-		if(Logger.shouldLog(LogLevel.MINOR, this))
+		if(logMINOR)
 			Logger.minor(this, "Adding bookmark " + bookmark + " to " + parentPath);
 		BookmarkCategory parent = getCategoryByPath(parentPath);
 		parent.addBookmark(bookmark);
@@ -198,8 +217,14 @@ public class BookmarkManager implements RequestClient {
 
 		bookmark.setName(newName);
 		synchronized(bookmarks) {
-			bookmarks.remove(path);
-			bookmarks.put(newPath, bookmark);
+			Iterator<String> it = bookmarks.keySet().iterator();
+			while(it.hasNext()) {
+				String s = it.next();
+				if(s.startsWith(path)) {
+					it.remove();
+				}
+			}
+			putPaths(newPath, bookmark);
 		}
 		storeBookmarks();
 	}
@@ -222,8 +247,8 @@ public class BookmarkManager implements RequestClient {
 			for(int i = 0; i < cat.size(); i++)
 				removeBookmark(path + cat.get(i).getName() + ((cat.get(i) instanceof BookmarkCategory) ? "/"
 					: ""));
-		} else
-			if(((BookmarkItem) bookmark).getKeyType().equals("USK"))
+		} else {
+			if(((BookmarkItem) bookmark).getKeyType().equals("USK")) {
 				try {
 					USK u = ((BookmarkItem) bookmark).getUSK();
 					if(!wantUSK(u, (BookmarkItem)bookmark)) {
@@ -231,6 +256,8 @@ public class BookmarkManager implements RequestClient {
 					}
 				} catch(MalformedURLException mue) {
 				}
+			}
+		}
 
 		getCategoryByPath(parentPath(path)).removeBookmark(bookmark);
 		synchronized(bookmarks) {
@@ -302,6 +329,25 @@ public class BookmarkManager implements RequestClient {
 
 		return uris;
 	}
+	
+	public void storeBookmarksLazy() {
+		synchronized(bookmarks) {
+			if(isSavingBookmarksLazy) return;
+			isSavingBookmarksLazy = true;
+			node.node.ticker.queueTimedJob(new Runnable() {
+
+				@Override
+				public void run() {
+					try {
+						storeBookmarks();
+					} finally {
+						isSavingBookmarksLazy = false;
+					}
+				}
+
+			}, MINUTES.toMillis(5));
+		}
+	}
 
 	public void storeBookmarks() {
 		Logger.normal(this, "Attempting to save bookmarks to " + bookmarksFile.toString());
@@ -316,7 +362,7 @@ public class BookmarkManager implements RequestClient {
 		FileOutputStream fos = null;
 		try {
 			fos = new FileOutputStream(backupBookmarksFile);
-			sfs.writeTo(fos);
+			sfs.writeToBigBuffer(fos);
 			fos.close();
 			fos = null;
 			if(!FileUtil.renameTo(backupBookmarksFile, bookmarksFile))
@@ -336,8 +382,8 @@ public class BookmarkManager implements RequestClient {
 		_innerReadBookmarks("", category, sfs);
 	}
 
-	static final short PRIORITY = RequestStarter.UPDATE_PRIORITY_CLASS;
-	static final short PRIORITY_PROGRESS = RequestStarter.IMMEDIATE_SPLITFILE_PRIORITY_CLASS;
+	static final short PRIORITY = RequestStarter.BULK_SPLITFILE_PRIORITY_CLASS;
+	static final short PRIORITY_PROGRESS = RequestStarter.UPDATE_PRIORITY_CLASS;
 
 	private void subscribeToUSK(BookmarkItem item) {
 		if("USK".equals(item.getKeyType()))
@@ -420,11 +466,13 @@ public class BookmarkManager implements RequestClient {
 		return sfs;
 	}
 
+	@Override
 	public boolean persistent() {
 		return false;
 	}
 
-	public void removeFrom(ObjectContainer container) {
-		throw new UnsupportedOperationException();
+	@Override
+	public boolean realTimeFlag() {
+		return false;
 	}
 }

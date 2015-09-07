@@ -9,7 +9,6 @@ import freenet.config.InvalidConfigValueException;
 import freenet.config.NodeNeedRestartException;
 import freenet.config.SubConfig;
 import freenet.io.comm.FreenetInetAddress;
-import freenet.node.SecurityLevels.FRIENDS_THREAT_LEVEL;
 import freenet.node.SecurityLevels.NETWORK_THREAT_LEVEL;
 import freenet.support.Logger;
 import freenet.support.api.BooleanCallback;
@@ -56,7 +55,10 @@ public class NodeCryptoConfig {
 	private boolean paddDataPackets;
 	
 	NodeCryptoConfig(SubConfig config, int sortOrder, boolean isOpennet, SecurityLevels securityLevels) throws NodeInitException {
-		config.register("listenPort", -1 /* means random */, sortOrder++, true, true, "Node.port", "Node.portLong",	new IntCallback() {
+		config.register("listenPort", -1 /* means random */, sortOrder++, true, true,
+				isOpennet ? "Node.opennetPort" : "Node.port", 
+				isOpennet ? "Node.opennetPortLong" : "Node.portLong", 
+						new IntCallback() {
 			@Override
 			public Integer get() {
 				synchronized(NodeCryptoConfig.class) {
@@ -131,7 +133,9 @@ public class NodeCryptoConfig {
 		}, false);
 		dropProbability = config.getInt("testingDropPacketsEvery"); 
 		
-		config.register("oneConnectionPerIP", isOpennet, sortOrder++, true, false, "Node.oneConnectionPerIP", "Node.oneConnectionPerIPLong",
+		config.register("oneConnectionPerIP", isOpennet, sortOrder++, true, false,
+				(isOpennet ? "OpennetManager" : "Node") + ".oneConnectionPerIP",
+				(isOpennet ? "OpennetManager" : "Node") + ".oneConnectionPerIPLong",
 				new BooleanCallback() {
 
 					@Override
@@ -154,6 +158,7 @@ public class NodeCryptoConfig {
 		if(isOpennet) {
 			securityLevels.addNetworkThreatLevelListener(new SecurityLevelListener<NETWORK_THREAT_LEVEL>() {
 
+				@Override
 				public void onChange(NETWORK_THREAT_LEVEL oldLevel, NETWORK_THREAT_LEVEL newLevel) {
 					// Might be useful for nodes on the same NAT etc, so turn it off for LOW. Otherwise is sensible.
 					// It's always off on darknet, since we can reasonably expect to know our peers, even if we are paranoid
@@ -185,19 +190,6 @@ public class NodeCryptoConfig {
 					}			
 		});
 		alwaysAllowLocalAddresses = config.getBoolean("alwaysAllowLocalAddresses");
-		
-		if(!isOpennet) {
-			securityLevels.addFriendsThreatLevelListener(new SecurityLevelListener<FRIENDS_THREAT_LEVEL>() {
-
-				public void onChange(FRIENDS_THREAT_LEVEL oldLevel, FRIENDS_THREAT_LEVEL newLevel) {
-					if(newLevel == FRIENDS_THREAT_LEVEL.HIGH)
-						alwaysAllowLocalAddresses = false;
-					if(oldLevel == FRIENDS_THREAT_LEVEL.HIGH)
-						alwaysAllowLocalAddresses = false;
-				}
-				
-			});
-		}
 		
 		config.register("assumeNATed", true, sortOrder++, true, true, "Node.assumeNATed", "Node.assumeNATedLong", new BooleanCallback() {
 
@@ -250,6 +242,7 @@ public class NodeCryptoConfig {
 		paddDataPackets = config.getBoolean("paddDataPackets");
 		securityLevels.addNetworkThreatLevelListener(new SecurityLevelListener<NETWORK_THREAT_LEVEL>() {
 
+			@Override
 			public void onChange(NETWORK_THREAT_LEVEL oldLevel, NETWORK_THREAT_LEVEL newLevel) {
 				// Might be useful for nodes which are running with a tight bandwidth quota to minimize the overhead,
 				// so turn it off for LOW. Otherwise is sensible.

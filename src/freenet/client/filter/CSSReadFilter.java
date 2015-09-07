@@ -17,6 +17,7 @@ import java.io.Writer;
 import java.util.HashMap;
 
 import freenet.support.HexUtil;
+import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
 import freenet.support.io.Closer;
@@ -24,9 +25,22 @@ import freenet.support.io.NullWriter;
 
 public class CSSReadFilter implements ContentDataFilter, CharsetExtractor {
 
+        private static volatile boolean logDEBUG;
+        private static volatile boolean logMINOR;
+	static {
+		Logger.registerLogThresholdCallback(new LogThresholdCallback(){
+			@Override
+			public void shouldUpdate(){
+				logDEBUG = Logger.shouldLog(LogLevel.DEBUG, this);
+                                logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
+			}
+		});
+	}
+
+	@Override
 	public void readFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
 			FilterCallback cb) throws DataFilterException, IOException {
-		if (Logger.shouldLog(LogLevel.DEBUG, this))
+		if (logDEBUG)
 			Logger.debug(
 				this,
 				"running "
@@ -53,15 +67,17 @@ public class CSSReadFilter implements ContentDataFilter, CharsetExtractor {
 		
 	}
 
+	@Override
 	public void writeFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
 	        FilterCallback cb) throws DataFilterException, IOException {
 		throw new UnsupportedOperationException();
 	}
 
+	@Override
 	public String getCharset(byte [] input, int length, String charset) throws DataFilterException, IOException {
-		if(Logger.shouldLog(LogLevel.DEBUG, this))
+		if(logDEBUG)
 			Logger.debug(this, "Fetching charset for CSS with initial charset "+charset);
-		if(input.length > getCharsetBufferSize() && Logger.shouldLog(LogLevel.MINOR, this)) {
+		if(input.length > getCharsetBufferSize() && logMINOR) {
 			Logger.minor(this, "More data than was strictly needed was passed to the charset extractor for extraction");
 		}
 		InputStream strm = new ByteArrayInputStream(input, 0, length);
@@ -109,11 +125,12 @@ public class CSSReadFilter implements ContentDataFilter, CharsetExtractor {
 	
 	static final int maxBOMLength = Math.max(utf16be.length, Math.max(utf16le.length, Math.max(utf32_le.length, Math.max(utf32_be.length, Math.max(ebcdic.length, Math.max(ibm1026.length, Math.max(utf32_2143.length, Math.max(utf32_3412.length, gsm.length))))))));
 	
-	static final byte[] parse(String s) {
+	static byte[] parse(String s) {
 		s = s.replaceAll(" ", "");
 		return HexUtil.hexToBytes(s);
 	}
 	
+	@Override
 	public BOMDetection getCharsetByBOM(byte[] input, int length) throws DataFilterException, IOException {
 		if(ContentFilter.startsWith(input, ascii, length))
 			return new BOMDetection("UTF-8", true);
@@ -164,6 +181,7 @@ public class CSSReadFilter implements ContentDataFilter, CharsetExtractor {
 		else return null;
 	}
 
+	@Override
 	public int getCharsetBufferSize() {
 		return 64; //This should be a reasonable number of bytes to read in
 	}

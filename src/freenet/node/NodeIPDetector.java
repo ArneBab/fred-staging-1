@@ -1,5 +1,8 @@
 package freenet.node;
 
+import static java.util.concurrent.TimeUnit.SECONDS;
+
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -8,6 +11,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 
 import freenet.config.InvalidConfigValueException;
 import freenet.config.SubConfig;
@@ -28,6 +32,7 @@ import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
 import freenet.support.api.StringCallback;
+import freenet.support.io.NativeThread;
 import freenet.support.transport.ip.HostnameSyntaxException;
 import freenet.support.transport.ip.IPAddressDetector;
 import freenet.support.transport.ip.IPUtil;
@@ -63,22 +68,49 @@ public class NodeIPDetector {
 	DetectedIP[] pluginDetectedIPs;
 	/** Last detected IP address */
 	FreenetInetAddress[] lastIPAddress;
-	/** The minimum reported MTU on all detected interfaces */
-	private int minimumMTU = Integer.MAX_VALUE;
+	
+	private class MinimumMTU {
+		
+		/** The minimum reported MTU on all detected interfaces */
+		private int minimumMTU = Integer.MAX_VALUE;
+
+		/** Report a new MTU from an interface or detector.
+		 * If the minimum MTU has changed, returns true. */
+		boolean report(int mtu) {
+			if(mtu <= 0) return false;
+			if(mtu < minimumMTU) {
+				Logger.normal(this, "Reducing the MTU to "+minimumMTU);
+				minimumMTU = mtu;
+				return true;
+			}
+			return false;
+		}
+
+		public int get() {
+			return minimumMTU > 0 ? minimumMTU : 1500;
+		}
+
+	}
+	
+	private final MinimumMTU minimumMTUIPv4 = new MinimumMTU();
+	private final MinimumMTU minimumMTUIPv6 = new MinimumMTU();
+	
 	/** IP address detector */
 	private final IPAddressDetector ipDetector;
 	/** Plugin manager for plugin IP address detectors e.g. STUN */
 	final IPDetectorPluginManager ipDetectorManager;
 	/** UserAlert shown when ipAddressOverride has a hostname/IP address syntax error */
-	private static InvalidAddressOverrideUserAlert invalidAddressOverrideAlert;
+	private InvalidAddressOverrideUserAlert invalidAddressOverrideAlert;
 	private boolean hasValidAddressOverride;
 	/** UserAlert shown when we can't detect an IP address */
-	private static IPUndetectedUserAlert primaryIPUndetectedAlert;
+	private IPUndetectedUserAlert primaryIPUndetectedAlert;
 	// FIXME redundant? see lastIPAddress
 	FreenetInetAddress[] lastIP;
 	/** Set when we have grounds to believe that we may be behind a symmetric NAT. */
 	boolean maybeSymmetric;
+	/** Have the detector plugins been queried (or found to be non-existent)? */
 	private boolean hasDetectedPM;
+	/** Have we checked peers and local interfaces for our IP address? */
 	private boolean hasDetectedIAD;
 	/** Subsidiary detectors: NodeIPPortDetector's which rely on this object */
 	private NodeIPPortDetector[] portDetectors;
@@ -90,17 +122,15 @@ public class NodeIPDetector {
 	public NodeIPDetector(Node node) {
 		this.node = node;
 		ipDetectorManager = new IPDetectorPluginManager(node, this);
-		ipDetector = new IPAddressDetector(10*1000, this);
+		ipDetector = new IPAddressDetector(SECONDS.toMillis(10), this);
 		invalidAddressOverrideAlert = new InvalidAddressOverrideUserAlert(node);
 		primaryIPUndetectedAlert = new IPUndetectedUserAlert(node);
 		portDetectors = new NodeIPPortDetector[0];
 	}
 
 	public synchronized void addPortDetector(NodeIPPortDetector detector) {
-		NodeIPPortDetector[] newDetectors = new NodeIPPortDetector[portDetectors.length+1];
-		System.arraycopy(portDetectors, 0, newDetectors, 0, portDetectors.length);
-		newDetectors[portDetectors.length] = detector;
-		portDetectors = newDetectors;
+		portDetectors = Arrays.copyOf(portDetectors, portDetectors.length+1);
+		portDetectors[portDetectors.length - 1] = detector;
 	}
 	
 	/**
@@ -154,13 +184,13 @@ public class NodeIPDetector {
 	   	lastIPAddress = addresses.toArray(new FreenetInetAddress[addresses.size()]);
 	   	if(dumpLocalAddresses) {
 	   		ArrayList<FreenetInetAddress> filtered = new ArrayList<FreenetInetAddress>(lastIPAddress.length);
-	   		for(int i=0;i<lastIPAddress.length;i++) {
-	   			if(lastIPAddress[i] == null) continue;
-	   			if(lastIPAddress[i] == overrideIPAddress && lastIPAddress[i].hasHostnameNoIP())
-	   				filtered.add(lastIPAddress[i]);
-	   			else if(lastIPAddress[i].hasHostnameNoIP()) continue;
-	   			else if(IPUtil.isValidAddress(lastIPAddress[i].getAddress(), false))
-	   				filtered.add(lastIPAddress[i]);
+	   		for(FreenetInetAddress addr: lastIPAddress) {
+	   			if(addr == null) continue;
+	   			if(addr == overrideIPAddress && addr.hasHostnameNoIP())
+	   				filtered.add(addr);
+	   			else if(addr.hasHostnameNoIP()) continue;
+	   			else if(IPUtil.isValidAddress(addr.getAddress(), false))
+	   				filtered.add(addr);
 	   		}
 	   		return filtered.toArray(new FreenetInetAddress[filtered.size()]);
 	   	}
@@ -190,13 +220,13 @@ public class NodeIPDetector {
 	 */
 	private boolean innerDetect(List<FreenetInetAddress> addresses) {
 		boolean addedValidIP = false;
-		InetAddress[] detectedAddrs = ipDetector.getAddress();
+		InetAddress[] detectedAddrs = ipDetector.getAddressNoCallback();
 		assert(detectedAddrs != null);
 		synchronized(this) {
 			hasDetectedIAD = true;
 		}
-		for(int i=0;i<detectedAddrs.length;i++) {
-			FreenetInetAddress addr = new FreenetInetAddress(detectedAddrs[i]);
+		for(InetAddress detectedAddr: detectedAddrs) {
+			FreenetInetAddress addr = new FreenetInetAddress(detectedAddr);
 			if(!addresses.contains(addr)) {
 				Logger.normal(this, "Detected IP address: "+addr);
 				addresses.add(addr);
@@ -206,8 +236,8 @@ public class NodeIPDetector {
 		}
 		
 		if((pluginDetectedIPs != null) && (pluginDetectedIPs.length > 0)) {
-			for(int i=0;i<pluginDetectedIPs.length;i++) {
-				InetAddress addr = pluginDetectedIPs[i].publicAddress;
+			for(DetectedIP pluginDetectedIP: pluginDetectedIPs) {
+				InetAddress addr = pluginDetectedIP.publicAddress;
 				if(addr == null) continue;
 				FreenetInetAddress a = new FreenetInetAddress(addr);
 				if(!addresses.contains(a)) {
@@ -225,22 +255,22 @@ public class NodeIPDetector {
 		
 		// Try to pick it up from our connections
 		if(node.peers != null) {
-			PeerNode[] peerList = node.peers.myPeers;
+			PeerNode[] peerList = node.peers.myPeers();
 			HashMap<FreenetInetAddress,Integer> countsByPeer = new HashMap<FreenetInetAddress,Integer>();
 			// FIXME use a standard mutable int object, we have one somewhere
-			for(int i=0;i<peerList.length;i++) {
-				if(!peerList[i].isConnected()) {
+			for(PeerNode pn: peerList) {
+				if(!pn.isConnected()) {
 					if(logDEBUG) Logger.minor(this, "Not connected");
 					continue;
 				}
-				if(!peerList[i].isRealConnection()) {
+				if(!pn.isRealConnection()) {
 					// Only let seed server connections through.
 					// We have to trust them anyway.
-					if(!(peerList[i] instanceof SeedServerPeerNode)) continue;
-					if(logMINOR) Logger.minor(this, "Not a real connection and not a seed node: "+peerList[i]);
+					if(!(pn instanceof SeedServerPeerNode)) continue;
+					if(logMINOR) Logger.minor(this, "Not a real connection and not a seed node: "+pn);
 				}
-				if(logMINOR) Logger.minor(this, "Maybe a usable connection for IP: "+peerList[i]);
-				Peer p = peerList[i].getRemoteDetectedPeer();
+				if(logMINOR) Logger.minor(this, "Maybe a usable connection for IP: "+pn);
+				Peer p = pn.getRemoteDetectedPeer();
 				if(logMINOR) Logger.minor(this, "Remote detected peer: "+p);
 				if(p == null || p.isNull()) continue;
 				FreenetInetAddress addr = p.getFreenetAddress();
@@ -251,7 +281,7 @@ public class NodeIPDetector {
 					continue;
 				}
 				if(logMINOR)
-					Logger.minor(this, "Peer "+peerList[i].getPeer()+" thinks we are "+addr);
+					Logger.minor(this, "Peer "+pn.getPeer()+" thinks we are "+addr);
 				if(countsByPeer.containsKey(addr)) {
 					countsByPeer.put(addr, countsByPeer.get(addr) + 1);
 				} else {
@@ -259,9 +289,9 @@ public class NodeIPDetector {
 				}
 			}
 			if(countsByPeer.size() == 1) {
-				Iterator<FreenetInetAddress> it = countsByPeer.keySet().iterator();
-				FreenetInetAddress addr = it.next();
-				confidence = countsByPeer.get(addr);
+                Entry<FreenetInetAddress, Integer> countByPeer = countsByPeer.entrySet().iterator().next();
+				FreenetInetAddress addr = countByPeer.getKey();
+				confidence = countByPeer.getValue();
 				Logger.minor(this, "Everyone agrees we are "+addr);
 				if(!addresses.contains(addr)) {
 					if(addr.isRealInternetAddress(false, false, false))
@@ -287,8 +317,8 @@ public class NodeIPDetector {
 				}
 				if(best != null) {
 					boolean hasRealDetectedAddress = false;
-					for(int i=0;i<detectedAddrs.length;i++) {
-						if(IPUtil.isValidAddress(detectedAddrs[i], false))
+					for(InetAddress detectedAddr: detectedAddrs) {
+						if(IPUtil.isValidAddress(detectedAddr, false))
 							hasRealDetectedAddress = true;
 					}
 					if((bestPopularity > 1) || !hasRealDetectedAddress) {
@@ -337,12 +367,12 @@ public class NodeIPDetector {
 	}
 	
 	public boolean hasDirectlyDetectedIP() {
-		InetAddress[] addrs = ipDetector.getAddress();
+		InetAddress[] addrs = ipDetector.getAddress(node.executor);
 		if(addrs == null || addrs.length == 0) return false;
-		for(int i=0;i<addrs.length;i++) {
-			if(IPUtil.isValidAddress(addrs[i], false)) {
+		for(InetAddress addr: addrs) {
+			if(IPUtil.isValidAddress(addr, false)) {
 				if(logMINOR)
-					Logger.minor(this, "Has a directly detected IP: "+addrs[i]);
+					Logger.minor(this, "Has a directly detected IP: "+addr);
 				return true;
 			}
 		}
@@ -356,17 +386,25 @@ public class NodeIPDetector {
 	 */
 	public void processDetectedIPs(DetectedIP[] list) {
 		pluginDetectedIPs = list;
-		for(int i=0; i<pluginDetectedIPs.length; i++){
-			int mtu = pluginDetectedIPs[i].mtu;
-			if(minimumMTU > mtu && mtu > 0){
-				minimumMTU = mtu;
-				Logger.normal(this, "Reducing the MTU to "+minimumMTU);
-				if(mtu < UdpSocketHandler.MIN_MTU)
-					node.onTooLowMTU(minimumMTU, UdpSocketHandler.MIN_MTU);
-			}
-		}
+		boolean mtuChanged = false;
+		for(DetectedIP pluginDetectedIP: pluginDetectedIPs)
+		    reportMTU(pluginDetectedIP.mtu, pluginDetectedIP.publicAddress instanceof Inet6Address);
 		redetectAddress();
 	}
+
+	/**
+	 * Is called by IPAddressDetector to inform NodeIPDetector about the MTU
+	 * associated to this interface
+	 */
+        public void reportMTU(int mtu, boolean forIPv6) {
+	    boolean mtuChanged = false;
+	    if(forIPv6)
+		mtuChanged |= minimumMTUIPv6.report(mtu);
+	    else	
+		mtuChanged |= minimumMTUIPv4.report(mtu);
+
+	    if (mtuChanged) node.updateMTU();
+        }
 
 	public void redetectAddress() {
 		FreenetInetAddress[] newIP = detectPrimaryIPAddress(false);
@@ -376,8 +414,8 @@ public class NodeIPDetector {
 			lastIP = newIP;
 			detectors = portDetectors;
 		}
-		for(int i=0;i<detectors.length;i++)
-			detectors[i].update();
+		for(NodeIPPortDetector detector: detectors)
+			detector.update();
 		node.writeNodeFile();
 	}
 
@@ -487,7 +525,7 @@ public class NodeIPDetector {
 			} catch (UnknownHostException e) {
 				String msg = "Unknown host: "+ipHintString+" in config: "+e.getMessage();
 				Logger.error(this, msg);
-				System.err.println(msg+"");
+				System.err.println(msg);
 				oldIPAddress = null;
 			}
 		}
@@ -506,19 +544,35 @@ public class NodeIPDetector {
 		// 60 second delay for inserting ARK to avoid reinserting more than necessary if we don't detect IP on startup.
 		// Not a FastRunnable as it can take a while to start the insert
 		node.getTicker().queueTimedJob(new Runnable() {
+			@Override
 			public void run() {
 				NodeIPPortDetector[] detectors;
 				synchronized(this) {
 					detectors = portDetectors;
 				}
-				for(int i=0;i<detectors.length;i++)
-					detectors[i].startARK();
+				for(NodeIPPortDetector detector: detectors)
+					detector.startARK();
 			}
-		}, 60*1000);
+		}, SECONDS.toMillis(60));
 	}
 
 	public void onConnectedPeer() {
-		ipDetectorManager.maybeRun();
+		// Run off thread, but at high priority.
+		// Initial messages don't need an up to date IP for the node itself, but
+		// announcements do. However announcements are not sent instantly.
+		node.executor.execute(new PrioRunnable() {
+
+			@Override
+			public void run() {
+				ipDetectorManager.maybeRun();
+			}
+
+			@Override
+			public int getPriority() {
+				return NativeThread.HIGH_PRIORITY;
+			}
+			
+		});
 	}
 
 	public void registerIPDetectorPlugin(FredPluginIPDetector detector) {
@@ -541,8 +595,12 @@ public class NodeIPDetector {
 		}
 	}
 
+	public int getMinimumDetectedMTU(boolean ipv6) {
+		return ipv6 ? minimumMTUIPv6.get() : minimumMTUIPv4.get();
+	}
+
 	public int getMinimumDetectedMTU() {
-		return minimumMTU > 0 ? minimumMTU : 1500;
+		return Math.min(minimumMTUIPv4.get(), minimumMTUIPv6.get());
 	}
 
 	public void setMaybeSymmetric() {
@@ -599,5 +657,9 @@ public class NodeIPDetector {
 
 	public boolean noDetectPlugins() {
 		return !ipDetectorManager.hasDetectors();
+	}
+
+	public boolean hasJSTUN() {
+		return ipDetectorManager.hasJSTUN();
 	}
 }

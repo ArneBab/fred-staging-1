@@ -7,10 +7,12 @@ import java.io.IOException;
 
 import freenet.support.api.Bucket;
 import freenet.support.api.BucketFactory;
+import freenet.support.api.RandomAccessBucket;
 
 public class ArrayBucketFactory implements BucketFactory {
 
-	public Bucket makeBucket(long size) throws IOException {
+	@Override
+	public RandomAccessBucket makeBucket(long size) throws IOException {
 		return new ArrayBucket();
 	}
 

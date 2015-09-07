@@ -42,6 +42,7 @@ public class LoggingConfigHandler {
 			}
 		}
 
+		@Override
 		public String[] getPossibleValues() {
 			LogLevel[] priorities = LogLevel.values();
 			ArrayList<String> values = new ArrayList<String>(priorities.length+1);
@@ -120,7 +121,7 @@ public class LoggingConfigHandler {
 		
 		// max space used by zipped logs
     	
-		config.register("maxZippedLogsSize", "128M", 3, true, true, "LogConfigHandler.maxZippedLogsSize",
+		config.register("maxZippedLogsSize", "10M", 3, true, true, "LogConfigHandler.maxZippedLogsSize",
 				"LogConfigHandler.maxZippedLogsSizeLong",
 				new LongCallback() {
 					@Override
@@ -145,7 +146,7 @@ public class LoggingConfigHandler {
 		// priority
     	
 		// Node must override this to minor on testnet.
-		config.register("priority", "normal", 4, false, false, "LogConfigHandler.minLoggingPriority",
+		config.register("priority", "warning", 4, false, false, "LogConfigHandler.minLoggingPriority",
 				"LogConfigHandler.minLoggingPriorityLong",
 				new PriorityCallback());
     	
@@ -173,7 +174,7 @@ public class LoggingConfigHandler {
     	
 		// interval
     	
-		config.register("interval", "10MINUTE", 5, true, false, "LogConfigHandler.rotationInterval",
+		config.register("interval", "1HOUR", 5, true, false, "LogConfigHandler.rotationInterval",
 				"LogConfigHandler.rotationIntervalLong",
 				new StringCallback() {
 					@Override
@@ -198,7 +199,7 @@ public class LoggingConfigHandler {
 		logRotateInterval = config.getString("interval");
     	
 		// max cached bytes in RAM
-		config.register("maxCachedBytes", "10M", 6, true, false, "LogConfigHandler.maxCachedBytes",
+		config.register("maxCachedBytes", "1M", 6, true, false, "LogConfigHandler.maxCachedBytes",
 				"LogConfigHandler.maxCachedBytesLong",
 				new LongCallback() {
 					@Override
@@ -217,7 +218,7 @@ public class LoggingConfigHandler {
 		maxCachedLogBytes = config.getLong("maxCachedBytes");
     	
 		// max cached lines in RAM
-		config.register("maxCachedLines", "100k", 7, true, false, "LogConfigHandler.maxCachedLines",
+		config.register("maxCachedLines", "10k", 7, true, false, "LogConfigHandler.maxCachedLines",
 				"LogConfigHandler.maxCachedLinesLong",
 				new IntCallback() {
 					@Override
@@ -354,6 +355,7 @@ public class LoggingConfigHandler {
 			executor.execute(this, "Old log directory "+logDir+" deleter");
 		}
 		
+		@Override
 		public void run() {
 		    freenet.support.Logger.OSThread.logPID(this);
 			fileLoggerHook.waitForSwitch();
@@ -364,8 +366,7 @@ public class LoggingConfigHandler {
 		private boolean delete(File dir) {
 			boolean failed = false;
 			File[] files = dir.listFiles();
-			for(int i=0;i<files.length;i++) {
-				File f = files[i];
+			for(File f: files) {
 				String s = f.getName();
 				if(s.startsWith("freenet-") && (s.indexOf(".log") != -1)) {
 					if(f.isFile()) {

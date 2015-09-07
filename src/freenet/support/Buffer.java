@@ -44,13 +44,18 @@ public class Buffer implements WritableToDataOutputStream {
 	 * Note that this a) expects that the first 4 bytes to be a length indicator of the rest of the byte stream and 
 	 * b) these first 4 bytes are removed from the byte stream before storing the rest 
 	 *
-	 * @param dis
-	 * @throws IOException
+	 * @param dis to read bytes from
+	 * @throws IllegalArgumentException If the length integer is negative or exceeds Serializer.MAX_ARRAY_LENGTH.
+	 * @throws IOException error reading from dis
 	 */
 	public Buffer(DataInput dis) throws IOException {
 		_length = dis.readInt();
 		if(_length < 0)
 			throw new IllegalArgumentException("Negative Length: "+_length);
+		if (_length > Serializer.MAX_ARRAY_LENGTH) {
+			//TODO: Is it more appropriate for this to be an IOException?
+			throw new IllegalArgumentException("Length larger than " + Serializer.MAX_ARRAY_LENGTH);
+		}
 
 		_data = new byte[_length];
 		_start = 0;
@@ -87,9 +92,7 @@ public class Buffer implements WritableToDataOutputStream {
 		if ((_start == 0) && (_length == _data.length)) {
 			return _data;
 		} else {
-			byte[] r = new byte[_length];
-			System.arraycopy(_data, _start, r, 0, _length);
-			return r;
+			return Arrays.copyOfRange(_data, _start, _start + _length);
 		}
 	}
 
@@ -110,6 +113,7 @@ public class Buffer implements WritableToDataOutputStream {
 		return _data[pos + _start];
 	}
 
+	@Override
 	public void writeToDataOutputStream(DataOutputStream stream) throws IOException {
 		stream.writeInt(_length);
 		stream.write(_data, _start, _length);

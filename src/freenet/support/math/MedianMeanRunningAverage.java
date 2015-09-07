@@ -8,7 +8,7 @@ import java.util.ArrayList;
  * (Also uses CPU time O(N log N) with the number of reports in currentValue()).
  * @author Matthew Toseland <toad@amphibian.dyndns.org> (0xE43DA450)
  */
-public class MedianMeanRunningAverage implements RunningAverage {
+public final class MedianMeanRunningAverage implements RunningAverage, Cloneable {
 	private static final long serialVersionUID = 1L;
 
 	final ArrayList<Double> reports;
@@ -33,12 +33,15 @@ public class MedianMeanRunningAverage implements RunningAverage {
 	}
 
 	@Override
-	public Object clone() {
+	public MedianMeanRunningAverage clone() {
+		// Override clone() for synchronization.
+		// Implement Cloneable to shut up findbugs.
 		synchronized (this) {
 			return new MedianMeanRunningAverage(this);
 		}
 	}
 
+	@Override
 	public synchronized long countReports() {
 		return reports.size();
 	}
@@ -47,6 +50,7 @@ public class MedianMeanRunningAverage implements RunningAverage {
          *
          * @return
          */
+        @Override
         public synchronized double currentValue() {
 		int size = reports.size();
 		int middle = size / 2;
@@ -58,6 +62,7 @@ public class MedianMeanRunningAverage implements RunningAverage {
          *
          * @param d
          */
+        @Override
         public synchronized void report(double d) {
 		mean.report(d);
 		reports.add(d);
@@ -67,10 +72,12 @@ public class MedianMeanRunningAverage implements RunningAverage {
          *
          * @param d
          */
+        @Override
         public void report(long d) {
 		report((double)d);
 	}
 
+	@Override
 	public double valueIfReported(double r) {
 		throw new UnsupportedOperationException();
 	}

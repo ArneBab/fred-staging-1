@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 
 import freenet.client.filter.CharsetExtractor.BOMDetection;
 import freenet.l10n.NodeL10n;
+import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
 import freenet.support.io.FileUtil;
@@ -27,11 +28,21 @@ import freenet.support.io.FileUtil;
  */
 public class ContentFilter {
 
-	static final Hashtable<String, MIMEType> mimeTypesByName = new Hashtable<String, MIMEType>();
+	static final Hashtable<String, FilterMIMEType> mimeTypesByName = new Hashtable<String, FilterMIMEType>();
 	
 	/** The HTML mime types are defined here, to allow other modules to identify it*/
-	public static String[] HTML_MIME_TYPES=new String[]{"text/html", "application/xhtml+xml", "text/xml+xhtml", "text/xhtml", "application/xhtml"};
+	public static final String[] HTML_MIME_TYPES=new String[]{"text/html", "application/xhtml+xml", "text/xml+xhtml", "text/xhtml", "application/xhtml"};
 	
+        private static volatile boolean logMINOR;
+	static {
+		Logger.registerLogThresholdCallback(new LogThresholdCallback(){
+			@Override
+			public void shouldUpdate(){
+				logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
+			}
+		});
+	}
+
 	static {
 		init();
 	}
@@ -40,27 +51,27 @@ public class ContentFilter {
 		// Register known MIME types
 		
 		// Plain text
-		register(new MIMEType("text/plain", "txt", new String[0], new String[] { "text", "pot" },
+		register(new FilterMIMEType("text/plain", "txt", new String[0], new String[] { "text", "pot" },
 				true, true, null, null, false, false, false, false, false, false,
 				l10n("textPlainReadAdvice"),
 				l10n("textPlainWriteAdvice"),
 				true, "US-ASCII", null, false));
 		
 		// GIF - has a filter 
-		register(new MIMEType("image/gif", "gif", new String[0], new String[0], 
+		register(new FilterMIMEType("image/gif", "gif", new String[0], new String[0], 
 				true, false, new GIFFilter(), null, false, false, false, false, false, false,
 				l10n("imageGifReadAdvice"),
 				l10n("imageGifWriteAdvice"),
 				false, null, null, false));
 		
 		// JPEG - has a filter
-		register(new MIMEType("image/jpeg", "jpeg", new String[0], new String[] { "jpg" },
+		register(new FilterMIMEType("image/jpeg", "jpeg", new String[0], new String[] { "jpg" },
 				true, false, new JPEGFilter(true, true), null, false, false, false, false, false, false,
 				l10n("imageJpegReadAdvice"),
 				l10n("imageJpegWriteAdvice"), false, null, null, false));
 		
 		// PNG - has a filter
-		register(new MIMEType("image/png", "png", new String[0], new String[0],
+		register(new FilterMIMEType("image/png", "png", new String[] { "image/x-png" }, new String[0],
 				true, false, new PNGFilter(true, true, true), null, false, false, false, false, true, false,
 				l10n("imagePngReadAdvice"),
 				l10n("imagePngWriteAdvice"), false, null, null, false));
@@ -68,7 +79,7 @@ public class ContentFilter {
 
 		// BMP - has a filter
 		// Reference: http://filext.com/file-extension/BMP
-		register(new MIMEType("image/bmp", "bmp", new String[] { "image/x-bmp","image/x-bitmap","image/x-xbitmap","image/x-win-bitmap","image/x-windows-bmp","image/ms-bmp","image/x-ms-bmp","application/bmp","application/x-bmp","application/x-win-bitmap"  }, new String[0],
+		register(new FilterMIMEType("image/bmp", "bmp", new String[] { "image/x-bmp","image/x-bitmap","image/x-xbitmap","image/x-win-bitmap","image/x-windows-bmp","image/ms-bmp","image/x-ms-bmp","application/bmp","application/x-bmp","application/x-win-bitmap"  }, new String[0],
 				true, false, new BMPFilter(), null, false, false, false, false, true, false,
 				l10n("imageBMPReadAdvice"),
 				l10n("imageBMPWriteAdvice"), false, null, null, false));	
@@ -96,26 +107,34 @@ public class ContentFilter {
 				l10n("audioFLACWriteAdvice"),
 				false, null, null, false));
 
+		/* MP3
+		 *
+		 * Reference: http://www.mp3-tech.org/programmer/frame_header.html
+		 */
+		register(new FilterMIMEType("audio/mpeg", "mp3", new String[] {"audio/mp3", "audio/x-mp3", "audio/x-mpeg", "audio/mpeg3", "audio/x-mpeg3", "audio/mpg", "audio/x-mpg", "audio/mpegaudio"},
+				new String[0], true, false, new MP3Filter(), new MP3Filter(), true, true, false, true, false, false,
+				l10n("audioMP3ReadAdvice"), l10n("audioMP3WriteAdvice"), false, null, null, false));
+
 		// ICO needs filtering.
 		// Format is not the same as BMP iirc.
 		// DoS: http://www.kb.cert.org/vuls/id/290961
 		// Remote code exec: http://www.microsoft.com/technet/security/bulletin/ms09-062.mspx
 		
 //		// ICO - probably safe - FIXME check this out, write filters
-//		register(new MIMEType("image/x-icon", "ico", new String[] { "image/vnd.microsoft.icon", "image/ico", "application/ico"}, 
+//		register(new FilterMIMEType("image/x-icon", "ico", new String[] { "image/vnd.microsoft.icon", "image/ico", "application/ico"}, 
 //				new String[0], true, false, null, null, false, false, false, false, false, false,
 //				l10n("imageIcoReadAdvice"),
 //				l10n("imageIcoWriteAdvice"), false, null, null, false));
 		
 		// PDF - very dangerous - FIXME ideally we would have a filter, this is such a common format...
-		register(new MIMEType("application/pdf", "pdf", new String[] { "application/x-pdf" }, new String[0],
+		register(new FilterMIMEType("application/pdf", "pdf", new String[] { "application/x-pdf" }, new String[0],
 				false, false, null, null, true, true, true, false, true, true,
 				l10n("applicationPdfReadAdvice"),
 				l10n("applicationPdfWriteAdvice"),
 				false, null, null, false));
 		
 		// HTML - dangerous if not filtered
-		register(new MIMEType(HTML_MIME_TYPES[0], "html", Arrays.asList(HTML_MIME_TYPES).subList(1, HTML_MIME_TYPES.length).toArray(new String[HTML_MIME_TYPES.length-1]), new String[] { "htm" },
+		register(new FilterMIMEType(HTML_MIME_TYPES[0], "html", Arrays.asList(HTML_MIME_TYPES).subList(1, HTML_MIME_TYPES.length).toArray(new String[HTML_MIME_TYPES.length-1]), new String[] { "htm" },
 				false, false /* maybe? */, new HTMLFilter(), null /* FIXME */, 
 				true, true, true, true, true, true, 
 				l10n("textHtmlReadAdvice"),
@@ -123,7 +142,7 @@ public class ContentFilter {
 				true, "iso-8859-1", new HTMLFilter(), false));
 		
 		// CSS - danagerous if not filtered, not sure about the filter
-		register(new MIMEType("text/css", "css", new String[0], new String[0],
+		register(new FilterMIMEType("text/css", "css", new String[0], new String[0],
 				false, false /* unknown */, new CSSReadFilter(), null,
 				true, true, true, true, true, false,
 				l10n("textCssReadAdvice"),
@@ -136,18 +155,19 @@ public class ContentFilter {
 		return NodeL10n.getBase().getString("ContentFilter."+key);
 	}
 
-	public static void register(MIMEType mimeType) {
+	public static void register(FilterMIMEType mimeType) {
 		synchronized(mimeTypesByName) {
 			mimeTypesByName.put(mimeType.primaryMimeType, mimeType);
 			String[] alt = mimeType.alternateMimeTypes;
-			if((alt != null) && (alt.length > 0)) {
-				for(int i=0;i<alt.length;i++)
-					mimeTypesByName.put(alt[i], mimeType);
+			if(alt != null) {
+				for(String a: alt)
+					mimeTypesByName.put(a, mimeType);
 			}
 		}
 	}
 
 	public static String stripMIMEType(String mimeType) {
+		if(mimeType == null) return null;
 		int x; 
 		if((x=mimeType.indexOf(';')) != -1) {
 			mimeType = mimeType.substring(0, x).trim();
@@ -155,7 +175,8 @@ public class ContentFilter {
 		return mimeType;
 	}
 	
-	public static MIMEType getMIMEType(String mimeType) {
+	public static FilterMIMEType getMIMEType(String mimeType) {
+		if(mimeType == null) return null;
 		return mimeTypesByName.get(stripMIMEType(mimeType));
 	}
 
@@ -180,7 +201,31 @@ public class ContentFilter {
 	 *             If data is invalid (e.g. corrupted file) and the filter have no way to recover.
 	 */
 	public static FilterStatus filter(InputStream input, OutputStream output, String typeName, URI baseURI, FoundURICallback cb, TagReplacerCallback trc , String maybeCharset) throws UnsafeContentTypeException, IOException {
-		return filter(input, output, typeName, maybeCharset, new GenericReadFilterCallback(baseURI, cb,trc));
+		return filter(input, output, typeName, baseURI, cb, trc, maybeCharset, null);
+	}
+
+	/**
+	 * Filter some data.
+	 *
+	 * @param input
+	 *            Source stream to read data from
+	 * @param output
+	 *            Stream to write filtered data to
+	 * @param typeName
+	 *            MIME type for input data
+	 * @param maybeCharset
+	 * 			  MIME type of the referring document, as a hint, some types,
+	 * 			  such as CSS, will inherit it if no other data is available.
+	 * @return
+	 * @throws IOException
+	 *             If an internal error involving s occurred.
+	 * @throws UnsafeContentTypeException
+	 *             If the MIME type is declared unsafe (e.g. pdf files)
+	 * @throws IllegalStateException
+	 *             If data is invalid (e.g. corrupted file) and the filter have no way to recover.
+	 */
+	public static FilterStatus filter(InputStream input, OutputStream output, String typeName, URI baseURI, FoundURICallback cb, TagReplacerCallback trc , String maybeCharset, LinkFilterExceptionProvider linkFilterExceptionProvider) throws UnsafeContentTypeException, IOException {
+		return filter(input, output, typeName, maybeCharset, new GenericReadFilterCallback(baseURI, cb,trc, linkFilterExceptionProvider));
 	}
 
 	/**
@@ -203,7 +248,7 @@ public class ContentFilter {
 	 *             If data is invalid (e.g. corrupted file) and the filter have no way to recover.
 	 */
 	public static FilterStatus filter(InputStream input, OutputStream output, String typeName, String maybeCharset, FilterCallback filterCallback) throws UnsafeContentTypeException, IOException {
-		if(Logger.shouldLog(LogLevel.MINOR, ContentFilter.class)) Logger.minor(ContentFilter.class, "Filtering data of type"+typeName);
+		if(logMINOR) Logger.minor(ContentFilter.class, "Filtering data of type"+typeName);
 		String type = typeName;
 		String options = "";
 		String charset = null;
@@ -219,8 +264,7 @@ public class ContentFilter {
 			// Parse options
 			// Format: <type>/<subtype>[ optional white space ];[ optional white space ]<param>=<value>; <param2>=<value2>; ...
 			String[] rawOpts = options.split(";");
-			for(int i=0;i<rawOpts.length;i++) {
-				String raw = rawOpts[i];
+			for(String raw: rawOpts) {
 				idx = raw.indexOf('=');
 				if(idx == -1) {
 					Logger.error(ContentFilter.class, "idx = -1 for '=' on option: "+raw+" from "+typeName);
@@ -238,9 +282,9 @@ public class ContentFilter {
 			}
 		}
 		
-		// Now look for a MIMEType handler
+		// Now look for a FilterMIMEType handler
 		
-		MIMEType handler = getMIMEType(type);
+		FilterMIMEType handler = getMIMEType(type);
 		
 		if(handler == null)
 			throw new UnknownContentTypeException(typeName);
@@ -251,14 +295,15 @@ public class ContentFilter {
 					int bufferSize = handler.charsetExtractor.getCharsetBufferSize();
 					input.mark(bufferSize);
 					byte[] charsetBuffer = new byte[bufferSize];
-					int bytesRead, totalRead = 0;
+					int bytesRead = 0, offset = 0, toread=0;
 					while(true) {
-						bytesRead = input.read(charsetBuffer, totalRead, bufferSize-totalRead);
-						if(bytesRead == -1 || bytesRead == 0) break;
-						totalRead += bytesRead;
+                                                toread = bufferSize - offset;
+						bytesRead = input.read(charsetBuffer, offset, toread);
+						if(bytesRead == -1 || toread == 0) break;
+						offset += bytesRead;
 					}
 					input.reset();
-					charset = detectCharset(charsetBuffer, totalRead, handler, maybeCharset);
+					charset = detectCharset(charsetBuffer, offset, handler, maybeCharset);
 				}
 				try {
 					handler.readFilter.readFilter(input, output, charset, otherParams, filterCallback);
@@ -269,6 +314,9 @@ public class ContentFilter {
 				}
 				catch(IOException e) {
 					throw e;
+				} finally {
+					if(filterCallback != null)
+						filterCallback.onFinished();
 				}
 				if(charset != null) type = type + "; charset="+charset;
 				output.flush();
@@ -286,7 +334,7 @@ public class ContentFilter {
 		return null;
 	}
 
-	public static String detectCharset(byte[] input, int length, MIMEType handler, String maybeCharset) throws IOException {
+	public static String detectCharset(byte[] input, int length, FilterMIMEType handler, String maybeCharset) throws IOException {
 		// Detect charset
 		String charset = detectBOM(input, length);
 		if((charset == null) && (handler.charsetExtractor != null)) {
@@ -298,7 +346,7 @@ public class ContentFilter {
 					// so check with the full extractor.
 					try {
 						if((charset = handler.charsetExtractor.getCharset(input, length, charset)) != null) {
-							if(Logger.shouldLog(LogLevel.MINOR, ContentFilter.class))
+							if(logMINOR)
 								Logger.minor(ContentFilter.class, "Returning charset: "+charset);
 							return charset;
 						} else if(bom.mustHaveCharset)
@@ -316,7 +364,7 @@ public class ContentFilter {
 			if(handler.defaultCharset != null) {
 				try {
 					if((charset = handler.charsetExtractor.getCharset(input, length, handler.defaultCharset)) != null) {
-				        if(Logger.shouldLog(LogLevel.MINOR, ContentFilter.class))
+				        if(logMINOR)
 				        	Logger.minor(ContentFilter.class, "Returning charset: "+charset);
 						return charset;
 					}
@@ -347,7 +395,7 @@ public class ContentFilter {
 					return charset;
 			} catch (UnsupportedEncodingException e) {
 				// Doesn't seem to be supported by prior to 1.6.
-		        if(Logger.shouldLog(LogLevel.MINOR, ContentFilter.class))
+		        if(logMINOR)
 		        	Logger.minor(ContentFilter.class, "UTF-32 not supported");
 			} catch (DataFilterException e) {
 				// Ignore
@@ -441,5 +489,24 @@ public class ContentFilter {
 			this.charset = charset;
 			this.mimeType = mimeType;
 		}
+	}
+
+	/** Check whether we can safely handle a specific MIME type. Usually
+	 * called when we haven't downloaded the data yet so can't filter it,
+	 * so we can know whether there will be problems later.
+	 * @return An UnsafeContentTypeException if there is a problem. */
+	public static UnsafeContentTypeException checkMIMEType(String expectedMIME) {
+		FilterMIMEType handler = getMIMEType(expectedMIME);
+		if(handler == null || (handler.readFilter == null && !handler.safeToRead)) {
+			if(handler == null) {
+				if(logMINOR) Logger.minor(ContentFilter.class, "Unable to get filter handler for MIME type "+expectedMIME);
+				return new UnknownContentTypeException(expectedMIME);
+			}
+			else {
+				if(logMINOR) Logger.minor(ContentFilter.class, "Unable to filter unsafe MIME type "+expectedMIME);
+				return new KnownUnsafeContentTypeException(handler);
+			}
+		}
+		return null;
 	}
 }

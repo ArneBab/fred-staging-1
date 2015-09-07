@@ -3,6 +3,8 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.pluginmanager;
 
+import static java.util.concurrent.TimeUnit.MINUTES;
+
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileFilter;
@@ -15,15 +17,15 @@ import java.net.MalformedURLException;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.Vector;
+import java.util.concurrent.Semaphore;
 import java.util.jar.Attributes;
 import java.util.jar.JarException;
 import java.util.jar.JarFile;
@@ -32,35 +34,33 @@ import java.util.zip.ZipException;
 
 import org.tanukisoftware.wrapper.WrapperManager;
 
-import com.db4o.ObjectContainer;
-
 import freenet.client.HighLevelSimpleClient;
-import freenet.clients.http.QueueToadlet;
+import freenet.clients.fcp.ClientPut;
 import freenet.clients.http.PageMaker.THEME;
+import freenet.clients.http.QueueToadlet;
+import freenet.clients.http.Toadlet;
 import freenet.config.Config;
 import freenet.config.InvalidConfigValueException;
 import freenet.config.NodeNeedRestartException;
 import freenet.config.SubConfig;
 import freenet.crypt.SHA256;
 import freenet.keys.FreenetURI;
-import freenet.l10n.NodeL10n;
 import freenet.l10n.BaseL10n.LANGUAGE;
+import freenet.l10n.NodeL10n;
 import freenet.node.Node;
 import freenet.node.NodeClientCore;
 import freenet.node.RequestClient;
 import freenet.node.RequestStarter;
-import freenet.node.SecurityLevelListener;
-import freenet.node.Ticker;
-import freenet.node.SecurityLevels.NETWORK_THREAT_LEVEL;
-import freenet.node.fcp.ClientPut;
 import freenet.node.useralerts.AbstractUserAlert;
 import freenet.node.useralerts.UserAlert;
+import freenet.pluginmanager.OfficialPlugins.OfficialPluginDescription;
 import freenet.support.HTMLNode;
 import freenet.support.HexUtil;
 import freenet.support.JarClassLoader;
 import freenet.support.Logger;
-import freenet.support.SerialExecutor;
 import freenet.support.Logger.LogLevel;
+import freenet.support.SerialExecutor;
+import freenet.support.Ticker;
 import freenet.support.api.BooleanCallback;
 import freenet.support.api.HTTPRequest;
 import freenet.support.api.StringArrCallback;
@@ -82,8 +82,9 @@ public class PluginManager {
 	private final HashMap<String, FredPlugin> toadletList;
 
 	/* All currently starting plugins. */
+	private final OfficialPlugins officialPlugins = new OfficialPlugins();
 	private final Set<PluginProgress> startingPlugins = new HashSet<PluginProgress>();
-	private final Vector<PluginInfoWrapper> pluginWrappers;
+	private final ArrayList<PluginInfoWrapper> pluginWrappers;
 	private final HashMap<String, PluginLoadFailedUserAlert> pluginsFailedLoad;
 	final Node node;
 	private final NodeClientCore core;
@@ -108,7 +109,7 @@ public class PluginManager {
 		// config
 
 		toadletList = new HashMap<String, FredPlugin>();
-		pluginWrappers = new Vector<PluginInfoWrapper>();
+		pluginWrappers = new ArrayList<PluginInfoWrapper>();
 		pluginsFailedLoad = new HashMap<String, PluginLoadFailedUserAlert>();
 		this.node = node;
 		this.core = node.clientCore;
@@ -119,7 +120,7 @@ public class PluginManager {
 		if(logDEBUG)
 			Logger.debug(this, "Initialize Plugin Manager config");
 
-		client = core.makeClient(PRIO, true);
+		client = core.makeClient(PRIO, true, false);
 
 		// callback executor
 		executor = new SerialExecutor(NativeThread.NORM_PRIORITY);
@@ -178,10 +179,8 @@ public class PluginManager {
 		toStart = pmconfig.getStringArr("loadplugin");
 
 		if(lastVersion < 1237 && contains(toStart, "XMLLibrarian") && !contains(toStart, "Library")) {
-			String[] newToStart = new String[toStart.length+1];
-			System.arraycopy(toStart, 0, newToStart, 0, toStart.length);
-			newToStart[toStart.length] = "Library";
-			toStart = newToStart;
+			toStart = Arrays.copyOf(toStart, toStart.length+1);
+			toStart[toStart.length-1] = "Library";
 			System.err.println("Loading Library plugin, replaces XMLLibrarian, when upgrading from pre-1237");
 		}
 
@@ -193,7 +192,10 @@ public class PluginManager {
 			System.err.println("KeyExplorer plugin renamed to KeyUtils");
 		}
 
-		pmconfig.register("alwaysLoadOfficialPluginsFromCentralServer", false, 0, false, false, "PluginManager.alwaysLoadPluginsFromHTTPS", "PluginManager.alwaysLoadPluginsFromCentralServerLong", new BooleanCallback() {
+		// This should default to false. Even though we use SSL, a wiretapper may be able to tell which
+		// plugin is being loaded, and correlate that with identity creation; plus of course they can see
+		// that somebody is using Freenet.
+		pmconfig.register("alwaysLoadOfficialPluginsFromCentralServer", false, 0, false, false, "PluginManager.alwaysLoadPluginsFromCentralServer", "PluginManager.alwaysLoadPluginsFromCentralServerLong", new BooleanCallback() {
 
 			@Override
 			public Boolean get() {
@@ -208,18 +210,10 @@ public class PluginManager {
 		});
 
 		alwaysLoadOfficialPluginsFromCentralServer = pmconfig.getBoolean("alwaysLoadOfficialPluginsFromCentralServer");
-
-		node.securityLevels.addNetworkThreatLevelListener(new SecurityLevelListener<NETWORK_THREAT_LEVEL>() {
-
-			public void onChange(NETWORK_THREAT_LEVEL oldLevel, NETWORK_THREAT_LEVEL newLevel) {
-				if(newLevel == oldLevel) return;
-				if(newLevel == NETWORK_THREAT_LEVEL.LOW)
-					alwaysLoadOfficialPluginsFromCentralServer = true;
-				else if(oldLevel == NETWORK_THREAT_LEVEL.LOW)
-					alwaysLoadOfficialPluginsFromCentralServer = false;
-			}
-
-		});
+		if(node.lastVersion <= 1437)
+			// Overwrite this setting, since it will have been set by the old callback and then written as it's not default.
+			// FIXME remove back compatibility code.
+			alwaysLoadOfficialPluginsFromCentralServer = false;
 
 		pmconfig.finishedInitialization();
 
@@ -238,28 +232,49 @@ public class PluginManager {
 	private String[] toStart;
 
 	public void start(Config config) {
-		if(toStart != null)
-			for(String name : toStart)
-				startPluginAuto(name, false);
+		if (toStart == null) {
+			synchronized (pluginWrappers) {
+				started = true;
+				return;
+			}
+		}
+
+		final Semaphore startingPlugins = new Semaphore(0);
+			for(final String name : toStart) {
+			    core.getExecutor().execute(new Runnable() {
+
+                    @Override
+                    public void run() {
+                        startPluginAuto(name, false);
+                        startingPlugins.release();
+                    }
+			        
+			    });
+			}
+
+		core.getExecutor().execute(new Runnable() {
+			@Override
+			public void run() {
+				startingPlugins.acquireUninterruptibly(toStart.length);
 		synchronized(pluginWrappers) {
 			started = true;
 			toStart = null;
 		}
+			}
+		});
 	}
-	
-	public void stop(int maxWaitTime) {
+
+	public void stop(long maxWaitTime) {
 		// Stop loading plugins.
 		ArrayList<PluginProgress> matches = new ArrayList<PluginProgress>();
 		synchronized(this) {
 			stopping = true;
 			for(Iterator<PluginProgress> i = startingPlugins.iterator();i.hasNext();) {
 				PluginProgress progress = i.next();
-				if(matches == null) matches = new ArrayList<PluginProgress>();
 				matches.add(progress);
 				i.remove();
 			}
 		}
-		if(matches == null) return;
 		for(PluginProgress progress : matches) {
 			progress.kill();
 		}
@@ -308,16 +323,14 @@ public class PluginManager {
 	}
 
 	private String[] getConfigLoadString() {
-		Vector<String> v = new Vector<String>();
+		ArrayList<String> v = new ArrayList<String>();
 
 		synchronized(pluginWrappers) {
 			if(!started) return toStart;
 			for(PluginInfoWrapper pi : pluginWrappers) {
 				v.add(pi.getFilename());
 			}
-			for(String s : pluginsFailedLoad.keySet()) {
-				v.add(s);
-			}
+			v.addAll(pluginsFailedLoad.keySet());
 		}
 
 		return v.toArray(new String[v.size()]);
@@ -364,25 +377,25 @@ public class PluginManager {
 
 	public PluginInfoWrapper startPluginOfficial(final String pluginname, boolean store, OfficialPluginDescription desc, boolean force, boolean forceHTTPS) {
 		if((alwaysLoadOfficialPluginsFromCentralServer && !force)|| force && forceHTTPS) {
-			return realStartPlugin(new PluginDownLoaderOfficialHTTPS(), pluginname, store);
+			return realStartPlugin(new PluginDownLoaderOfficialHTTPS(), pluginname, store, false);
 		} else {
-			return realStartPlugin(new PluginDownLoaderOfficialFreenet(client, node, false), pluginname, store);
+			return realStartPlugin(new PluginDownLoaderOfficialFreenet(client, node, false), pluginname, store, false);
 		}
 	}
 
 	public PluginInfoWrapper startPluginFile(final String filename, boolean store) {
-		return realStartPlugin(new PluginDownLoaderFile(), filename, store);
+		return realStartPlugin(new PluginDownLoaderFile(), filename, store, false);
 	}
 
 	public PluginInfoWrapper startPluginURL(final String filename, boolean store) {
-		return realStartPlugin(new PluginDownLoaderURL(), filename, store);
+		return realStartPlugin(new PluginDownLoaderURL(), filename, store, false);
 	}
 
 	public PluginInfoWrapper startPluginFreenet(final String filename, boolean store) {
-		return realStartPlugin(new PluginDownLoaderFreenet(client, node, false), filename, store);
+		return realStartPlugin(new PluginDownLoaderFreenet(client, node, false), filename, store, false);
 	}
 
-	private PluginInfoWrapper realStartPlugin(final PluginDownLoader<?> pdl, final String filename, final boolean store) {
+	private PluginInfoWrapper realStartPlugin(final PluginDownLoader<?> pdl, final String filename, final boolean store, boolean ignoreOld) {
 		if(filename.trim().length() == 0)
 			return null;
 		final PluginProgress pluginProgress = new PluginProgress(filename, pdl);
@@ -393,11 +406,12 @@ public class PluginManager {
 		FredPlugin plug;
 		PluginInfoWrapper pi = null;
 		try {
-			plug = loadPlugin(pdl, filename, pluginProgress);
+			plug = loadPlugin(pdl, filename, pluginProgress, ignoreOld);
 			if (plug == null)
 				return null; // Already loaded
 			pluginProgress.setProgress(PluginProgress.PROGRESS_STATE.STARTING);
-			pi = PluginHandler.startPlugin(PluginManager.this, filename, plug, new PluginRespirator(node, PluginManager.this, plug));
+			pi = new PluginInfoWrapper(node, plug, filename, pdl.isOfficialPluginLoader());
+			PluginHandler.startPlugin(PluginManager.this, pi);
 			synchronized (pluginWrappers) {
 				pluginWrappers.add(pi);
 				pluginsFailedLoad.remove(filename);
@@ -405,7 +419,6 @@ public class PluginManager {
 			Logger.normal(this, "Plugin loaded: " + filename);
 		} catch (PluginNotFoundException e) {
 			Logger.normal(this, "Loading plugin failed (" + filename + ')', e);
-			String message = e.getMessage();
 			boolean stillTrying = false;
 			if(pdl instanceof PluginDownLoaderOfficialFreenet) {
 				PluginDownLoaderOfficialFreenet downloader = (PluginDownLoaderOfficialFreenet) pdl;
@@ -416,8 +429,9 @@ public class PluginManager {
 					stillTrying = true;
 					node.getTicker().queueTimedJob(new Runnable() {
 
+						@Override
 						public void run() {
-							realStartPlugin(retry, filename, store);
+							realStartPlugin(retry, filename, store, true);
 						}
 
 					}, 0);
@@ -431,8 +445,9 @@ public class PluginManager {
 					stillTrying = true;
 					node.getTicker().queueTimedJob(new Runnable() {
 
+						@Override
 						public void run() {
-							realStartPlugin(retry, filename, store);
+							realStartPlugin(retry, filename, store, true);
 						}
 
 					}, 0);
@@ -522,22 +537,30 @@ public class PluginManager {
 			this.filename = filename;
 			this.official = official;
 			this.stillTryingOverFreenet = stillTryingOverFreenet;
-			String msg = e.getMessage();
+			String msg;
+			if(e instanceof PluginNotFoundException)
+				msg = e.getMessage();
+			else
+				// If it's something wierd, we need to know what it is.
+				msg = e.getClass() + ": " + e.getMessage();
 			if(msg == null) msg = e.toString();
 			this.message = msg;
 			this.officialFromFreenet = officialFromFreenet;
 		}
 
+		@Override
 		public String dismissButtonText() {
 			return l10n("deleteFailedPluginButton");
 		}
 
+		@Override
 		public void onDismiss() {
 			synchronized(pluginWrappers) {
 				pluginsFailedLoad.remove(filename);
 			}
 			node.executor.execute(new Runnable() {
 
+				@Override
 				public void run() {
 					cancelRunningLoads(filename, null);
 				}
@@ -545,10 +568,12 @@ public class PluginManager {
 			});
 		}
 
+		@Override
 		public String anchor() {
 			return "pluginfailed:"+filename;
 		}
 
+		@Override
 		public HTMLNode getHTMLText() {
 			HTMLNode div = new HTMLNode("div");
 			HTMLNode p = div.addChild("p");
@@ -582,30 +607,32 @@ public class PluginManager {
 			return div;
 		}
 
+		@Override
 		public short getPriorityClass() {
 			return UserAlert.ERROR;
 		}
 
+		@Override
 		public String getShortText() {
 			return l10n("pluginLoadingFailedShort", "name", filename);
 		}
 
+		@Override
 		public String getText() {
 			return l10n("pluginLoadingFailedWithMessage", new String[] { "name", "message" }, new String[] { filename, message });
 		}
 
+		@Override
 		public String getTitle() {
 			return l10n("pluginLoadingFailedTitle");
 		}
 
-		public Object getUserIdentifier() {
-			return PluginManager.class;
-		}
-
+		@Override
 		public boolean isEventNotification() {
 			return false;
 		}
 
+		@Override
 		public boolean isValid() {
 			boolean success;
 			synchronized(pluginWrappers) {
@@ -617,13 +644,16 @@ public class PluginManager {
 			return success;
 		}
 
+		@Override
 		public void isValid(boolean validity) {
 		}
 
+		@Override
 		public boolean shouldUnregisterOnDismiss() {
 			return true;
 		}
 
+		@Override
 		public boolean userCanDismiss() {
 			return true;
 		}
@@ -631,11 +661,34 @@ public class PluginManager {
 
 	}
 
-	void register(FredPlugin plug, PluginInfoWrapper pi) {
-		// handles FProxy? If so, register
+	void register(PluginInfoWrapper pi) {
+		FredPlugin plug = pi.getPlugin();
 
+		// handles FProxy? If so, register
 		if(pi.isPproxyPlugin())
 			registerToadlet(plug);
+
+		if(pi.isConfigurablePlugin()) {
+			// Registering the toadlet with atFront=false means that
+			// the node's ConfigToadlet will clobber the plugin's
+			// ConfigToadlet and the page will not be visible. So it
+			// must be registered with atFront=true. This means that
+			// malicious plugins could try to hijack node config
+			// pages, to ill effect. Let's avoid that.
+			boolean pluginIsTryingToHijackNodeConfig = false;
+			for(SubConfig subconfig : node.config.getConfigs()) {
+				if(pi.getPluginClassName().equals(subconfig.getPrefix())) {
+					pluginIsTryingToHijackNodeConfig = true;
+					break;
+				}
+			}
+			if(pluginIsTryingToHijackNodeConfig) {
+				Logger.warning(this, "The plugin loaded from "+pi.getFilename()+" is attempting to hijack a node configuration page; refusing to register its ConfigToadlet");
+			} else {
+				Toadlet toadlet = pi.getConfigToadlet();
+				core.getToadletContainer().register(toadlet, "FProxyToadlet.categoryConfig", toadlet.path(), true, "ConfigToadlet."+pi.getPluginClassName()+".label", "ConfigToadlet."+pi.getPluginClassName()+".tooltip", true, null, (FredPluginL10n)pi.getPlugin());
+			}
+		}
 
 		if(pi.isIPDetectorPlugin())
 			node.ipDetector.registerIPDetectorPlugin((FredPluginIPDetector) plug);
@@ -672,11 +725,11 @@ public class PluginManager {
 	 *            The key to fetch
 	 * @return The translation
 	 */
-	private String l10n(String key) {
+	static String l10n(String key) {
 		return NodeL10n.getBase().getString("PluginManager." + key);
 	}
 
-	private String l10n(String key, String pattern, String value) {
+	private static String l10n(String key, String pattern, String value) {
 		return NodeL10n.getBase().getString("PluginManager." + key, pattern, value);
 	}
 
@@ -734,17 +787,21 @@ public class PluginManager {
 		if(lastSlash == -1)
 			/* Windows, maybe? */
 			lastSlash = pluginSpecification.lastIndexOf('\\');
-		File pluginDirectory = new File(node.getNodeDir(), "plugins");
-		if(lastSlash == -1)
-			/* it's an official plugin! */
-			pluginFilename = pluginSpecification + ".jar";
-		else
+		File pluginDirectory = node.getPluginDir();
+		if(lastSlash == -1) {
+			/* it's an official plugin or filename without path */
+			if (pluginSpecification.toLowerCase().endsWith(".jar"))
+				pluginFilename = pluginSpecification;
+			else
+				pluginFilename = pluginSpecification + ".jar";
+		} else
 			pluginFilename = pluginSpecification.substring(lastSlash + 1);
 		if(logDEBUG)
-			Logger.minor(this, "Delete plugin - plugname: " + pluginSpecification + "filename: " + pluginFilename, new Exception("debug"));
+			Logger.minor(this, "Delete plugin - plugname: " + pluginSpecification + " filename: " + pluginFilename, new Exception("debug"));
 		File[] cachedFiles = getPreviousInstances(pluginDirectory, pluginFilename);
 		for (File cachedFile : cachedFiles) {
-			cachedFile.delete();
+			if (!cachedFile.delete())
+				if(logMINOR) Logger.minor(this, "Can't delete file " + cachedFile);
 		}
 	}
 
@@ -767,9 +824,9 @@ public class PluginManager {
 				if(targets == null)
 					return;
 
-				for(int i = 0; i < targets.length; i++) {
-					toadletList.remove(targets[i]);
-					Logger.normal(this, "Removed HTTP symlink: " + targets[i] +
+				for(String target: targets) {
+					toadletList.remove(target);
+					Logger.normal(this, "Removed HTTP symlink: " + target +
 						" => /plugins/" + pi.getPluginClassName() + '/');
 				}
 			} catch(Throwable ex) {
@@ -786,11 +843,11 @@ public class PluginManager {
 				if(targets == null)
 					return;
 
-				for(int i = 0; i < targets.length; i++) {
-					rm = targets[i];
-					toadletList.remove(targets[i]);
-					pi.removePluginToadletSymlink(targets[i]);
-					Logger.normal(this, "Removed HTTP symlink: " + targets[i] +
+				for(String target: targets) {
+					rm = target;
+					toadletList.remove(target);
+					pi.removePluginToadletSymlink(target);
+					Logger.normal(this, "Removed HTTP symlink: " + target +
 						" => /plugins/" + pi.getPluginClassName() + '/');
 				}
 			} catch(Throwable ex) {
@@ -823,10 +880,18 @@ public class PluginManager {
 	}
 
 	/**
-	 * look for PluginInfo for a Plugin with given classname
-	 * @param plugname
+     * Look for PluginInfo for a Plugin with given classname or filename.
+     * 
 	 * @return the PluginInfo or null if not found
+     * @deprecated
+     *     This function was deprecated because the "or filename" part of the function specification
+     *     was NOT documented before it was deprecated. Thus it is possible that legacy callers of
+     *     the function did wrongly expect or not expect that. When removing this function, please
+     *     review the callers for correctness with regards to that.<br>
+     *     You might replace usage of this function with
+     *     {@link #getPluginInfoByClassName(String)} or {@link #getPluginInfoByFileName(String)}.
 	 */
+    @Deprecated
 	public PluginInfoWrapper getPluginInfo(String plugname) {
 		synchronized(pluginWrappers) {
 			for(int i = 0; i < pluginWrappers.size(); i++) {
@@ -838,21 +903,88 @@ public class PluginManager {
 		return null;
 	}
 
+    /**
+     * @param pluginClassName
+     *     The name of the main class of the plugin - that is the class which implements
+     *     {@link FredPlugin}.
+     * @return
+     *     The {@link PluginInfoWrapper} for the plugin with the given class name, or null if no
+     *     matching plugin was found.
+     */
+    public PluginInfoWrapper getPluginInfoByClassName(String pluginClassName) {
+        synchronized(pluginWrappers) {
+            for(PluginInfoWrapper piw : pluginWrappers) {
+                if(piw.getPluginClassName().equals(pluginClassName)) {
+                    return piw;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @param pluginFileName
+     *     The filename of the JAR from which the plugin was loaded.
+     * @return
+     *     The {@link PluginInfoWrapper} for the plugin with the given file name, or null if no
+     *     matching plugin was found.
+     */
+    public PluginInfoWrapper getPluginInfoByFileName(String pluginFileName) {
+        synchronized(pluginWrappers) {
+            for(PluginInfoWrapper piw : pluginWrappers) {
+                if(piw.getFilename().equals(pluginFileName)) {
+                    return piw;
+                }
+            }
+        }
+        return null;
+    }
+
 	/**
 	 * look for a FCPPlugin with given classname
 	 * @param plugname
 	 * @return the plugin or null if not found
+     * @deprecated
+     *     The {@link FredPluginFCP} API, which this returns, was deprecated to be replaced by
+     *     {@link FredPluginFCPMessageHandler.ServerSideFCPMessageHandler}. Plugin authors should
+     *     implement the new interface instead of the old, and this codepath to support plugins
+     *     which implement the old interface should be removed one day. No new code will be needed
+     *     then: The code to use the  new interface already exists in its own codepath - the
+     *     equivalent function for the new API is {link #getPluginFCPServer(String)}, and it is
+     *     already being used automatically for plugins which implement it.
 	 */
+    @Deprecated
 	public FredPluginFCP getFCPPlugin(String plugname) {
 		synchronized(pluginWrappers) {
 			for(int i = 0; i < pluginWrappers.size(); i++) {
 				PluginInfoWrapper pi = pluginWrappers.get(i);
-				if(pi.isFCPPlugin() && pi.getPluginClassName().equals(plugname))
+				if(pi.isFCPPlugin() && pi.getPluginClassName().equals(plugname) && !pi.isStopping())
 					return (FredPluginFCP) pi.plug;
 			}
 		}
 		return null;
 	}
+
+    /**
+     * Get the {@link FredPluginFCPMessageHandler.ServerSideFCPMessageHandler} of the plugin with
+     * the given class name.
+     * 
+     * @param pluginClassName
+     *     See {@link #getPluginInfoByClassName(String)}.
+     * @throws PluginNotFoundException
+     *     If the specified plugin is not loaded or does not provide an FCP server.
+     */
+    public FredPluginFCPMessageHandler.ServerSideFCPMessageHandler
+            getPluginFCPServer(String pluginClassName)
+                throws PluginNotFoundException{
+        
+        PluginInfoWrapper piw = getPluginInfoByClassName(pluginClassName);
+        if(piw != null && piw.isFCPServerPlugin()) {
+            return piw.getFCPServerPlugin();
+        } else {
+            throw new PluginNotFoundException(pluginClassName);
+        }
+    }
 
 	/**
 	 * look for a Plugin with given classname
@@ -928,7 +1060,7 @@ public class PluginManager {
 		throw new NotFoundPluginHTTPException("Plugin '"+plugin+"' not found!", "/plugins");
 	}
 
-	public void killPlugin(String name, int maxWaitTime, boolean reloading) {
+	public void killPlugin(String name, long maxWaitTime, boolean reloading) {
 		PluginInfoWrapper pi = null;
 		boolean found = false;
 		synchronized(pluginWrappers) {
@@ -944,7 +1076,7 @@ public class PluginManager {
 			pi.stopPlugin(this, maxWaitTime, reloading);
 	}
 
-	public void killPluginByFilename(String name, int maxWaitTime, boolean reloading) {
+	public void killPluginByFilename(String name, long maxWaitTime, boolean reloading) {
 		PluginInfoWrapper pi = null;
 		boolean found = false;
 		synchronized(pluginWrappers) {
@@ -960,7 +1092,7 @@ public class PluginManager {
 			pi.stopPlugin(this, maxWaitTime, reloading);
 	}
 
-	public void killPluginByClass(String name, int maxWaitTime) {
+	public void killPluginByClass(String name, long maxWaitTime) {
 		PluginInfoWrapper pi = null;
 		boolean found = false;
 		synchronized(pluginWrappers) {
@@ -976,7 +1108,7 @@ public class PluginManager {
 			pi.stopPlugin(this, maxWaitTime, false);
 	}
 
-	public void killPlugin(FredPlugin plugin, int maxWaitTime) {
+	public void killPlugin(FredPlugin plugin, long maxWaitTime) {
 		PluginInfoWrapper pi = null;
 		boolean found = false;
 		synchronized(pluginWrappers) {
@@ -990,68 +1122,12 @@ public class PluginManager {
 			pi.stopPlugin(this, maxWaitTime, false);
 	}
 
-	public static class OfficialPluginDescription {
-		/** The name of the plugin */
-		public final String name;
-		/** If true, we will download it, blocking, over HTTP, during startup (unless
-		 * explicitly forbidden to use HTTP). If not, we will download it on a
-		 * separate thread after startup. Both are assuming we don't have it in a file. */
-		public final boolean essential;
-		/** Minimum getRealVersion(). If the plugin is older than this, we will fail
-		 * the load. */
-		public final long minimumVersion;
-		/** Does it use XML? If so, if the JVM is vulnerable, then don't load it */
-		public final boolean usesXML;
-		/** FreenetURI to get the latest version from */
-		public final FreenetURI uri;
-
-		OfficialPluginDescription(String name, boolean essential, long minVer, boolean usesXML, FreenetURI uri) {
-			this.name = name;
-			this.essential = essential;
-			this.minimumVersion = minVer;
-			this.usesXML = usesXML;
-			this.uri = uri;
-		}
+	public OfficialPluginDescription getOfficialPlugin(String name) {
+		return officialPlugins.get(name);
 	}
 
-	public static Map<String, OfficialPluginDescription> officialPlugins = new HashMap<String, OfficialPluginDescription>();
-
-	static {
-		try {
-		addOfficialPlugin("Freemail", false, 12, true, new FreenetURI("CHK@OwIWNuh0FvE4SO4HYV9TQ1GtwOrfuZZoJv4-WXp4X2Q,0jcAIHtFJOin6vke-KxUhps5jTxYeu1XvmuCZKxlQY4,AAIC--8/Freemail.jar"));
-		addOfficialPlugin("HelloWorld", false, new FreenetURI("CHK@ZdTXnWV-ikkt25-y8jmhlHjCY-nikDMQwcYlWHww5eg,Usq3uRHpHuIRmMRRlNQE7BNveO1NwNI7oNKdb7cowFM,AAIC--8/HelloWorld.jar"));
-		addOfficialPlugin("HelloFCP", false, new FreenetURI("CHK@0gtXJpw1QUJCmFOhoPRNqhsNbMtVw1CGVe46FUv7-e0,X8QqhtPkHoaFCUd89bgNaKxX1AV0WNBVf3sRgSF51-g,AAIC--8/HelloFCP.jar"));
-		addOfficialPlugin("JSTUN", true, 2, false, new FreenetURI("CHK@STQEzqyYLPtd4mCMIXO2HV38J6jG492hyPcEjTdc1oI,ojl4TCcJpJbo1OcO8nwPjycNCt1mn6zJq3lxCNExIHI,AAIC--8/JSTUN.jar"));
-		addOfficialPlugin("KeyUtils", false, 5003, false, new FreenetURI("CHK@dF9Lg7Q7Bbt4uZ4OANVaSlgrUmHmV0Pj03Y1SCaN1Fw,H5Wj5VCgI4JSusMGonUiPlAwSVAahN0Bzw2v1C6QvcA,AAIC--8/KeyUtils.jar"));
-		addOfficialPlugin("MDNSDiscovery", false, 2, false, new FreenetURI("CHK@wPyhY61bsDM3OW6arFlxYX8~mBKjo~XtOTIAbT0dk88,Vr3MTAzkW5J28SJs2dTxkj6D4GVNm3u8GFsxJgzTL1M,AAIC--8/MDNSDiscovery.jar"));
-		addOfficialPlugin("SNMP", false, new FreenetURI("CHK@EykJIv83UE291zONVzfXqyJYX5t66uCQJHkzQrB61MI,-npuolPZj1fcAWane2~qzRNEjKDERx52aQ5bC6NBQgw,AAIC--8/SNMP.jar"));
-		addOfficialPlugin("TestGallery", false, 1, false, new FreenetURI("CHK@LfJVh1EkCr4ry0yDW74vwxkX-3nkr~ztW2z0SUZHfC0,-mz7l39dC6n0RTUiSokjC~pUDO7PWZ89miYesKH0-WA,AAIC--8/TestGallery.jar"));
-		addOfficialPlugin("ThawIndexBrowser", false, 4, true, new FreenetURI("CHK@424rWuNPGY8FjiF4MMDPCwle4MboQg6GOmFReUhbJqU,79Zd2brL9PwZd7z2OL2DXW4xTNvm81EEYVYGmbLG5Jg,AAIC--8/ThawIndexBrowser.jar"));
-		addOfficialPlugin("UPnP", true, 10003, false, new FreenetURI("CHK@chunCVhavqu60gWdf1jlAzKyVhEx7Hy99BaDpoU~xlc,iI-VcHxkg66W8-61P-bHzJYTx9PYrI2GuGIjC4Lg8mI,AAIC--8/UPnP.jar"));
-		addOfficialPlugin("XMLLibrarian", false, 25, true, new FreenetURI("CHK@PzdgNIKIzYKet2x6rk2i9TMA8R3RTKf7~H7NBB-D1m4,8rfAK29Z8LkAcmwfVgF0RBGtTxaZZBmc7qcX5AoQUEo,AAIC--8/XMLLibrarian.jar"));
-		addOfficialPlugin("XMLSpider", false, 46, true, new FreenetURI("CHK@2FZYDhLSbhGQXeVfJNptV1~V3dNmS4zI59PpNaBlRqo,bvvqS-mMgeWHgLpEJzzYc18xY2urQSGYPmq4nmmJV6k,AAIC--8/XMLSpider.jar"));
-		addOfficialPlugin("Freereader", false, 4, true, new FreenetURI("CHK@4PuSjXk4Z0Hdu04JLhdPHLyOVLljj8qVbjRn3rHVzvg,bDGYnuYj67Q4uzroPBEWAYWRk26bPzf-iQ4~Uo3S7mg,AAIC--8/Freereader.jar"));
-		addOfficialPlugin("Library", false, 16, true, new FreenetURI("CHK@IrvhOEI4iFmVzGihshG2LxLdt6AX0Npz~fp9we0S5GA,lc8vD3w350kDwdSDKttKnGlxnKEGiy3U3lGiXDZrLls,AAIC--8/Library.jar"));
-		addOfficialPlugin("Spider", false, 47, false, new FreenetURI("CHK@avlS677YAH4q40rxTX9RiL87tNCer-KFkEH4ihf5Too,Rf8YkLYfNuZ4EshXgDjkMwE9dQJ8JuFHfhi6bu986mY,AAIC--8/Spider.jar"));
-		} catch (MalformedURLException e) {
-			throw new Error("Malformed hardcoded URL: "+e, e);
-		}
-	}
-
-	static void addOfficialPlugin(String name, boolean usesXML) {
-		officialPlugins.put(name, new OfficialPluginDescription(name, false, -1, usesXML, null));
-	}
-
-	static void addOfficialPlugin(String name, boolean usesXML, FreenetURI uri) {
-		officialPlugins.put(name, new OfficialPluginDescription(name, false, -1, usesXML, uri));
-	}
-
-	static void addOfficialPlugin(String name, boolean essential, long minVer, boolean usesXML) {
-		officialPlugins.put(name, new OfficialPluginDescription(name, essential, minVer, usesXML, null));
-	}
-
-	static void addOfficialPlugin(String name, boolean essential, long minVer, boolean usesXML, FreenetURI uri) {
-		officialPlugins.put(name, new OfficialPluginDescription(name, essential, minVer, usesXML, uri));
+	public Collection<OfficialPluginDescription> getOfficialPlugins() {
+		return officialPlugins.getAll();
 	}
 
 	/**
@@ -1063,7 +1139,7 @@ public class PluginManager {
 	 */
 	public List<OfficialPluginDescription> findAvailablePlugins() {
 		List<OfficialPluginDescription> availablePlugins = new ArrayList<OfficialPluginDescription>();
-		availablePlugins.addAll(officialPlugins.values());
+		availablePlugins.addAll(officialPlugins.getAll());
 		return availablePlugins;
 	}
 
@@ -1086,18 +1162,20 @@ public class PluginManager {
 	/** All plugin updates are on a single request client. */
 	public final RequestClient singleUpdaterRequestClient = new RequestClient() {
 
+		@Override
 		public boolean persistent() {
 			return false;
 		}
 
-		public void removeFrom(ObjectContainer container) {
-			// Do nothing.
+		@Override
+		public boolean realTimeFlag() {
+			return false;
 		}
 
 	};
 
 	public File getPluginFilename(String pluginName) {
-		File pluginDirectory = new File(node.getNodeDir(), "plugins");
+		File pluginDirectory = node.getPluginDir();
 		if((pluginDirectory.exists() && !pluginDirectory.isDirectory()) || (!pluginDirectory.exists() && !pluginDirectory.mkdirs()))
 			return null;
 		return new File(pluginDirectory, pluginName + ".jar");
@@ -1114,16 +1192,20 @@ public class PluginManager {
 	 *
 	 * @param name
 	 *            The specification of the plugin
+	 * @param ignoreOld If true, ignore any old cached copies of the plugin,
+	 * and download a new version anyway. This is especially important on Windows,
+	 * where we will not usually be able to delete the file after determining
+	 * that it is too old. 
 	 * @return An instanciated object of the plugin
 	 * @throws PluginNotFoundException
 	 *             If anything goes wrong.
 	 */
-	private FredPlugin loadPlugin(PluginDownLoader<?> pdl, String name, PluginProgress progress) throws PluginNotFoundException {
+	private FredPlugin loadPlugin(PluginDownLoader<?> pdl, String name, PluginProgress progress, boolean ignoreOld) throws PluginNotFoundException {
 
 		pdl.setSource(name);
 
 		/* check for plugin directory. */
-		File pluginDirectory = new File(node.getNodeDir(), "plugins");
+		File pluginDirectory = node.getPluginDir();
 		if((pluginDirectory.exists() && !pluginDirectory.isDirectory()) || (!pluginDirectory.exists() && !pluginDirectory.mkdirs())) {
 			Logger.error(this, "could not create plugin directory");
 			throw new PluginNotFoundException("could not create plugin directory");
@@ -1138,7 +1220,7 @@ public class PluginManager {
 		File[] filesInPluginDirectory = getPreviousInstances(pluginDirectory, filename);
 		boolean first = true;
 		for (File cachedFile : filesInPluginDirectory) {
-			if (first && !pluginIsLocal) {
+			if (first && !pluginIsLocal && !ignoreOld) {
 				first = false;
 				pluginFile = new File(pluginDirectory, cachedFile.getName());
 				continue;
@@ -1157,7 +1239,7 @@ public class PluginManager {
 				try {
 					downloaded = true;
 					System.err.println("Downloading plugin "+name);
-					WrapperManager.signalStarting(5*60*1000);
+					WrapperManager.signalStarting((int) MINUTES.toMillis(5));
 					File tempPluginFile = null;
 					OutputStream pluginOutputStream = null;
 					InputStream pluginInputStream = null;
@@ -1219,7 +1301,6 @@ public class PluginManager {
 
 		cancelRunningLoads(name, progress);
 
-		boolean remoteCodeExecVuln = node.xmlRemoteCodeExecVuln();
 		// we do quite a lot inside the lock, use a dedicated one
 		synchronized (pluginLoadSyncObject) {
 			/* now get the manifest file. */
@@ -1287,13 +1368,8 @@ public class PluginManager {
 						pdl instanceof PluginDownLoaderOfficialFreenet) {
 					System.err.println("Loading official plugin "+name);
 					// Check the version after loading it!
-					// Building it into the manifest would be better, in that it would
-					// avoid having to unload ... but building it into the manifest is
-					// problematic, specifically it involves either platform specific
-					// scripts that aren't distributed and devs won't use when they
-					// build locally, or executing java code, which would mean we have
-					// to protect the versioning info. Either way is bad. The latter is
-					// less bad if we don't auto-build.
+					// FIXME IMPORTANT Build the version into the manifest. This is actually pretty easy and just involves changing build.xml.
+					// We already do similar things elsewhere.
 
 					// Ugh, this is just as messy ... ideas???? Maybe we need to have OS
 					// detection and use grep/sed on unix and find on windows???
@@ -1313,18 +1389,12 @@ public class PluginManager {
 					if(ver < minVer) {
 						System.err.println("Failed to load plugin "+name+" : TOO OLD: need at least version "+minVer+" but is "+ver);
 						Logger.error(this, "Failed to load plugin "+name+" : TOO OLD: need at least version "+minVer+" but is "+ver);
-						try {
-							if(object instanceof FredPluginThreadless) {
-								((FredPlugin)object).runPlugin(new PluginRespirator(node, PluginManager.this, (FredPlugin)object));
-							}
-						} catch (Throwable t) {
-							Logger.error(this, "Failed to start plugin (to prevent NPEs) while terminating it because it is too old: "+t, t);
-						}
-						try {
-							((FredPlugin)object).terminate();
-						} catch (Throwable t) {
-							Logger.error(this, "Plugin failed to terminate: "+t, t);
-						}
+
+						// At this point, the constructor has run, so it's theoretically possible that the plugin has e.g. created some threads.
+						// However, it has not been able to use any of the node's services, because we haven't passed it the PluginRespirator.
+						// So there is no need to call runPlugin and terminate().
+						// And it doesn't matter all that much if the shutdown fails - we won't be able to delete the file on Windows anyway, we're relying on the ignoreOld logic.
+						// Plus, this will not cause a leak of more than one fd per plugin, even when it has started threads.
 						try {
 							jarClassLoader.close();
 						} catch (Throwable t) {
@@ -1332,12 +1402,7 @@ public class PluginManager {
 						}
 						pluginFile.delete();
 						if(!downloaded) continue;
-						throw new PluginTooOldException("plugin too old: need at least version "+minVer);
-					}
-
-					if(desc.usesXML && remoteCodeExecVuln) {
-						pluginFile.delete();
-						throw new PluginNotFoundException("plugin cannot be loaded because your JVM is dangerously old; plugin uses XML and your JVM has remote code execution vulnerabilities in its XML parser");
+						throw new PluginTooOldException("plugin too old: need at least version "+minVer+" but is "+ver);
 					}
 
 				}
@@ -1363,7 +1428,8 @@ public class PluginManager {
 				Logger.error(this, "could not find plugin class", cnfe1);
 				pluginFile.delete();
 				if(!downloaded) continue;
-				throw new PluginNotFoundException("could not find plugin class", cnfe1);
+				throw new PluginNotFoundException(
+					"could not find plugin class: \"" + cnfe1.getMessage() + "\"", cnfe1);
 			} catch(InstantiationException ie1) {
 				Logger.error(this, "could not instantiate plugin", ie1);
 				pluginFile.delete();
@@ -1402,12 +1468,14 @@ public class PluginManager {
 	private File[] getPreviousInstances(File pluginDirectory, final String filename) {
 		File[] cachedFiles = pluginDirectory.listFiles(new FileFilter() {
 
+			@Override
 			public boolean accept(File pathname) {
 				return pathname.isFile() && pathname.getName().startsWith(filename);
 			}
 		});
 		Arrays.sort(cachedFiles, new Comparator<File>() {
 
+			@Override
 			public int compare(File file1, File file2) {
 				return (int) Math.min(Integer.MAX_VALUE, Math.max(Integer.MIN_VALUE, extractTimestamp(file2.getName()) - extractTimestamp(file1.getName())));
 			}
@@ -1418,7 +1486,7 @@ public class PluginManager {
 					return 0;
 				}
 				try {
-					return Long.valueOf(filename.substring(lastIndexOfDash + 5));
+					return Long.parseLong(filename.substring(lastIndexOfDash + 5));
 				} catch (NumberFormatException nfe1) {
 					return 0;
 				}
@@ -1602,6 +1670,21 @@ public class PluginManager {
 		public void setDownloading() {
 			this.pluginProgress = PROGRESS_STATE.DOWNLOADING;
 		}
+		
+		public boolean isOfficialPlugin() {
+			return loader.isOfficialPluginLoader();
+		}
+
+		public String getLocalisedPluginName() {
+			String pluginName = getName();
+			if(isOfficialPlugin()) {
+				return getOfficialPluginLocalisedName(pluginName);
+			} else return pluginName;
+		}
+	}
+	
+	static String getOfficialPluginLocalisedName(String pluginName) {
+		return l10n("pluginName."+pluginName);
 	}
 
 	public void setFProxyTheme(final THEME cssName) {
@@ -1613,6 +1696,7 @@ public class PluginManager {
 				if(pi.isThemedPlugin()) {
 					final FredPluginThemed plug = (FredPluginThemed)(pi.plug);
 					executor.execute(new Runnable() {
+						@Override
 						public void run() {
 							try {
 								plug.setTheme(cssName);
@@ -1636,6 +1720,7 @@ public class PluginManager {
 				if(pi.isL10nPlugin()) {
 					final FredPluginL10n plug = (FredPluginL10n)(pi.plug);
 					executor.execute(new Runnable() {
+						@Override
 						public void run() {
 							try {
 								plug.setLanguage(lang);
@@ -1646,6 +1731,7 @@ public class PluginManager {
 				} else if(pi.isBaseL10nPlugin()) {
 					final FredPluginBaseL10n plug = (FredPluginBaseL10n)(pi.plug);
 					executor.execute(new Runnable() {
+						@Override
 						public void run() {
 							try {
 								plug.setLanguage(lang);
@@ -1668,6 +1754,9 @@ public class PluginManager {
 
 	public void unregisterPlugin(PluginInfoWrapper wrapper, FredPlugin plug, boolean reloading) {
 		unregisterPluginToadlet(wrapper);
+		if(wrapper.isConfigurablePlugin()) {
+			core.getToadletContainer().unregister(wrapper.getConfigToadlet());
+		}
 		if(wrapper.isIPDetectorPlugin())
 			node.ipDetector.unregisterIPDetectorPlugin((FredPluginIPDetector)plug);
 		if(wrapper.isPortForwardPlugin())
@@ -1677,4 +1766,5 @@ public class PluginManager {
 		if(!reloading)
 			node.nodeUpdater.stopPluginUpdater(wrapper.getFilename());
 	}
+
 }

@@ -3,8 +3,12 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.node;
 
+import static java.util.concurrent.TimeUnit.MINUTES;
+
 import java.io.File;
 import java.io.IOException;
+import java.security.SecureRandom;
+import java.util.UUID;
 
 import org.tanukisoftware.wrapper.WrapperListener;
 import org.tanukisoftware.wrapper.WrapperManager;
@@ -14,45 +18,63 @@ import freenet.config.InvalidConfigValueException;
 import freenet.config.PersistentConfig;
 import freenet.config.SubConfig;
 import freenet.crypt.DiffieHellman;
+import freenet.crypt.JceLoader;
 import freenet.crypt.RandomSource;
 import freenet.crypt.SSL;
 import freenet.crypt.Yarrow;
 import freenet.support.Executor;
 import freenet.support.Logger;
-import freenet.support.PooledExecutor;
-import freenet.support.SimpleFieldSet;
 import freenet.support.Logger.LogLevel;
 import freenet.support.LoggerHook.InvalidThresholdException;
+import freenet.support.PooledExecutor;
+import freenet.support.SimpleFieldSet;
 import freenet.support.io.NativeThread;
 
 /**
  *  @author nextgens
  *
- *  A class to tie the wrapper and the node (needed for self-restarting support)
+ *  A class to tie the wrapper and the node (needed for self-restarting support).
+ *  
+ *  There will only ever be one instance of NodeStarter.
  */
 public class NodeStarter implements WrapperListener {
 
 	private Node node;
 	private static LoggingConfigHandler logConfigHandler;
-	/** Freenet will not function at all without at least this build of freenet-ext.jar. 
-	 * This will be included in the jar manifest file so we can check it when we download new builds. */
-	public final static int REQUIRED_EXT_BUILD_NUMBER = 24;
-	/** Freenet will function best with this build of freenet-ext.jar. 
-	 * It may be required in the near future. The node will try to download it. 
-	 * The node will not update to a later ext version than this, because that might be incompatible. */
-	public final static int RECOMMENDED_EXT_BUILD_NUMBER = 26;
 	/*
 	(File.separatorChar == '\\') &&
 	(System.getProperty("os.arch").toLowerCase().matches("(i?[x0-9]86_64|amd64)")) ? 6 : 2;
 	 */
-	public static int extBuildNumber;
-	public static String extRevisionNumber;
+	public static final int extBuildNumber;
+	public static final String extRevisionNumber;
+
+	static {
+		extBuildNumber = ExtVersion.extBuildNumber();
+		extRevisionNumber = ExtVersion.extRevisionNumber();
+	}
+
 	private FreenetFilePersistentConfig cfg;
 
+	// experimental osgi support
+	private static NodeStarter nodestarter_osgi = null;
+
+	private static boolean isTestingVM;
+	private static boolean isStarted;
+
+	/** If false, this is some sort of multi-node testing VM */
+	public synchronized static boolean isTestingVM() {
+		if(isStarted)
+			return isTestingVM;
+		else
+			throw new IllegalStateException();
+	}
+	
 	/*---------------------------------------------------------------
 	 * Constructors
 	 *-------------------------------------------------------------*/
 	private NodeStarter() {
+		// Force it to load right now, and log what exactly is loaded.
+		JceLoader.dumpLoaded();
 	}
 
 	public NodeStarter get() {
@@ -63,7 +85,7 @@ public class NodeStarter implements WrapperListener {
 	 * WrapperListener Methods
 	 *-------------------------------------------------------------*/
 	/**
-	 * The start method is called when the WrapperManager is signaled by the 
+	 * The start method is called when the WrapperManager is signaled by the
 	 *	native wrapper code that it can start its application.  This
 	 *	method call is expected to return, so a new thread should be launched
 	 *	if necessary.
@@ -74,13 +96,21 @@ public class NodeStarter implements WrapperListener {
 	 *         of the start method.  If there were no problems then this
 	 *         method should return null.
 	 */
+	@Override
 	public Integer start(String[] args) {
+		synchronized(NodeStarter.class) {
+			if(isStarted) throw new IllegalStateException();
+			isStarted = true;
+			isTestingVM = false;
+		}
 		if(args.length > 1) {
 			System.out.println("Usage: $ java freenet.node.Node <configFile>");
 			return Integer.valueOf(-1);
 		}
 
-		getExtBuild();
+		String builtWithMessage = "freenet.jar built with freenet-ext.jar Build #" + ExtVersion.buildNumber + " r" + ExtVersion.cvsRevision+" running with ext build "+extBuildNumber+" r" + extRevisionNumber;
+		Logger.normal(this, builtWithMessage);
+		System.out.println(builtWithMessage);
 
 		File configFilename;
 		if(args.length == 0) {
@@ -131,10 +161,11 @@ public class NodeStarter implements WrapperListener {
 		Runnable useless =
 			new Runnable() {
 
+				@Override
 				public void run() {
 					while(true) {
 						try {
-							Thread.sleep(60 * 60 * 1000);
+							Thread.sleep(MINUTES.toMillis(60));
 						} catch(InterruptedException e) {
 							// Ignore
 						} catch(Throwable t) {
@@ -171,40 +202,6 @@ public class NodeStarter implements WrapperListener {
 		return null;
 	}
 
-	private void getExtBuild() {
-		try {
-			extBuildNumber = ExtVersion.buildNumber;
-			extRevisionNumber = ExtVersion.cvsRevision;
-			String builtWithMessage = "freenet.jar built with freenet-ext.jar Build #" + extBuildNumber + " r" + extRevisionNumber;
-			Logger.normal(this, builtWithMessage);
-			System.out.println(builtWithMessage);
-			extBuildNumber = ExtVersion.buildNumber();
-			if(extBuildNumber == -42) {
-				extBuildNumber = ExtVersion.extBuildNumber();
-				extRevisionNumber = ExtVersion.extRevisionNumber();
-			}
-			if(extBuildNumber == 0) {
-				String buildMessage = "extBuildNumber is 0; perhaps your freenet-ext.jar file is corrupted?";
-				Logger.error(this, buildMessage);
-				System.err.println(buildMessage);
-				extBuildNumber = -1;
-			}
-			if(extRevisionNumber == null) {
-				String revisionMessage = "extRevisionNumber is null; perhaps your freenet-ext.jar file is corrupted?";
-				Logger.error(this, revisionMessage);
-				System.err.println(revisionMessage);
-				extRevisionNumber = "INVALID";
-			}
-		} catch(Throwable t) {
-			// Compatibility code ... will be removed
-			Logger.error(this, "Unable to get the version of your freenet-ext file : it's probably corrupted!");
-			System.err.println("Unable to get the version of your freenet-ext file : it's probably corrupted!");
-			System.err.println(t.getMessage());
-			extRevisionNumber = "INVALID";
-			extBuildNumber = -1;
-		}
-	}
-
 	/**
 	 * Called when the application is shutting down.  The Wrapper assumes that
 	 *  this method will return fairly quickly.  If the shutdown code code
@@ -221,6 +218,7 @@ public class NodeStarter implements WrapperListener {
 	 *         the option of changing the exit code if there are any problems
 	 *         during shutdown.
 	 */
+	@Override
 	public int stop(int exitCode) {
 		System.err.println("Shutting down with exit code " + exitCode);
 		node.park();
@@ -237,12 +235,13 @@ public class NodeStarter implements WrapperListener {
 	/**
 	 * Called whenever the native wrapper code traps a system control signal
 	 *  against the Java process.  It is up to the callback to take any actions
-	 *  necessary.  Possible values are: WrapperManager.WRAPPER_CTRL_C_EVENT, 
-	 *    WRAPPER_CTRL_CLOSE_EVENT, WRAPPER_CTRL_LOGOFF_EVENT, or 
+	 *  necessary.  Possible values are: WrapperManager.WRAPPER_CTRL_C_EVENT,
+	 *    WRAPPER_CTRL_CLOSE_EVENT, WRAPPER_CTRL_LOGOFF_EVENT, or
 	 *    WRAPPER_CTRL_SHUTDOWN_EVENT
 	 *
 	 * @param event The system control signal.
 	 */
+	@Override
 	public void controlEvent(int event) {
 		if(WrapperManager.isControlledByNativeWrapper()) {
 			// The Wrapper will take care of this event
@@ -267,16 +266,53 @@ public class NodeStarter implements WrapperListener {
 	}
 
 	static SemiOrderedShutdownHook shutdownHook;
-	
+
+    /**
+     * @see #globalTestInit(File, boolean, LogLevel, String, boolean, RandomSource)
+     * @deprecated Instead use {@link #globalTestInit(File, boolean, LogLevel, String, boolean,
+     *             RandomSource)}.
+     */
+    public static RandomSource globalTestInit(String testName, boolean enablePlug,
+            LogLevel logThreshold, String details, boolean noDNS) throws InvalidThresholdException {
+
+        return globalTestInit(new File(testName), enablePlug, logThreshold, details, noDNS, null);
+    }
+
 	/**
 	 * VM-specific init.
 	 * Not Node-specific; many nodes may be created later.
-	 * @param testName The name of the test instance.
+     * @param baseDirectory
+     *            The directory in which the test data will be placed. Will be created automatically
+     *            if it does not exist. You should use the same one in
+     *            {@link TestNodeParameters#baseDirectory} afterwards for each individual test node
+     *            as long as it has a distinct port. See its JavaDoc.<br>
+     *            The function will NOT fail if the directory exists already. You should make sure
+     *            on your own to delete this before and after tests to ensure a clean state. Notice
+     *            that JUnit provides a mechanism for automatic creation and deletion of test
+     *            directories (TemporaryFolder).
+     * @param RandomSource
+     *            The random number generator of the Node. Null for the default of {@link Yarrow}.
+     *            <br>You might want to use a {@link DummyRandomSource} in unit tests:<br>
+     *            - Unlike Yarrow, it won't block startup waiting for entropy.<br>
+     *            - It allows you to specify a seed which you then can print to stdout so randomized
+     *               unit tests are reproducible.<br>
+     *            - It should be a lot faster than Yarrow.<br> 
+     * @return If you passed a {@link RandomSource}, the same one is returned. Otherwise, a new
+     *         {@link Yarrow} is returned.
 	 */
-	public static RandomSource globalTestInit(String testName, boolean enablePlug, LogLevel logThreshold, String details, boolean noDNS) throws InvalidThresholdException {
+    public static RandomSource globalTestInit(File baseDirectory, boolean enablePlug,
+            LogLevel logThreshold, String details, boolean noDNS, RandomSource randomSource)
+                throws InvalidThresholdException {
 
-		File dir = new File(testName);
-		if((!dir.mkdir()) && ((!dir.exists()) || (!dir.isDirectory()))) {
+		synchronized(NodeStarter.class) {
+			if(isStarted) throw new IllegalStateException();
+			isStarted = true;
+			isTestingVM = true;
+		}
+
+        if((!baseDirectory.mkdir()) && ((!baseDirectory.exists())
+            || (!baseDirectory.isDirectory()))) {
+
 			System.err.println("Cannot create directory for test");
 			System.exit(NodeInitException.EXIT_TEST_ERROR);
 		}
@@ -289,7 +325,7 @@ public class NodeStarter implements WrapperListener {
 		java.security.Security.setProperty("networkaddress.cache.negative.ttl", "0");
 
 		// Setup RNG
-		RandomSource random = new Yarrow();
+        RandomSource random = randomSource != null ? randomSource : new Yarrow();
 
 		DiffieHellman.init(random);
 
@@ -303,10 +339,11 @@ public class NodeStarter implements WrapperListener {
 			Runnable useless =
 				new Runnable() {
 
+					@Override
 					public void run() {
 						while(true) {
 							try {
-								Thread.sleep(60 * 60 * 1000);
+								Thread.sleep(MINUTES.toMillis(60));
 							} catch(InterruptedException e) {
 								// Ignore
 							} catch(Throwable t) {
@@ -327,30 +364,135 @@ public class NodeStarter implements WrapperListener {
 			plug.start();
 		}
 
-		FNPPacketMangler.LOG_UNMATCHABLE_ERROR = true;
 		DNSRequester.DISABLE = noDNS;
 
 		return random;
 	}
 
-	/**
+    /**
+     * @deprecated Use {@link #createTestNode(TestNodeParameters)} instead
+     */
+    @Deprecated
+	public static Node createTestNode(int port, int opennetPort, String testName, boolean disableProbabilisticHTLs,
+	                                  short maxHTL, int dropProb, RandomSource random,
+	                                  Executor executor, int threadLimit, long storeSize, boolean ramStore,
+	                                  boolean enableSwapping, boolean enableARKs, boolean enableULPRs, boolean enablePerNodeFailureTables,
+	                                  boolean enableSwapQueueing, boolean enablePacketCoalescing,
+	                                  int outputBandwidthLimit, boolean enableFOAF,
+	                                  boolean connectToSeednodes, boolean longPingTimes, boolean useSlashdotCache, String ipAddressOverride) throws NodeInitException {
+		return createTestNode(port, opennetPort, testName, disableProbabilisticHTLs, maxHTL, dropProb, random, executor,
+		    threadLimit, storeSize, ramStore, enableSwapping, enableARKs, enableULPRs, enablePerNodeFailureTables,
+		    enableSwapQueueing, enablePacketCoalescing, outputBandwidthLimit, enableFOAF, connectToSeednodes,
+		    longPingTimes, useSlashdotCache, ipAddressOverride, false);
+	}
+
+    /**
+     * TODO FIXME: Someone who understands all the parameters please add sane defaults. 
+     */
+    public static final class TestNodeParameters {
+        /** The UDP port number. Each test node must have a different port number. */
+        public int port;
+        /** The UDP opennet port number. Each test node must have a different port number. */
+        public int opennetPort;
+        /** The directory where the test node will put all its data. <br>
+         *  Will be created automatically if it does not exist.<br>
+         *  {@link NodeStarter#createTestNode(TestNodeParameters)} will NOT fail if this exists.
+         *  You should make sure on your own to delete this before and after tests to ensure
+         *  a clean state. Notice that JUnit provides a mechanism for automatic creation
+         *  and deletion of test directories (TemporaryFolder).<br>
+         *  Notice that a subdirectory with the name being the port number of the node will be
+         *  created there, and all data of the node will be put into it. So you can and should use
+         *  the same baseDirectory when calling {@link NodeStarter#globalTestInit(File, boolean,
+         *  LogLevel, String, boolean, RandomSource)} (which you have to do once for each Java VM):
+         *  Each one will start with a fresh empty subdirectory for as long as each of them uses a
+         *  unique port number. */
+        public File baseDirectory = new File("freenet-test-node-" + UUID.randomUUID().toString());
+        public boolean disableProbabilisticHTLs;
+        public short maxHTL;
+        public int dropProb;
+        public RandomSource random;
+        public Executor executor;
+        public int threadLimit;
+        public long storeSize;
+        public boolean ramStore;
+        public boolean enableSwapping;
+        public boolean enableARKs;
+        public boolean enableULPRs;
+        public boolean enablePerNodeFailureTables;
+        public boolean enableSwapQueueing;
+        public boolean enablePacketCoalescing;
+        public int outputBandwidthLimit;
+        public boolean enableFOAF;
+        public boolean connectToSeednodes;
+        public boolean longPingTimes;
+        public boolean useSlashdotCache;
+        public String ipAddressOverride;
+        public boolean enableFCP;
+    }
+
+    /**
+     * Create a test node.
+     * @param port The node port number. Each test node must have a different port
+     * number.
+     * @param testName The test name.
+     * @throws NodeInitException If the node cannot start up for some reason, most
+     * likely a config problem.
+     * @deprecated Use {@link #createTestNode(TestNodeParameters)} instead
+     */
+    @Deprecated
+    public static Node createTestNode(int port, int opennetPort, String testName,
+            boolean disableProbabilisticHTLs, short maxHTL, int dropProb, RandomSource random,
+            Executor executor, int threadLimit, long storeSize, boolean ramStore,
+            boolean enableSwapping, boolean enableARKs, boolean enableULPRs,
+            boolean enablePerNodeFailureTables, boolean enableSwapQueueing,
+            boolean enablePacketCoalescing, int outputBandwidthLimit, boolean enableFOAF,
+            boolean connectToSeednodes, boolean longPingTimes, boolean useSlashdotCache,
+            String ipAddressOverride, boolean enableFCP)
+                throws NodeInitException {
+
+        TestNodeParameters params = new TestNodeParameters();
+        params.port = port;
+        params.opennetPort = opennetPort;
+        params.baseDirectory = new File(testName);
+        params.disableProbabilisticHTLs = disableProbabilisticHTLs;
+        params.maxHTL = maxHTL;
+        params.dropProb = dropProb;
+        params.random = random;
+        params.executor = executor;
+        params.threadLimit = threadLimit;
+        params.storeSize = storeSize;
+        params.ramStore = ramStore;
+        params.enableSwapping = enableSwapping;
+        params.enableARKs = enableARKs;
+        params.enableULPRs = enableULPRs;
+        params.enablePerNodeFailureTables = enablePerNodeFailureTables;
+        params.enableSwapQueueing = enableSwapQueueing;
+        params.enablePacketCoalescing = enablePacketCoalescing;
+        params.outputBandwidthLimit = outputBandwidthLimit;
+        params.enableFOAF = enableFOAF;
+        params.connectToSeednodes = connectToSeednodes;
+        params.longPingTimes = longPingTimes;
+        params.useSlashdotCache = useSlashdotCache;
+        params.ipAddressOverride = ipAddressOverride;
+        params.enableFCP = enableFCP;
+            
+        return createTestNode(params);
+    }
+
+    /**
 	 * Create a test node.
-	 * @param port The node port number. Each test node must have a different port
-	 * number.
-	 * @param testName The test name.
 	 * @throws NodeInitException If the node cannot start up for some reason, most
 	 * likely a config problem.
 	 */
-	public static Node createTestNode(int port, int opennetPort, String testName, boolean disableProbabilisticHTLs,
-		short maxHTL, int dropProb, RandomSource random,
-		Executor executor, int threadLimit, long storeSize, boolean ramStore,
-		boolean enableSwapping, boolean enableARKs, boolean enableULPRs, boolean enablePerNodeFailureTables,
-		boolean enableSwapQueueing, boolean enablePacketCoalescing,
-		int outputBandwidthLimit, boolean enableFOAF,
-		boolean connectToSeednodes, boolean longPingTimes, boolean useSlashdotCache, String ipAddressOverride) throws NodeInitException {
+    public static Node createTestNode(TestNodeParameters params) throws NodeInitException {
+		
+		synchronized(NodeStarter.class) {
+			if((!isStarted) || (!isTestingVM)) 
+				throw new IllegalStateException("Call globalTestInit() first!"); 
+		}
 
-		File baseDir = new File(testName);
-		File portDir = new File(baseDir, Integer.toString(port));
+        File baseDir = params.baseDirectory;
+        File portDir = new File(baseDir, Integer.toString(params.port));
 		if((!portDir.mkdir()) && ((!portDir.exists()) || (!portDir.isDirectory()))) {
 			System.err.println("Cannot create directory for test");
 			System.exit(NodeInitException.EXIT_TEST_ERROR);
@@ -358,8 +500,8 @@ public class NodeStarter implements WrapperListener {
 
 		// Set up config for testing
 		SimpleFieldSet configFS = new SimpleFieldSet(false); // only happens once in entire simulation
-		if(outputBandwidthLimit > 0) {
-			configFS.put("node.outputBandwidthLimit", outputBandwidthLimit);
+        if(params.outputBandwidthLimit > 0) {
+            configFS.put("node.outputBandwidthLimit", params.outputBandwidthLimit);
 			configFS.put("node.throttleLocalTraffic", true);
 		} else {
 			// Even with throttleLocalTraffic=false, requests still count in NodeStats.
@@ -367,59 +509,124 @@ public class NodeStarter implements WrapperListener {
 			configFS.put("node.outputBandwidthLimit", 16 * 1024 * 1024);
 			configFS.put("node.throttleLocalTraffic", false);
 		}
-		configFS.put("node.useSlashdotCache", useSlashdotCache);
-		configFS.put("node.listenPort", port);
-		configFS.put("node.disableProbabilisticHTLs", disableProbabilisticHTLs);
+        configFS.put("node.useSlashdotCache", params.useSlashdotCache);
+        configFS.put("node.listenPort", params.port);
+        configFS.put("node.disableProbabilisticHTLs", params.disableProbabilisticHTLs);
 		configFS.put("fproxy.enabled", false);
-		configFS.put("fcp.enabled", false);
+        configFS.put("fcp.enabled", params.enableFCP);
+		configFS.put("fcp.port", 9481);
+		configFS.put("fcp.ssl", false);
 		configFS.put("console.enabled", false);
 		configFS.putSingle("pluginmanager.loadplugin", "");
 		configFS.put("node.updater.enabled", false);
-		configFS.putSingle("node.tempDir", new File(portDir, "temp").toString());
-		configFS.putSingle("node.storeDir", new File(portDir, "store").toString());
+		configFS.putSingle("node.install.tempDir", new File(portDir, "temp").toString());
+		configFS.putSingle("node.install.storeDir", new File(portDir, "store").toString());
 		configFS.put("fcp.persistentDownloadsEnabled", false);
 		configFS.putSingle("node.throttleFile", new File(portDir, "throttle.dat").toString());
-		configFS.putSingle("node.nodeDir", portDir.toString());
-		configFS.put("node.maxHTL", maxHTL);
-		configFS.put("node.testingDropPacketsEvery", dropProb);
+		configFS.putSingle("node.install.nodeDir", portDir.toString());
+		configFS.putSingle("node.install.userDir", portDir.toString());
+		configFS.putSingle("node.install.runDir", portDir.toString());
+		configFS.putSingle("node.install.cfgDir", portDir.toString());
+        configFS.put("node.maxHTL", params.maxHTL);
+        configFS.put("node.testingDropPacketsEvery", params.dropProb);
 		configFS.put("node.alwaysAllowLocalAddresses", true);
 		configFS.put("node.includeLocalAddressesInNoderefs", true);
 		configFS.put("node.enableARKs", false);
-		configFS.put("node.load.threadLimit", threadLimit);
-		if(ramStore)
+        configFS.put("node.load.threadLimit", params.threadLimit);
+        if(params.ramStore)
 			configFS.putSingle("node.storeType", "ram");
-		configFS.put("node.storeSize", storeSize);
+        configFS.put("node.storeSize", params.storeSize);
 		configFS.put("node.disableHangCheckers", true);
-		configFS.put("node.enableSwapping", enableSwapping);
-		configFS.put("node.enableSwapQueueing", enableSwapQueueing);
-		configFS.put("node.enableARKs", enableARKs);
-		configFS.put("node.enableULPRDataPropagation", enableULPRs);
-		configFS.put("node.enablePerNodeFailureTables", enablePerNodeFailureTables);
-		configFS.put("node.enablePacketCoalescing", enablePacketCoalescing);
-		configFS.put("node.publishOurPeersLocation", enableFOAF);
-		configFS.put("node.routeAccordingToOurPeersLocation", enableFOAF);
-		configFS.put("node.opennet.enabled", opennetPort > 0);
-		configFS.put("node.opennet.listenPort", opennetPort);
+        configFS.put("node.enableSwapping", params.enableSwapping);
+        configFS.put("node.enableSwapQueueing", params.enableSwapQueueing);
+        configFS.put("node.enableARKs", params.enableARKs);
+        configFS.put("node.enableULPRDataPropagation", params.enableULPRs);
+        configFS.put("node.enablePerNodeFailureTables", params.enablePerNodeFailureTables);
+        configFS.put("node.enablePacketCoalescing", params.enablePacketCoalescing);
+        configFS.put("node.publishOurPeersLocation", params.enableFOAF);
+        configFS.put("node.routeAccordingToOurPeersLocation", params.enableFOAF);
+        configFS.put("node.opennet.enabled", params.opennetPort > 0);
+        configFS.put("node.opennet.listenPort", params.opennetPort);
 		configFS.put("node.opennet.alwaysAllowLocalAddresses", true);
 		configFS.put("node.opennet.oneConnectionPerIP", false);
 		configFS.put("node.opennet.assumeNATed", true);
-		configFS.put("node.opennet.connectToSeednodes", connectToSeednodes);
+        configFS.put("node.opennet.connectToSeednodes", params.connectToSeednodes);
 		configFS.put("node.encryptTempBuckets", false);
 		configFS.put("node.encryptPersistentTempBuckets", false);
-		if(ipAddressOverride != null)
-			configFS.putSingle("node.ipAddressOverride", ipAddressOverride);
-		if(longPingTimes) {
+		configFS.put("node.enableRoutedPing", true);
+        if(params.ipAddressOverride != null)
+            configFS.putSingle("node.ipAddressOverride", params.ipAddressOverride);
+        if(params.longPingTimes) {
 			configFS.put("node.maxPingTime", 100000);
 			configFS.put("node.subMaxPingTime", 50000);
 		}
-		
+		configFS.put("node.respondBandwidth", true);
+		configFS.put("node.respondBuild", true);
+		configFS.put("node.respondIdentifier", true);
+		configFS.put("node.respondLinkLengths", true);
+		configFS.put("node.respondLocation", true);
+		configFS.put("node.respondStoreSize", true);
+		configFS.put("node.respondUptime", true);
+
 		PersistentConfig config = new PersistentConfig(configFS);
 
-		Node node = new Node(config, random, random, null, null, executor);
+        Node node = new Node(config, params.random, params.random, null, null, params.executor);
 
 		//All testing environments connect the nodes as they want, even if the old setup is restored, it is not desired.
 		node.peers.removeAllPeers();
 
 		return node;
-	}	
+	}
+
+	// experimental osgi support
+	public static void start_osgi(String[] args) {
+		nodestarter_osgi = new NodeStarter();
+		nodestarter_osgi.start(args);
+	}
+
+	// experimental osgi support
+	public static void stop_osgi(int exitCode) {
+		nodestarter_osgi.stop(exitCode);
+		nodestarter_osgi = null;
+	}
+
+	/** Get the memory limit in MB. Return -1 if we don't know, -2 for unlimited. */
+	public static long getMemoryLimitMB() {
+		long limit = getMemoryLimitBytes();
+		if(limit <= 0) return limit;
+		if(limit == Long.MAX_VALUE) return -2;
+		limit /= (1024 * 1024);
+		if(limit > Integer.MAX_VALUE)
+			return -1; // Seems unlikely. FIXME 2TB limit!
+		return limit;
+	}
+	
+	/** Get the memory limit in bytes. Return -1 if we don't know. Compensate for odd JVMs' 
+	 * behaviour. */
+	public static long getMemoryLimitBytes() {
+		long maxMemory = Runtime.getRuntime().maxMemory();
+		if(maxMemory == Long.MAX_VALUE)
+			return maxMemory;
+		else if(maxMemory <= 0)
+			return -1;
+		else {
+			if(maxMemory < (1024 * 1024)) {
+				// Some weird buggy JVMs provide this number in MB IIRC?
+				return maxMemory * 1024 * 1024;
+			}
+			return maxMemory;
+		}
+	}
+	
+	/** Static instance of SecureRandom, as opposed to Node's copy. @see getSecureRandom() */
+    private static SecureRandom globalSecureRandom;
+	
+	public static synchronized SecureRandom getGlobalSecureRandom() {
+	    if(globalSecureRandom == null) {
+	        globalSecureRandom = new SecureRandom();
+	        globalSecureRandom.nextBytes(new byte[16]); // Force it to seed itself so it blocks now not later.
+	    }
+	    return globalSecureRandom;
+	}
+
 }

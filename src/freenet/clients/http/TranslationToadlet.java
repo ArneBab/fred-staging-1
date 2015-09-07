@@ -5,7 +5,7 @@ package freenet.clients.http;
 
 import java.io.IOException;
 import java.net.URI;
-import java.util.Vector;
+import java.util.ArrayList;
 
 import freenet.client.HighLevelSimpleClient;
 import freenet.l10n.BaseL10n;
@@ -15,10 +15,8 @@ import freenet.node.NodeClientCore;
 import freenet.pluginmanager.FredPluginBaseL10n;
 import freenet.pluginmanager.PluginInfoWrapper;
 import freenet.support.HTMLNode;
-import freenet.support.Logger;
 import freenet.support.MultiValueTable;
 import freenet.support.SimpleFieldSet;
-import freenet.support.Logger.LogLevel;
 import freenet.support.SimpleFieldSet.KeyIterator;
 import freenet.support.api.HTTPRequest;
 import freenet.support.io.BucketTools;
@@ -32,7 +30,6 @@ import freenet.support.io.BucketTools;
 public class TranslationToadlet extends Toadlet {
 	public static final String TOADLET_URL = "/translation/";
 	private final NodeClientCore core;
-	private static final SimpleFieldSet DEFAULT_TRANSLATION = NodeL10n.getBase().getDefaultLanguageTranslation();
 	private BaseL10n base;
 	private String translatingFor;
 
@@ -44,10 +41,8 @@ public class TranslationToadlet extends Toadlet {
 	}
 
 	public void handleMethodGET(URI uri, HTTPRequest request, ToadletContext ctx) throws ToadletContextClosedException, IOException {
-		if(!ctx.isAllowedFullAccess()) {
-			super.sendErrorPage(ctx, 403, "Unauthorized", NodeL10n.getBase().getString("Toadlet.unauthorized"));
-			return;
-		}
+        if(!ctx.checkFullAccess(this))
+            return;
 		
 		boolean showEverything = !request.isParameterSet("toTranslateOnly");
 		
@@ -66,7 +61,7 @@ public class TranslationToadlet extends Toadlet {
 			return;
 		} else if (request.isParameterSet("translation_updated")) {
 			String key = request.getParam("translation_updated");
-			PageNode page = ctx.getPageMaker().getPageNode(l10n("translationUpdatedTitle"), true, ctx);
+			PageNode page = ctx.getPageMaker().getPageNode(l10n("translationUpdatedTitle"), ctx);
 			HTMLNode pageNode = page.outer;
 			HTMLNode contentNode = page.content;
 
@@ -101,7 +96,7 @@ public class TranslationToadlet extends Toadlet {
 		} else if (request.isParameterSet("translate")) {
 			boolean gotoNext = request.isParameterSet("gotoNext");
 			String key = request.getParam("translate");
-			PageNode page = ctx.getPageMaker().getPageNode(l10n("translationUpdateTitle"), true, ctx);
+			PageNode page = ctx.getPageMaker().getPageNode(l10n("translationUpdateTitle"), ctx);
 			HTMLNode pageNode = page.outer;
 			HTMLNode contentNode = page.content;
 
@@ -125,7 +120,7 @@ public class TranslationToadlet extends Toadlet {
 			contentRow.addChild("td", "class", "translation-new").addChild(
 					"textarea",
 					new String[] { "name", "rows", "cols" },
-					new String[] { "trans", "6", "80" },
+					new String[] { "trans", "20", "80" },
 					this.base.getString(key));
 			
 			contentRow.addChild("input", 
@@ -146,7 +141,7 @@ public class TranslationToadlet extends Toadlet {
 			return;
 		} else if (request.isParameterSet("remove")) {
 			String key = request.getParam("remove");
-			PageNode page = ctx.getPageMaker().getPageNode(l10n("removeOverrideTitle"), true, ctx);
+			PageNode page = ctx.getPageMaker().getPageNode(l10n("removeOverrideTitle"), ctx);
 			HTMLNode pageNode = page.outer;
 			HTMLNode contentNode = page.content;
 
@@ -165,12 +160,12 @@ public class TranslationToadlet extends Toadlet {
 			return;
 		}
 
-		PageNode page = ctx.getPageMaker().getPageNode(l10n("translationUpdateTitle"), true, ctx);
+		PageNode page = ctx.getPageMaker().getPageNode(l10n("translationUpdateTitle"), ctx);
 		HTMLNode pageNode = page.outer;
 		HTMLNode contentNode = page.content;
 
 		final HTMLNode translatingForBox = ctx.getPageMaker().getInfobox(null, l10n("selectTranslation"), contentNode);
-		Vector<String> elementsToTranslate = new Vector<String>();
+		ArrayList<String> elementsToTranslate = new ArrayList<String>();
 		elementsToTranslate.add("Node");
 		for(PluginInfoWrapper pluginInfo : this.core.node.pluginManager.getPlugins()) {
 			if(!pluginInfo.isBaseL10nPlugin()) {
@@ -206,46 +201,32 @@ public class TranslationToadlet extends Toadlet {
 		legendRow.addChild("td", "class", "translation-key", l10n("originalVersionLabel"));
 		legendRow.addChild("td", "class", "translation-key", l10n("currentTranslationLabel"));
 		
-		SimpleFieldSet sfs = this.base.getCurrentLanguageTranslation();
-		if(sfs != null) {
-			KeyIterator it = this.base.getDefaultLanguageTranslation().keyIterator("");
-
-			while(it.hasNext()) {
-				String key = it.nextKey();
-				boolean isOverriden = this.base.isOverridden(key);
-				if(!showEverything && (isOverriden || (this.base.getString(key, true) != null))) continue;
-				HTMLNode contentRow = legendTable.addChild("tr");
-				contentRow.addChild("td", "class", "translation-key",
-						key
-				);
-				contentRow.addChild("td", "class", "translation-orig",
-						this.base.getDefaultString(key)
-				);
-
-				contentRow.addChild("td", "class", "translation-new").addChild(_setOrRemoveOverride(key, isOverriden, showEverything));
-			}
+		KeyIterator it = this.base.getDefaultLanguageTranslation().keyIterator("");
+		
+		while(it.hasNext()) {
+			String key = it.nextKey();
+			boolean isOverriden = this.base.isOverridden(key);
+			if(!showEverything && (isOverriden || (this.base.getString(key, true) != null))) continue;
+			HTMLNode contentRow = legendTable.addChild("tr");
+			contentRow.addChild("td", "class", "translation-key",
+					key
+			);
+			contentRow.addChild("td", "class", "translation-orig",
+					this.base.getDefaultString(key)
+			);
+			
+			contentRow.addChild("td", "class", "translation-new").addChild(_setOrRemoveOverride(key, isOverriden, showEverything));
 		}
 		
 		this.writeHTMLReply(ctx, 200, "OK", pageNode.generate());
 	}
 
 	public void handleMethodPOST(URI uri, HTTPRequest request, ToadletContext ctx) throws ToadletContextClosedException, IOException {
-		if(!ctx.isAllowedFullAccess()) {
-			super.sendErrorPage(ctx, 403, "Unauthorized", NodeL10n.getBase().getString("Toadlet.unauthorized"));
-			return;
-		}
+        if(!ctx.checkFullAccess(this))
+            return;
 		
-		final boolean logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
-		final String passwd = request.getPartAsString("formPassword", 32);
-		boolean noPassword = (passwd == null) || !passwd.equals(core.formPassword);
-		if(noPassword) {
-			if(logMINOR) Logger.minor(this, "No password ("+passwd+" should be "+core.formPassword+ ')');
-			redirectTo(ctx, "/");
-			return;
-		}
-
 		if(request.isPartSet("translating_for")) {
-			final String translateFor = request.getPartAsString("translating_for", 255);
+			final String translateFor = request.getPartAsStringFailsafe("translating_for", 255);
 
 			for(PluginInfoWrapper pluginInfo : this.core.node.pluginManager.getPlugins()) {
 				if(translateFor.equals(pluginInfo.getPluginClassName()) && pluginInfo.isBaseL10nPlugin()) {
@@ -266,17 +247,16 @@ public class TranslationToadlet extends Toadlet {
 		
 		boolean toTranslateOnly = request.isPartSet("toTranslateOnly");
 		
-		if(request.getPartAsString("translation_update", 32).length() > 0){
-			String key = request.getPartAsString("key", 256);
+		if(request.getPartAsStringFailsafe("translation_update", 32).length() > 0){
+			String key = request.getPartAsStringFailsafe("key", 256);
 			this.base.setOverride(key, new String(BucketTools.toByteArray(request.getPart("trans")), "UTF-8").trim());
 			
-			if("on".equalsIgnoreCase(request.getPartAsString("gotoNext", 7))) {
-				KeyIterator it = DEFAULT_TRANSLATION.keyIterator("");
+			if("on".equalsIgnoreCase(request.getPartAsStringFailsafe("gotoNext", 7))) {
+				KeyIterator it = base.getDefaultLanguageTranslation().keyIterator("");
 				
 				while(it.hasNext()) {
 					String newKey = it.nextKey();
 					boolean isOverriden = this.base.isOverridden(newKey);
-					System.out.println("newkey:"+newKey);
 					if(isOverriden || (this.base.getString(newKey, true) != null))
 						continue;
 					redirectTo(ctx, TOADLET_URL+"?gotoNext&translate="+newKey+ (toTranslateOnly ? "&toTranslateOnly" : ""));
@@ -286,8 +266,8 @@ public class TranslationToadlet extends Toadlet {
 			
 			redirectTo(ctx, TOADLET_URL+"?translation_updated="+key+ (toTranslateOnly ? "&toTranslateOnly" : ""));
 			return;
-		} else if(request.getPartAsString("remove_confirmed", 32).length() > 0) {
-			String key = request.getPartAsString("remove_confirm", 256).trim();
+		} else if(request.getPartAsStringFailsafe("remove_confirmed", 32).length() > 0) {
+			String key = request.getPartAsStringFailsafe("remove_confirm", 256).trim();
 			this.base.setOverride(key, "");
 			
 			redirectTo(ctx, TOADLET_URL+"?translation_updated="+key+ (toTranslateOnly ? "&toTranslateOnly" : ""));

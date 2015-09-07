@@ -37,6 +37,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.security.Provider;
 import java.util.ArrayList;
 
 import org.tanukisoftware.wrapper.WrapperManager;
@@ -45,8 +46,6 @@ import freenet.node.Node;
 import freenet.node.NodeInitException;
 import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
-import freenet.support.OOMHandler;
-import freenet.support.OOMHook;
 import freenet.support.Logger.LogLevel;
 import freenet.support.io.Closer;
 
@@ -92,6 +91,8 @@ public class SHA256 {
 		}
 	}
 
+	private static final Provider mdProvider = Util.mdProviders.get("SHA-256");
+
 	/**
 	 * Create a new SHA-256 MessageDigest
 	 * Either succeed or stop the node.
@@ -105,7 +106,7 @@ public class SHA256 {
 				else md = digests.remove(x-1);
 			}
 			if(md == null)
-				md = MessageDigest.getInstance("SHA-256");
+				md = MessageDigest.getInstance("SHA-256", mdProvider);
 			return md;
 		} catch(NoSuchAlgorithmException e2) {
 			//TODO: maybe we should point to a HOWTO for freejvms
@@ -151,21 +152,4 @@ public class SHA256 {
 	
 	private static boolean noCache = false;
 	
-	static {
-		OOMHandler.addOOMHook(new OOMHook() {
-			public void handleLowMemory() throws Exception {
-				synchronized(digests) {
-					digests.clear();
-				}
-				noCache = true;
-			}
-
-			public void handleOutOfMemory() throws Exception {
-				synchronized(digests) {
-					digests.clear();
-				}
-				noCache = true;
-			}
-		});
-	}
 }

@@ -3,9 +3,11 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.support.api;
 
+import java.util.Collection;
 import java.util.NoSuchElementException;
 
 import javax.naming.SizeLimitExceededException;
+
 
 /** A parsed HTTP request (GET or POST). Request parameters are parameters
  * encoded into the URI, or part of a POST form which is encoded as 
@@ -126,7 +128,7 @@ public interface HTTPRequest {
 
 	/** Get a part as a Bucket. Parts can be very large, as they are POST
 	 * data from multipart/form-data and can include uploaded files. */
-	public Bucket getPart(String name);
+	public RandomAccessBucket getPart(String name);
 
 	/** Is a part set with the given name? */
 	public boolean isPartSet(String name);
@@ -144,6 +146,7 @@ public interface HTTPRequest {
 	
 	/**
 	 * Gets up to maxLength characters from the part, ignores any characters after the limit.
+	 * If no such part exists, an empty String is returned.
 	 */
 	public String getPartAsStringFailsafe(String name, int maxlength);
 
@@ -158,6 +161,7 @@ public interface HTTPRequest {
 	
 	/**
 	 * Gets up to maxLength bytes from the part, ignores any bytes after the limit.
+	 * If no such part exists, a byte[] with size 0 is returned. 
 	 */
 	public byte[] getPartAsBytesFailsafe(String name, int maxlength);
 	
@@ -180,5 +184,21 @@ public interface HTTPRequest {
 
 	/** Get the length of the original uploaded raw data for a POST. */
 	public int getContentLength();
+
+	public String[] getParts();
+
+	/**
+	 * Returns the names of all parameters.
+	 *
+	 * @return The names of all parameters
+	 */
+	public Collection<String> getParameterNames();
+
+	/** Is the incognito=true boolean set? Sadly this does not prove that
+	 * it is actually running incognito mode... */
+	public boolean isIncognito();
+
+	/** Is the browser Chrome according to User-Agent? */
+	public boolean isChrome();
 
 }

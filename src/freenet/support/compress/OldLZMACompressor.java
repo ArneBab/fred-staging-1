@@ -3,8 +3,6 @@
 * http://www.gnu.org/ for further details of the GPL. */
 package freenet.support.compress;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -13,6 +11,7 @@ import java.io.OutputStream;
 
 import SevenZip.Compression.LZMA.Decoder;
 import SevenZip.Compression.LZMA.Encoder;
+import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
 import freenet.support.api.Bucket;
@@ -21,10 +20,19 @@ import freenet.support.io.Closer;
 import freenet.support.io.CountedInputStream;
 import freenet.support.io.CountedOutputStream;
 
-// WARNING: THIS CLASS IS STORED IN DB4O -- THINK TWICE BEFORE ADD/REMOVE/RENAME FIELDS
 public class OldLZMACompressor implements Compressor {
+        private static volatile boolean logMINOR;
+	static {
+		Logger.registerLogThresholdCallback(new LogThresholdCallback(){
+			@Override
+			public void shouldUpdate(){
+				logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
+			}
+		});
+	}
 
 	// Copied from EncoderThread. See below re licensing.
+	@Override
 	public Bucket compress(Bucket data, BucketFactory bf, long maxReadLength, long maxWriteLength) throws IOException, CompressionOutputSizeException {
 		Bucket output;
 		InputStream is = null;
@@ -33,11 +41,12 @@ public class OldLZMACompressor implements Compressor {
 			output = bf.makeBucket(maxWriteLength);
 			is = data.getInputStream();
 			os = output.getOutputStream();
-			if(Logger.shouldLog(LogLevel.MINOR, this))
+			if(logMINOR)
 				Logger.minor(this, "Compressing "+data+" size "+data.size()+" to new bucket "+output);
 			compress(is, os, maxReadLength, maxWriteLength);
-			is.close();
-			os.close();
+			// It is essential that the close()'s throw if there is any problem.
+			is.close(); is = null;
+			os.close(); os = null;
 		} finally {
 			Closer.close(is);
 			Closer.close(os);
@@ -45,11 +54,12 @@ public class OldLZMACompressor implements Compressor {
 		return output;
 	}
 	
-	public long compress(InputStream is, OutputStream os, long maxReadLength, long maxWriteLength) throws IOException {
+	@Override
+	public long compress(InputStream is, OutputStream os, long maxReadLength, long maxWriteLength) throws IOException, CompressionOutputSizeException {
 		CountedInputStream cis = null;
 		CountedOutputStream cos = null;
-		cis = new CountedInputStream(new BufferedInputStream(is));
-		cos = new CountedOutputStream(new BufferedOutputStream(os));
+		cis = new CountedInputStream(is);
+		cos = new CountedOutputStream(os);
 		Encoder encoder = new Encoder();
         encoder.SetEndMarkerMode( true );
         // Dictionary size 1MB, this is equivalent to lzma -4, it uses 16MB to compress and 2MB to decompress.
@@ -58,8 +68,11 @@ public class OldLZMACompressor implements Compressor {
         // enc.WriteCoderProperties( out );
         // 5d 00 00 10 00
         encoder.Code( cis, cos, -1, -1, null );
-		if(Logger.shouldLog(LogLevel.MINOR, this))
+		if(logMINOR)
 			Logger.minor(this, "Read "+cis.count()+" written "+cos.written());
+		if(cos.written() > maxWriteLength)
+			throw new CompressionOutputSizeException();
+		cos.flush();
 		return cos.written();
 	}
 
@@ -69,19 +82,26 @@ public class OldLZMACompressor implements Compressor {
 			output = preferred;
 		else
 			output = bf.makeBucket(maxLength);
-		if(Logger.shouldLog(LogLevel.MINOR, this))
+		if(logMINOR)
 			Logger.minor(this, "Decompressing "+data+" size "+data.size()+" to new bucket "+output);
-		CountedInputStream is = new CountedInputStream(new BufferedInputStream(data.getInputStream()));
-		BufferedOutputStream os = new BufferedOutputStream(output.getOutputStream());
-		decompress(is, os, maxLength, maxCheckSizeLength);
-		os.close();
-		if(Logger.shouldLog(LogLevel.MINOR, this))
-			Logger.minor(this, "Output: "+output+" size "+output.size()+" read "+is.count());
-		is.close();
+		CountedInputStream is = null;
+		OutputStream os = null;
+		try {
+			is = new CountedInputStream(data.getInputStream());
+			os = output.getOutputStream();
+			decompress(is, os, maxLength, maxCheckSizeLength);
+			if(logMINOR)
+				Logger.minor(this, "Output: "+output+" size "+output.size()+" read "+is.count());
+			// It is essential that the close()'s throw if there is any problem.
+			is.close(); is = null;
+			os.close(); os = null;
+		} finally {
+			Closer.close(is);
+			Closer.close(os);
+		}
 		return output;
 	}
 
-	
 	// Copied from DecoderThread
 	// LICENSING: DecoderThread is LGPL 2.1/CPL according to comments.
 	
@@ -99,14 +119,16 @@ public class OldLZMACompressor implements Compressor {
         props[4] = 0x00;
     }
 
+	@Override
 	public long decompress(InputStream is, OutputStream os, long maxLength, long maxCheckSizeBytes) throws IOException, CompressionOutputSizeException {
+		CountedOutputStream cos = new CountedOutputStream(os);
 		Decoder decoder = new Decoder();
 		decoder.SetDecoderProperties(props);
-		CountedOutputStream cos = new CountedOutputStream(os);
 		decoder.Code(is, cos, maxLength);
 		return cos.written();
 	}
 
+	@Override
 	public int decompress(byte[] dbuf, int i, int j, byte[] output) throws CompressionOutputSizeException {
 		// Didn't work with Inflater.
 		// FIXME fix sometimes to use Inflater - format issue?

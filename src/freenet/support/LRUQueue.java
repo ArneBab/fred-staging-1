@@ -108,10 +108,12 @@ public class LRUQueue<T> {
 
 		private Enumeration<QItem<T>> source = list.reverseElements();
        
+        @Override
         public boolean hasMoreElements() {
             return source.hasMoreElements();
         }
 
+		@Override
 		public T nextElement() {
 			return source.nextElement().obj;
         }
@@ -167,6 +169,7 @@ public class LRUQueue<T> {
 	 *            same type will be allocated.
 	 */
 
+	@SuppressWarnings("unchecked")
 	public synchronized <E> E[] toArrayOrdered(E[] array) {
 		array = toArray(array);
 		int listSize = list.size();
@@ -186,6 +189,12 @@ public class LRUQueue<T> {
 	public synchronized void clear() {
 		list.clear();
 		hash.clear();
+	}
+
+	public synchronized T get(T obj) {
+		QItem<T> val = hash.get(obj);
+		if(val == null) return null;
+		return val.obj;
 	}
 }
 

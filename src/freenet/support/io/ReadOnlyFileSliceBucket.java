@@ -3,26 +3,39 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.support.io;
 
+import java.io.BufferedInputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.RandomAccessFile;
+import java.io.Serializable;
 
-import com.db4o.ObjectContainer;
-
-import freenet.support.SimpleFieldSet;
+import freenet.client.async.ClientContext;
 import freenet.support.api.Bucket;
 
 /**
  * FIXME: implement a hash verifying version of this.
  */
-public class ReadOnlyFileSliceBucket implements Bucket, SerializableToFieldSetBucket {
+public class ReadOnlyFileSliceBucket implements Bucket, Serializable {
 
-	private final File file;
+    private static final long serialVersionUID = 1L;
+    private final File file;
 	private final long startAt;
 	private final long length;
+
+	/**
+	 * zero arg c'tor for db4o on jamvm / serialization
+	 */
+	@SuppressWarnings("unused")
+	private ReadOnlyFileSliceBucket() {
+		startAt = 0;
+		length = 0;
+		file = null;
+	}
 
 	public ReadOnlyFileSliceBucket(File f, long startAt, long length) {
 		this.file = new File(f.getPath()); // copy so we can delete it
@@ -30,49 +43,42 @@ public class ReadOnlyFileSliceBucket implements Bucket, SerializableToFieldSetBu
 		this.length = length;
 	}
 
-	public ReadOnlyFileSliceBucket(SimpleFieldSet fs) throws CannotCreateFromFieldSetException {
-		String tmp = fs.get("Filename");
-		if(tmp == null)
-			throw new CannotCreateFromFieldSetException("No filename");
-		this.file = new File(tmp);
-		tmp = fs.get("Length");
-		if(tmp == null)
-			throw new CannotCreateFromFieldSetException("No length");
-		try {
-			length = Long.parseLong(tmp);
-		} catch(NumberFormatException e) {
-			throw new CannotCreateFromFieldSetException("Corrupt length " + tmp, e);
-		}
-		tmp = fs.get("Offset");
-		if(tmp == null)
-			throw new CannotCreateFromFieldSetException("No offset");
-		try {
-			startAt = Long.parseLong(tmp);
-		} catch(NumberFormatException e) {
-			throw new CannotCreateFromFieldSetException("Corrupt offset " + tmp, e);
-		}
-	}
-
+    @Override
 	public OutputStream getOutputStream() throws IOException {
 		throw new IOException("Bucket is read-only");
 	}
 
+    @Override
+    public OutputStream getOutputStreamUnbuffered() throws IOException {
+        throw new IOException("Bucket is read-only");
+    }
+
+	@Override
 	public InputStream getInputStream() throws IOException {
-		return new MyInputStream();
+		return new BufferedInputStream(getInputStreamUnbuffered());
 	}
 
+    @Override
+    public InputStream getInputStreamUnbuffered() throws IOException {
+        return new MyInputStream();
+    }
+
+	@Override
 	public String getName() {
 		return "ROFS:" + file.getAbsolutePath() + ':' + startAt + ':' + length;
 	}
 
+	@Override
 	public long size() {
 		return length;
 	}
 
+	@Override
 	public boolean isReadOnly() {
 		return true;
 	}
 
+	@Override
 	public void setReadOnly() {
 	// Do nothing
 	}
@@ -139,36 +145,44 @@ public class ReadOnlyFileSliceBucket implements Bucket, SerializableToFieldSetBu
 		}
 	}
 
+	@Override
 	public void free() {
 	}
 
-	public SimpleFieldSet toFieldSet() {
-		SimpleFieldSet fs = new SimpleFieldSet(false);
-		fs.putSingle("Type", "ReadOnlyFileSliceBucket");
-		fs.putSingle("Filename", file.toString());
-		fs.put("Offset", startAt);
-		fs.put("Length", length);
-		return fs;
-	}
-
-	public void storeTo(ObjectContainer container) {
-		container.store(this);
-	}
-
-	public void removeFrom(ObjectContainer container) {
-		container.delete(file);
-		container.delete(this);
-	}
-	
-	public void objectOnActivate(ObjectContainer container) {
-		// Cascading activation of dependancies
-		container.activate(file, 5);
-	}
-
-	public Bucket createShadow() throws IOException {
-		String fnam = new String(file.getPath());
+	@Override
+	public Bucket createShadow() {
+		String fnam = file.getPath();
 		File newFile = new File(fnam);
 		return new ReadOnlyFileSliceBucket(newFile, startAt, length);
 	}
+
+    @Override
+    public void onResume(ClientContext context) {
+        // Do nothing.
+    }
+    
+    static final int MAGIC = 0x99e54c4;
+    static final int VERSION = 1;
+
+    @Override
+    public void storeTo(DataOutputStream dos) throws IOException {
+        dos.writeInt(MAGIC);
+        dos.writeInt(VERSION);
+        dos.writeUTF(file.toString());
+        dos.writeLong(startAt);
+        dos.writeLong(length);
+    }
+
+    protected ReadOnlyFileSliceBucket(DataInputStream dis) throws StorageFormatException, IOException {
+        int version = dis.readInt();
+        if(version != VERSION) throw new StorageFormatException("Bad version");
+        file = new File(dis.readUTF());
+        startAt = dis.readLong();
+        if(startAt < 0) throw new StorageFormatException("Bad start at");
+        length = dis.readLong();
+        if(length < 0) throw new StorageFormatException("Bad length");
+        if(!file.exists()) throw new StorageFormatException("File does not exist any more");
+        if(file.length() < startAt+length) throw new StorageFormatException("Slice does not fit in file");
+    }
 
 }

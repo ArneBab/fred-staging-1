@@ -3,6 +3,8 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.crypt;
 
+import static java.util.concurrent.TimeUnit.HOURS;
+
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
@@ -49,10 +51,10 @@ import freenet.support.io.Closer;
  * delta calculation that is quite conservative. Still, its used along side the
  * global multiplier and program- supplied guesses, as suggested.</li>
  * </ul>
- * 
+ *
  * @author Scott G. Miller <scgmille@indiana.edu>
  */
-public class Yarrow extends RandomSource {
+public class Yarrow extends RandomSource implements PersistentRandomSource {
 
 	private static final long serialVersionUID = -1;
 	private static volatile boolean logMINOR;
@@ -76,19 +78,23 @@ public class Yarrow extends RandomSource {
 	public Yarrow() {
 		this("prng.seed", "SHA1", "Rijndael", true, true);
 	}
-	
+
 	public Yarrow(boolean canBlock) {
 		this("prng.seed", "SHA1", "Rijndael", true, canBlock);
+	}
+
+	public Yarrow(File seed) {
+		this(seed, "SHA1", "Rijndael", true, true);
 	}
 
 	public Yarrow(String seed, String digest, String cipher, boolean updateSeed, boolean canBlock) {
 		this(new File(seed), digest, cipher, updateSeed, canBlock);
 	}
-	
+
 	public Yarrow(File seed, String digest, String cipher, boolean updateSeed, boolean canBlock) {
 		this(seed, digest, cipher, updateSeed, canBlock, true);
 	}
-	
+
 	// unset reseedOnStartup only in unit test
 	Yarrow(File seed, String digest, String cipher, boolean updateSeed, boolean canBlock, boolean reseedOnStartup) {
 		SecureRandom s;
@@ -106,8 +112,8 @@ public class Yarrow extends RandomSource {
 			Logger.error(this, "Could not init pools trying to getInstance(" + digest + "): " + e, e);
 			throw new RuntimeException("Cannot initialize Yarrow!: " + e, e);
 		}
-		
-		if(updateSeed && !(seed.toString()).equals("/dev/urandom")) //Dont try to update the seedfile if we know that it wont be possible anyways 
+
+		if(updateSeed && !(seed.toString()).equals("/dev/urandom")) //Dont try to update the seedfile if we know that it wont be possible anyways
 			seedfile = seed;
 		else
 			seedfile = null;
@@ -147,7 +153,6 @@ public class Yarrow extends RandomSource {
 					Closer.close(fis);
 				}
 
-			boolean isSystemEntropyAvailable = true;
 			// Read some bits from /dev/urandom
 			try {
 				fis = new FileInputStream("/dev/urandom");
@@ -160,12 +165,11 @@ public class Yarrow extends RandomSource {
 				Logger.normal(this, "Can't read /dev/urandom: " + t, t);
 				// We can't read it; let's skip /dev/random and seed from SecureRandom.generateSeed()
 				canBlock = true;
-				isSystemEntropyAvailable = false;
 			} finally {
 				Closer.close(dis);
 				Closer.close(fis);
 			}
-			if(canBlock && isSystemEntropyAvailable)
+			if(canBlock)
 				// Read some bits from /dev/random
 				try {
 					fis = new FileInputStream("/dev/random");
@@ -245,12 +249,11 @@ public class Yarrow extends RandomSource {
 			dis = new DataInputStream(bis);
 
 			EntropySource seedFile = new EntropySource();
-			try {
 				for(int i = 0; i < 32; i++)
 					acceptEntropy(seedFile, dis.readLong(), 64);
-			} catch(EOFException f) {
-			}
 			dis.close();
+		} catch(EOFException f) {
+			// Okay.
 		} catch(IOException e) {
 			Logger.error(this, "IOE trying to read the seedfile from disk : " + e.getMessage());
 		} finally {
@@ -266,11 +269,19 @@ public class Yarrow extends RandomSource {
 		write_seed(filename, false);
 	}
 
-	public void write_seed(File filename, boolean force) {
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void write_seed(boolean force) {
+        write_seed(seedfile, force);
+    }
+
+    private void write_seed(File filename, boolean force) {
 		if(!force)
 			synchronized(this) {
 				long now = System.currentTimeMillis();
-				if(now - timeLastWroteSeed <= 60 * 60 * 1000 /* once per hour */)
+				if(now - timeLastWroteSeed <= HOURS.toMillis(1) /* once per hour */)
 					return;
 				else
 					timeLastWroteSeed = now;
@@ -314,13 +325,13 @@ public class Yarrow extends RandomSource {
 		fetch_counter = output_buffer.length;
 	}
 
-	private final void counterInc() {
+	private void counterInc() {
 		for(int i = counter.length - 1; i >= 0; i--)
 			if(++counter[i] != 0)
 				break;
 	}
 
-	private final void generateOutput() {
+	private void generateOutput() {
 		counterInc();
 
 		output_buffer = new byte[counter.length];
@@ -449,8 +460,8 @@ public class Yarrow extends RandomSource {
 	private Map<EntropySource, int[]> entropySeen;
 
 	private void accumulator_init(String digest) throws NoSuchAlgorithmException {
-		fast_pool = MessageDigest.getInstance(digest);
-		slow_pool = MessageDigest.getInstance(digest);
+		fast_pool = MessageDigest.getInstance(digest, Util.mdProviders.get(digest));
+		slow_pool = MessageDigest.getInstance(digest, Util.mdProviders.get(digest));
 		entropySeen = new HashMap<EntropySource, int[]>();
 	}
 
@@ -467,7 +478,7 @@ public class Yarrow extends RandomSource {
 			long thingy = 0;
 			int bytes = 0;
 			for(int j = 0; j < Math.min(length, i + 8); j++) {
-				thingy = (thingy << 8) + buf[j];
+				thingy = (thingy << 8) + (buf[j] & 0xFF);
 				bytes++;
 			}
 			totalRealEntropy += acceptEntropy(source, thingy, bytes * 8, bias);
@@ -501,7 +512,7 @@ public class Yarrow extends RandomSource {
 				(byte) (data >> 48),
 				(byte) (data >> 56)
 		};
-		
+
 		synchronized(this) {
 			fast_select = !fast_select;
 			MessageDigest pool = (fast_select ? fast_pool : slow_pool);
@@ -631,7 +642,7 @@ public class Yarrow extends RandomSource {
 	private MessageDigest reseed_ctx;
 
 	private void reseed_init(String digest) throws NoSuchAlgorithmException {
-		reseed_ctx = MessageDigest.getInstance(digest);
+		reseed_ctx = MessageDigest.getInstance(digest, Util.mdProviders.get(digest));
 	}
 
 	private void fast_pool_reseed() {

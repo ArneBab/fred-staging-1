@@ -77,8 +77,6 @@ public final class ReceivedCookie extends Cookie {
 		// 2. Its very fast :)
 		
 		// Set to true if a broken browser (Konqueror) specifies a cookie where the name is NOT the first attribute.
-		boolean singleCookie = false;
-
 		try {
 		for(int i = 0; i < header.length;) {
 			// Skip leading whitespace of key, we must do a header.length check because there might be no more key, so we continue;
@@ -173,7 +171,6 @@ public final class ReceivedCookie extends Cookie {
 					// We cannot throw because Konqueror (4.2.2) is broken and specifies $version as the first attribute.
 					//throw new IllegalArgumentException("Invalid cookie: Name is not the first attribute: " + httpHeader);
 					
-					singleCookie = true;
 					currentCookieContent.put(key, value);
 				} else {
 					currentCookieName = key;
@@ -183,9 +180,9 @@ public final class ReceivedCookie extends Cookie {
 				if(key.charAt(0) == '$')
 					currentCookieContent.put(key, value);
 				else {// We finished parsing of the current cookie, a new one starts here.
-					if(singleCookie)
-						throw new ParseException("Invalid cookie header: Multiple cookies specified but "
-								+ " the name of the first cookie was not the first attribute: " + httpHeader, i);
+					//if(singleCookie)
+					//	throw new ParseException("Invalid cookie header: Multiple cookies specified but "
+					//			+ " the name of the first cookie was not the first attribute: " + httpHeader, i);
 					
 					cookies.add(new ReceivedCookie(currentCookieName, currentCookieContent)); // Store the previous cookie.
 					
@@ -213,6 +210,7 @@ public final class ReceivedCookie extends Cookie {
 	/**
 	 * @throws IllegalArgumentException If the validation of the name fails.
 	 */
+	@Override
 	public String getName() {
 		if(name == null) {
 			name = validateName(notValidatedName);
@@ -225,6 +223,7 @@ public final class ReceivedCookie extends Cookie {
 	/**
 	 * @throws IllegalArgumentException If the validation of the domain fails.
 	 */
+	@Override
 	public URI getDomain() {
 		if(domain == null) {
 			try {
@@ -244,6 +243,7 @@ public final class ReceivedCookie extends Cookie {
 	/**
 	 * @throws IllegalArgumentException If the validation of the path fails.
 	 */
+	@Override
 	public URI getPath() {
 		if(path == null) {
 			try {
@@ -259,6 +259,7 @@ public final class ReceivedCookie extends Cookie {
 	/**
 	 * @throws IllegalArgumentException If the validation of the name fails.
 	 */
+	@Override
 	public String getValue() {
 		if(value == null) 
 			value = validateValue(content.get(getName()));
@@ -279,6 +280,7 @@ public final class ReceivedCookie extends Cookie {
 //		return expirationDate;
 //	}
 
+	@Override
 	protected String encodeToHeaderValue() {
 		throw new UnsupportedOperationException("ReceivedCookie objects cannot be encoded to a HTTP header value, use Cookie objects!");
 	}

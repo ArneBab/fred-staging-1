@@ -8,22 +8,30 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigInteger;
+import java.security.DigestException;
+import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.Provider;
+import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Random;
-
+import java.util.HashMap;
+import java.util.Collections;
+import java.util.Map;
 import net.i2p.util.NativeBigInteger;
+import freenet.crypt.JceLoader;
 import freenet.crypt.ciphers.Rijndael;
 import freenet.support.HexUtil;
 import freenet.support.Loader;
+import freenet.support.Logger;
+import freenet.support.math.MersenneTwister;
 
 public class Util {
 
 	// bah, i'm tired of chasing down dynamically loaded classes..
-	// this is for getCipherByName() and getDigestByName()
+	// this is for getCipherByName()
 	static {
-		SHA1.class.toString();
-		JavaSHA1.class.toString();
 		Rijndael.class.toString();
 	}
 
@@ -31,25 +39,25 @@ public class Util {
 
 	public static void fillByteArrayFromInts(int[] ints, byte[] bytes) {
 		int ic = 0;
-		for (int i = 0; i < ints.length; i++) {
-			bytes[ic++] = (byte) (ints[i] >> 24);
-			bytes[ic++] = (byte) (ints[i] >> 16);
-			bytes[ic++] = (byte) (ints[i] >> 8);
-			bytes[ic++] = (byte) ints[i];
+		for (int i: ints) {
+			bytes[ic++] = (byte) (i >> 24);
+			bytes[ic++] = (byte) (i >> 16);
+			bytes[ic++] = (byte) (i >> 8);
+			bytes[ic++] = (byte)  i;
 		}
 	}
 
 	public static void fillByteArrayFromLongs(long[] ints, byte[] bytes) {
 		int ic = 0;
-		for (int i = 0; i < ints.length; i++) {
-			bytes[ic++] = (byte) (ints[i] >> 56);
-			bytes[ic++] = (byte) (ints[i] >> 48);
-			bytes[ic++] = (byte) (ints[i] >> 40);
-			bytes[ic++] = (byte) (ints[i] >> 32);
-			bytes[ic++] = (byte) (ints[i] >> 24);
-			bytes[ic++] = (byte) (ints[i] >> 16);
-			bytes[ic++] = (byte) (ints[i] >> 8);
-			bytes[ic++] = (byte) ints[i];
+		for (long l: ints) {
+			bytes[ic++] = (byte) (l >> 56);
+			bytes[ic++] = (byte) (l >> 48);
+			bytes[ic++] = (byte) (l >> 40);
+			bytes[ic++] = (byte) (l >> 32);
+			bytes[ic++] = (byte) (l >> 24);
+			bytes[ic++] = (byte) (l >> 16);
+			bytes[ic++] = (byte) (l >> 8);
+			bytes[ic++] = (byte)  l;
 		}
 	}
 
@@ -87,25 +95,6 @@ public class Util {
 		return new NativeBigInteger(1, data);
 	}
 
-	/**
-	 * Creates a large random number (BigInteger) up to <b>bits</b> bits.
-	 * This differs from the BigInteger constructor, in that it generates all
-	 * numbers from the range 2^lower to 2^n, rather than 2^n-1 to 2^n.
-	 */
-	public static BigInteger generateLargeRandom(
-		int lowerBound,
-		int upperBound,
-		Random r) {
-		if (lowerBound == upperBound)
-			return new NativeBigInteger(lowerBound, r);
-
-		int bl;
-		do {
-			bl = (r.nextInt() & 0x7fffffff) % upperBound;
-		} while (bl < lowerBound);
-		return new NativeBigInteger(bl, r);
-	}
-
 	public static byte[] hashBytes(MessageDigest d, byte[] b) {
 		return hashBytes(d, b, 0, b.length);
 	}
@@ -122,7 +111,7 @@ public class Util {
 	/**
 	 * Hashes a string in a consistent manner
 	 */
-	public static byte[] hashString(Digest d, String s) {
+	public static byte[] hashString(MessageDigest d, String s) {
 		try {
 			byte[] sbytes = s.getBytes("UTF-8");
 			d.update(sbytes, 0, sbytes.length);
@@ -142,26 +131,156 @@ public class Util {
 			rv[i] = (byte) (b1[i] ^ b2[i]);
 		return rv;
 	}
-	
-	//Compares two byte arrays. Consider using Arrays.equals(a,b) instead of this
-	//if you have two method if you have two equally sized arrays
-	public static boolean byteArrayEqual(byte[] a, byte[] b, int offset, int length) {
-		int lim = offset + length;
-		if ((a.length < lim) || (b.length < lim))
-			return false;
-		for (int i = offset; i < lim; ++i)
-			if (a[i] != b[i])
-				return false;
-		return true;
+
+	static public void randomBytes(SecureRandom r, byte[] buf) {
+		r.nextBytes(buf);
 	}
 
-	private static Digest ctx = SHA1.getInstance();
+	static public void randomBytes(SecureRandom r, byte[] buf, int from, int len) {
+		randomBytesSlowNextInt(r, buf, from, len);
+	}
+
+	/** Fill specified range of byte array with random data. */
+	static private void randomBytesSlowNextInt(Random r, byte[] buf, int from, int len) {
+	   if (from == 0 && len == buf.length) {
+		   r.nextBytes(buf);
+		   return;
+	   }
+	   byte [] tmp = new byte[len];
+	   r.nextBytes(tmp);
+	   System.arraycopy(tmp, 0, buf, from, len);
+	}
+
+	/** Fill byte array with random data.
+	 * randomBytes(random, buf) is same as random.nextBytes(buf)
+	 */
+	static public void randomBytes(Random r, byte[] buf) {
+		randomBytes(r, buf, 0, buf.length);
+	}
+
+	/** Fill specified range of byte array with random data.
+	 * Optimised version for Random with fast nextInt().
+	 * Must be same as randomBytesSlowNextInt(buf, from, len).
+	 * WARNING: full compatibility with randomBytesSlowNextInt() is *critical*!
+	 */
+	/*
+	 * Why, why, why? Why Random have no nextBytes(buf, from, len) method?
+	 */
+	static public void randomBytes(Random r, byte[] buf, int from, int len) {
+		if (!(r instanceof MersenneTwister)) {
+			/* SecureRandom's nextInt() have *abysmal* performance */
+			/* But more generally we can't guarantee this will work except for MT. */
+			randomBytesSlowNextInt(r, buf, from, len);
+			return;
+		}
+		assert(Integer.SIZE/Byte.SIZE == 4);
+		final int to = from + len;
+		while(from + 4 <= to) {
+			int rnd = r.nextInt();
+			buf[from++] = (byte)rnd; rnd >>= 8;
+			buf[from++] = (byte)rnd; rnd >>= 8;
+			buf[from++] = (byte)rnd; rnd >>= 8;
+			buf[from++] = (byte)rnd; rnd >>= 8;
+		}
+		if(to > from) {
+			assert(to - from < Integer.SIZE/Byte.SIZE);
+			for (int rnd = r.nextInt(); from < to; rnd >>= 8)
+				buf[from++] = (byte)rnd;
+		}
+	}
+	
+	@Deprecated // use freenet.support.Fields instead
+	public static boolean byteArrayEqual(byte[] a, byte[] b, int offset, int length) {
+		return freenet.support.Fields.byteArrayEqual(a, b, offset, offset, length);
+	}
+
+	private static final MessageDigest ctx;
+	private static final int ctx_length;
+
+	public static final Map<String, Provider> mdProviders;
+
+	static private long benchmark(MessageDigest md) throws GeneralSecurityException
+	{
+		long times = Long.MAX_VALUE;
+		byte[] input = new byte[1024];
+		byte[] output = new byte[md.getDigestLength()];
+		// warm-up
+		for (int i = 0; i < 32; i++) {
+			md.update(input, 0, input.length);
+			md.digest(output, 0, output.length);
+			System.arraycopy(output, 0, input, (i*output.length)%(input.length-output.length), output.length);
+		}
+		for (int i = 0; i < 128; i++) {
+			long startTime = System.nanoTime();
+			for (int j = 0; j < 4; j++) {
+				for (int k = 0; k < 32; k ++) {
+					md.update(input, 0, input.length);
+				}
+				md.digest(output, 0, output.length);
+			}
+			long endTime = System.nanoTime();
+			times = Math.min(endTime - startTime, times);
+			System.arraycopy(output, 0, input, 0, output.length);
+		}
+		return times;
+	}
+
+	static {
+		try {
+			HashMap<String,Provider> mdProviders_internal = new HashMap<String, Provider>();
+
+			for (String algo: new String[] {
+				"SHA1", "MD5", "SHA-256", "SHA-384", "SHA-512"
+			}) {
+				final Class<?> clazz = Util.class;
+				final Provider sun = JceLoader.SUN;
+				MessageDigest md = MessageDigest.getInstance(algo);
+				md.digest();
+				if (sun != null) {
+					// SUN provider is faster (in some configurations)
+					try {
+						MessageDigest sun_md = MessageDigest.getInstance(algo, sun);
+						sun_md.digest();
+						if (md.getProvider() != sun_md.getProvider()) {
+							long time_def = benchmark(md);
+							long time_sun = benchmark(sun_md);
+							System.out.println(algo + " (" + md.getProvider() + "): " + time_def + "ns");
+							System.out.println(algo + " (" + sun_md.getProvider() + "): " + time_sun + "ns");
+							Logger.minor(clazz, algo + " (" + md.getProvider() + "): " + time_def + "ns");
+							Logger.minor(clazz, algo + " (" + sun_md.getProvider() + "): " + time_sun + "ns");
+							if (time_sun < time_def) {
+								md = sun_md;
+							}
+						}
+					} catch(GeneralSecurityException e) {
+						// ignore
+						Logger.warning(clazz, algo + "@" + sun + " benchmark failed", e);
+					} catch(Throwable e) {
+						// ignore
+						Logger.error(clazz, algo + "@" + sun + " benchmark failed", e);
+					}
+				}
+				Provider mdProvider = md.getProvider();
+				System.out.println(algo + ": using " + mdProvider);
+				Logger.normal(clazz, algo + ": using " + mdProvider);
+				mdProviders_internal.put(algo, mdProvider);
+			}
+			mdProviders = Collections.unmodifiableMap(mdProviders_internal);
+
+			ctx = MessageDigest.getInstance("SHA1", mdProviders.get("SHA1"));
+			ctx_length = ctx.getDigestLength();
+		} catch(NoSuchAlgorithmException e) {
+			// impossible
+			throw new Error(e);
+		}
+	}
 
 	public static void makeKey(
 		byte[] entropy,
 		byte[] key,
 		int offset,
 		int len) {
+		try {
 		synchronized (ctx) {
 			ctx.digest(); // reinitialize
 
@@ -172,9 +291,9 @@ public class Util {
 					ctx.update((byte) 0);
 				ctx.update(entropy, 0, entropy.length);
 				int bc;
-				if (len > 20) {
-					ctx.digest(true, key, offset);
-					bc = 20;
+				if (len > ctx_length) {
+					ctx.digest(key, offset, ctx_length);
+					bc = ctx_length;
 				} else {
 					byte[] hash = ctx.digest();
 					bc = Math.min(len, hash.length);
@@ -185,6 +304,10 @@ public class Util {
 			}
 		}
 		Arrays.fill(entropy, (byte) 0);
+		} catch(DigestException e) {
+			// impossible
+			throw new Error(e);
+		}
 	}
 
 	public static BlockCipher getCipherByName(String name) {
@@ -208,17 +331,6 @@ public class Util {
 				new Object[] { Integer.valueOf(keySize)});
 		} catch (Exception e) {
 			//throw new UnsupportedCipherException(""+e);
-			e.printStackTrace();
-			return null;
-		}
-	}
-
-	public static Digest getDigestByName(String name) {
-		//throws UnsupportedDigestException {
-		try {
-			return (Digest) Loader.getInstance("freenet.crypt." + name);
-		} catch (Exception e) {
-			//throw new UnsupportedDigestException(""+e);
 			e.printStackTrace();
 			return null;
 		}

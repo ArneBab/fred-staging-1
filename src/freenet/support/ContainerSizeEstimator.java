@@ -4,10 +4,10 @@
 package freenet.support;
 
 import java.util.HashMap;
-import java.util.Set;
+import java.util.Map;
 
 import freenet.client.ArchiveManager.ARCHIVE_TYPE;
-import freenet.client.async.ManifestElement;
+import freenet.support.api.ManifestElement;
 
 /**
  * Helper class to estaminate the container size,
@@ -66,27 +66,38 @@ public final class ContainerSizeEstimator {
 	}
 
 	private static void getSubTreeSize(HashMap<String, Object> metadata, ContainerSize result, long maxItemSize, long maxContainerSize,int maxDeep) {
-		Set<String> set = metadata.keySet();
 		// files
-		for(String name:set) {
-			Object o = metadata.get(name);
+		for(Map.Entry<String,Object> entry:metadata.entrySet()) {
+			Object o = entry.getValue();
 			if (o instanceof ManifestElement) {
 				ManifestElement me = (ManifestElement)o;
 				long itemsize = me.getSize();
 				if (itemsize > -1) {
 					result._sizeFilesNoLimit += getContainerItemSize(me.getSize());
+					// Add some bytes for .metadata element.
+					// FIXME 128 picked out of the air! Look up the format.
+					result._sizeFilesNoLimit += 128 + me.getName().length();
 					if (itemsize > maxItemSize)
 						result._sizeFiles += 512;  // spare for redirect
-					else
+					else {
 						result._sizeFiles += getContainerItemSize(me.getSize());
+						// Add some bytes for .metadata element.
+						// FIXME 128 picked out of the air! Look up the format.
+						result._sizeFilesNoLimit += 128 + me.getName().length();
+						// FIXME The tar file will need the full name????
+					}
 					if (result._sizeFiles > maxContainerSize) break;
+				} else {
+					// Redirect.
+					result._sizeFiles += 512;
+					result._sizeFilesNoLimit += 512;
 				}
 			}
 		}
 		// sub dirs
 		if (maxDeep > 0) {
-			for(String name:set) {
-				Object o = metadata.get(name);
+			for(Map.Entry<String,Object> entry:metadata.entrySet()) {
+				Object o = entry.getValue();
 				if (o instanceof HashMap) {
 					result._sizeSubTrees += 512;
 					@SuppressWarnings("unchecked")
@@ -111,7 +122,7 @@ public final class ContainerSizeEstimator {
 		throw new UnsupportedOperationException("TODO, only TAR supportet atm.");
 	}
 
-	public static final long tarItemSize(long size) {
+	public static long tarItemSize(long size) {
 		return 512 + (((size + 511) / 512) * 512);
 	}
 }

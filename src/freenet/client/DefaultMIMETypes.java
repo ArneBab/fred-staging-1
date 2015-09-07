@@ -7,8 +7,10 @@ package freenet.client;
 
 import java.util.HashMap;
 import java.util.Vector;
+import java.util.regex.Pattern;
 
 import freenet.support.Logger;
+import freenet.support.MediaType;
 
 /**
  * Holds the default MIME types.
@@ -65,11 +67,11 @@ public class DefaultMIMETypes {
 		addMIMEType(number, type);
 		Short t = Short.valueOf(number);
 		if(extensions != null) {
-			for(int i=0;i<extensions.length;i++) {
-				String ext = extensions[i].toLowerCase();
-				if(mimeTypesByExtension.containsKey(ext)) {
+			for(String ext : extensions) {
+				ext = ext.toLowerCase();
+				Short s = mimeTypesByExtension.get(ext);
+				if(s != null) {
 					// No big deal
-					Short s = mimeTypesByExtension.get(ext);
 					Logger.normal(DefaultMIMETypes.class, "Extension "+ext+" assigned to "+byNumber(s.shortValue())+" in preference to "+number+ ':' +type);
 				} else {
 					// If only one, make it primary
@@ -780,8 +782,49 @@ public class DefaultMIMETypes {
 		
 		String[] extensions = allExtensionsByMimeNumber.get(typeNumber);
 		if(extensions == null) return false;
-		for(int i=0;i<extensions.length;i++)
-			if(oldExt.equals(extensions[i])) return true;
+		for(String extension: extensions)
+			if(oldExt.equalsIgnoreCase(extension)) return true;
 		return false;
 	}
+	
+    public static boolean isValidExt(MediaType parsedType, String forceCompatibleExtension) {
+        return isValidExt(parsedType.getPlainType(), forceCompatibleExtension);
+    }
+	
+	private static final String TOP_LEVEL = "(?>[a-zA-Z-]+)";
+	private static final String CHARS = "(?>[a-zA-Z0-9+_\\-\\.]+)";
+	private static final String PARAM = "(?>;\\s*"+CHARS+"="+"(("+CHARS+")|(\".*\")))";
+	private static Pattern MIME_TYPE = Pattern.compile(TOP_LEVEL+"/"+CHARS+"\\s*"+PARAM+"*");
+
+	private static Pattern INFOCALYPSE_DIRTY_HACK = Pattern.compile("application/mercurial-bundle;[0-9]{1,6}");
+	
+	public static boolean isPlausibleMIMEType(String mimeType) {
+		if(MIME_TYPE.matcher(mimeType).matches()) return true;
+		// FIXME dirty hack for backwards compatibility with old Infocalypse repo's
+		return INFOCALYPSE_DIRTY_HACK.matcher(mimeType).matches();
+	}
+	
+	static String[] getMIMETypes() {
+		return mimeTypesByNumber.toArray(new String[mimeTypesByNumber.size()]);
+	}
+
+	/** Make sure the filename has the correct extension for the MIME type */
+	public static String forceExtension(String s, String expectedMimeType) {
+		int dotIdx = s.lastIndexOf('.');
+		String ext = getExtension(expectedMimeType);
+		if(ext == null)
+			ext = "bin";
+		if((dotIdx == -1) && (expectedMimeType != null)) {
+			s += '.' + ext;
+			return s;
+		}
+		if(dotIdx != -1) {
+			String oldExt = s.substring(dotIdx+1);
+			if(DefaultMIMETypes.isValidExt(expectedMimeType, oldExt))
+				return s;
+			return s + '.' + ext;
+		}
+		return s + '.' + ext;
+	}
+
 }

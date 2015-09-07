@@ -3,6 +3,8 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.io.comm;
 
+import java.net.InetAddress;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -31,19 +33,20 @@ public class IOStatisticCollector {
 		logDEBUG = Logger.shouldLog(LogLevel.DEBUG, this);
 	}
 	
-	public void addInfo(String key, int inbytes, int outbytes) {
+	public void addInfo(InetAddress addr, int port, int inbytes, int outbytes, boolean isLocal) {
 		try {
 			synchronized (this) {
-				_addInfo(key, inbytes, outbytes);
+				_addInfo(addr, port, inbytes, outbytes, isLocal);
 			}
 		} catch (Throwable t) {
 			t.printStackTrace();
 		}
 	}
 	
-	private void _addInfo(String key, int inbytes, int outbytes) {
+	private void _addInfo(InetAddress addr, int port, int inbytes, int outbytes, boolean isLocal) {
 		rotate();
 		if(ENABLE_PER_ADDRESS_TRACKING) {
+			String key = addr + ":" + port;
 			StatisticEntry entry = targets.get(key);
 			if (entry == null) {
 				entry = new StatisticEntry();
@@ -51,11 +54,13 @@ public class IOStatisticCollector {
 			}
 			entry.addData((inbytes>0)?inbytes:0, (outbytes>0)?outbytes:0);
 		}
-		synchronized(this) {
-			totalbytesout += (outbytes>0)?outbytes:0;
-			totalbytesin += (inbytes>0)?inbytes:0;
-			if(logDEBUG)
-				Logger.debug(IOStatisticCollector.class, "Add("+key+ ',' +inbytes+ ',' +outbytes+" -> "+totalbytesin+" : "+totalbytesout);
+		if(!isLocal) {
+			synchronized(this) {
+				totalbytesout += (outbytes>0)?outbytes:0;
+				totalbytesin += (inbytes>0)?inbytes:0;
+				if(logDEBUG)
+					Logger.debug(IOStatisticCollector.class, "Add("+addr+":"+port+ ',' +inbytes+ ',' +outbytes+" -> "+totalbytesin+" : "+totalbytesout);
+			}
 		}
 	}
 	
@@ -208,15 +213,11 @@ public class IOStatisticCollector {
 		}
 		
 		public int[] getRecieved() {
-			int retint[] = new int[IOStatisticCollector.STATISTICS_ENTRIES];
-			System.arraycopy(recieved, 1, retint, 0, IOStatisticCollector.STATISTICS_ENTRIES);
-			return retint;
+			return Arrays.copyOfRange(recieved, 1, 1 + IOStatisticCollector.STATISTICS_ENTRIES);
 		}
 		
 		public int[] getSent() {
-			int retint[] = new int[IOStatisticCollector.STATISTICS_ENTRIES];
-			System.arraycopy(sent, 1, retint, 0, IOStatisticCollector.STATISTICS_ENTRIES);
-			return retint;
+			return Arrays.copyOfRange(sent, 1, 1 + IOStatisticCollector.STATISTICS_ENTRIES);
 		}
 		
 	}

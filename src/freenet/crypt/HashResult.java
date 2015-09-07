@@ -3,41 +3,47 @@ package freenet.crypt;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.Serializable;
 import java.util.Arrays;
 
-import com.db4o.ObjectContainer;
-
+import freenet.support.HexUtil;
 import freenet.support.Logger;
 
-public class HashResult implements Comparable {
+public class HashResult implements Comparable<HashResult>, Cloneable, Serializable {
 
+    private static final long serialVersionUID = 1L;
+    /** The type of hash. */
 	public final HashType type;
-	public final byte[] result;
+	/** The result of the hash. Immutable. */
+	private final byte[] result;
+	/** Cached HashType.values(). Never modify or pass this array to outside code! */
+	private static final HashType[] HashType_values = HashType.values();
 	
 	public HashResult(HashType hashType, byte[] bs) {
 		this.type = hashType;
 		this.result = bs;
 		assert(bs.length == type.hashLength);
 	}
-
-	public HashResult(HashResult res) {
-		this.type = res.type;
-		// FIXME should we copy the byte[] ???
-		// Not necessary for copying for db4o anyway.
-		this.result = res.result;
+	
+	protected HashResult() {
+        // For serialization.
+	    type = null;
+	    result = null;
 	}
 
 	public static HashResult[] readHashes(DataInputStream dis) throws IOException {
 		int bitmask = dis.readInt();
+		if(bitmask == 0) return null;
 		int count = 0;
-		for(HashType h : HashType.values()) {
+		for(HashType h : HashType_values) {
 			if((bitmask & h.bitmask) == h.bitmask) {
 				count++;
 			}
 		}
 		HashResult[] results = new HashResult[count];
 		int x = 0;
-		for(HashType h : HashType.values()) {
+		for(HashType h : HashType_values) {
 			if((bitmask & h.bitmask) == h.bitmask) {
 				results[x++] = HashResult.readFrom(h, dis);
 			}
@@ -52,6 +58,7 @@ public class HashResult implements Comparable {
 	}
 
 	public static void write(HashResult[] hashes, DataOutputStream dos) throws IOException {
+	    if(hashes == null) hashes = new HashResult[0];
 		int bitmask = 0;
 		for(HashResult hash : hashes)
 			bitmask |= hash.type.bitmask;
@@ -66,22 +73,16 @@ public class HashResult implements Comparable {
 			h.writeTo(dos);
 	}
 
-	private void writeTo(DataOutputStream dos) throws IOException {
+	public void writeTo(OutputStream dos) throws IOException {
 		// Any given hash type has a fixed hash length, so just push the bytes.
 		dos.write(result);
 	}
 
-	public int compareTo(Object arg0) {
-		HashResult h = (HashResult)arg0;
+	@Override
+	public int compareTo(HashResult h) {
 		if(type.bitmask == h.type.bitmask) return 0;
 		if(type.bitmask > h.type.bitmask) return 1;
 		/* else if(type.bitmask < h.type.bitmask) */ return -1;
-	}
-
-	public void removeFrom(ObjectContainer container) {
-		// HashType is an enum, so we don't need to worry about it.
-		// Db4o does the right thing with them.
-		container.delete(this);
 	}
 
 	public static long makeBitmask(HashResult[] hashes) {
@@ -135,8 +136,17 @@ public class HashResult implements Comparable {
 		return out;
 	}
 	
+	@Override
 	public HashResult clone() {
-		return new HashResult(this);
+		try {
+			return (HashResult) super.clone();
+		} catch (CloneNotSupportedException e) {
+			throw new Error(e);
+		}
+	}
+
+	public String hashAsHex() {
+		return HexUtil.bytesToHex(result);
 	}
 
 }

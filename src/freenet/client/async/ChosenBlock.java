@@ -10,7 +10,9 @@ import freenet.node.SendableRequestItem;
 import freenet.node.SendableRequestSender;
 
 /**
- * A single selected request, including everything needed to execute it.
+ * A single selected request, including everything needed to execute it. Most important functions 
+ * are the callbacks, which run off-thread, call the upstream callbacks on the SendableGet etc, and
+ * remove the fetching keys from the KeysFetchingLocally.
  * @author Matthew Toseland <toad@amphibian.dyndns.org> (0xE43DA450)
  */
 public abstract class ChosenBlock {
@@ -26,9 +28,9 @@ public abstract class ChosenBlock {
 	public transient final boolean ignoreStore;
 	public transient final boolean canWriteClientCache;
 	public transient final boolean forkOnCacheable;
-	private transient ClientKey generatedKey;
+	public transient final boolean realTimeFlag;
 	
-	public ChosenBlock(SendableRequestItem token, Key key, ClientKey ckey, boolean localRequestOnly, boolean ignoreStore, boolean canWriteClientCache, boolean forkOnCacheable, RequestScheduler sched) {
+	public ChosenBlock(SendableRequestItem token, Key key, ClientKey ckey, boolean localRequestOnly, boolean ignoreStore, boolean canWriteClientCache, boolean forkOnCacheable, boolean realTimeFlag, RequestScheduler sched) {
 		this.token = token;
 		if(token == null) throw new NullPointerException();
 		this.key = key;
@@ -37,6 +39,7 @@ public abstract class ChosenBlock {
 		this.ignoreStore = ignoreStore;
 		this.canWriteClientCache = canWriteClientCache;
 		this.forkOnCacheable = forkOnCacheable;
+		this.realTimeFlag = realTimeFlag;
 	}
 
 	public abstract boolean isPersistent();
@@ -45,7 +48,7 @@ public abstract class ChosenBlock {
 
 	public abstract void onFailure(LowLevelPutException e, ClientContext context);
 
-	public abstract void onInsertSuccess(ClientContext context);
+	public abstract void onInsertSuccess(ClientKey key, ClientContext context);
 
 	public abstract void onFailure(LowLevelGetException e, ClientContext context);
 
@@ -58,10 +61,14 @@ public abstract class ChosenBlock {
 	public abstract void onFetchSuccess(ClientContext context);
 
 	public abstract short getPriority();
+	
+	private boolean sendIsBlocking;
 
 	public boolean send(NodeClientCore core, RequestScheduler sched) {
 		ClientContext context = sched.getContext();
-		return getSender(context).send(core, sched, context, this);
+		SendableRequestSender sender = getSender(context);
+		sendIsBlocking = sender.sendIsBlocking();
+		return sender.send(core, sched, context, this);
 	}
 	
 	public abstract SendableRequestSender getSender(ClientContext context);
@@ -70,11 +77,8 @@ public abstract class ChosenBlock {
 		token.dump();
 	}
 	
-	public ClientKey getGeneratedKey() {
-		return generatedKey;
-	}
-	
-	public void setGeneratedKey(ClientKey key) {
-		generatedKey = key;
+	/** Call this after send() */
+	public boolean sendIsBlocking() {
+		return sendIsBlocking;
 	}
 }

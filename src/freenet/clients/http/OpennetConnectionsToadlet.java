@@ -23,7 +23,7 @@ public class OpennetConnectionsToadlet extends ConnectionsToadlet implements Lin
 
 	@Override
 	protected void drawNameColumn(HTMLNode peerRow,
-			PeerNodeStatus peerNodeStatus) {
+			PeerNodeStatus peerNodeStatus, boolean advanced) {
 		// Do nothing - no names on opennet
 	}
 
@@ -53,13 +53,15 @@ public class OpennetConnectionsToadlet extends ConnectionsToadlet implements Lin
 		return node.peers.getOpennetPeerNodeStatuses(noHeavy);
 	}
 
+	@Override
 	public boolean isEnabled(ToadletContext ctx) {
 		return node.isOpennetEnabled();
 	}
 
 	@Override
-	protected String getPageTitle(String titleCountString, String myName) {
-		return NodeL10n.getBase().getString("OpennetConnectionsToadlet.fullTitle", new String[] { "counts", "name" }, new String[] { titleCountString, node.getMyName() } );
+	protected String getPageTitle(String titleCountString) {
+		return NodeL10n.getBase().getString("OpennetConnectionsToadlet.fullTitle",
+				new String[] {"counts"}, new String[] {titleCountString} );
 	}
 
 	@Override

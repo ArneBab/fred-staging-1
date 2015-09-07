@@ -4,12 +4,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.Map.Entry;
 
 import freenet.client.FetchException;
 import freenet.client.filter.HTMLFilter.ParsedTag;
 import freenet.clients.http.FProxyFetchInProgress;
+import freenet.clients.http.FProxyFetchInProgress.REFILTER_POLICY;
 import freenet.clients.http.FProxyFetchResult;
 import freenet.clients.http.FProxyFetchTracker;
 import freenet.clients.http.FProxyFetchWaiter;
@@ -44,7 +44,7 @@ public class ImageElement extends BaseUpdateableElement {
 	private ParsedTag				originalImg;
 
 	// FIXME get this from global weakFastRandom ???
-	private final int				randomNumber	= new Random().nextInt();
+	private final int				randomNumber;
 
 	private boolean					wasError		= false;
 
@@ -70,6 +70,7 @@ public class ImageElement extends BaseUpdateableElement {
 	
 	public ImageElement(FProxyFetchTracker tracker, FreenetURI key, long maxSize, ToadletContext ctx, ParsedTag originalImg, boolean pushed) {
 		super("span", ctx);
+		randomNumber = tracker.makeRandomElementID();
 		long now = System.currentTimeMillis();
 		if (logMINOR) {
 			Logger.minor(this, "ImageElement creating for uri:" + key);
@@ -84,16 +85,17 @@ public class ImageElement extends BaseUpdateableElement {
 		fetchListener = new NotifierFetchListener(((SimpleToadletServer) ctx.getContainer()).pushDataManager, this);
 		((SimpleToadletServer) ctx.getContainer()).getTicker().queueTimedJob(new Runnable() {
 
+			@Override
 			public void run() {
 				try {
-					FProxyFetchWaiter waiter = ImageElement.this.tracker.makeFetcher(ImageElement.this.key, ImageElement.this.maxSize, null);
+					FProxyFetchWaiter waiter = ImageElement.this.tracker.makeFetcher(ImageElement.this.key, ImageElement.this.maxSize, null, REFILTER_POLICY.RE_FILTER);
 					ImageElement.this.tracker.getFetchInProgress(ImageElement.this.key, ImageElement.this.maxSize, null).addListener(fetchListener);
 					ImageElement.this.tracker.getFetchInProgress(ImageElement.this.key, ImageElement.this.maxSize, null).close(waiter);
 				} catch (FetchException fe) {
 					if (fe.newURI != null) {
 						try {
 							ImageElement.this.key = fe.newURI;
-							FProxyFetchWaiter waiter = ImageElement.this.tracker.makeFetcher(ImageElement.this.key, ImageElement.this.maxSize, null);
+							FProxyFetchWaiter waiter = ImageElement.this.tracker.makeFetcher(ImageElement.this.key, ImageElement.this.maxSize, null, REFILTER_POLICY.RE_FILTER);
 							ImageElement.this.tracker.getFetchInProgress(ImageElement.this.key, ImageElement.this.maxSize, null).addListener(fetchListener);
 							ImageElement.this.tracker.getFetchInProgress(ImageElement.this.key, ImageElement.this.maxSize, null).close(waiter);
 						} catch (FetchException fe2) {
@@ -134,7 +136,7 @@ public class ImageElement extends BaseUpdateableElement {
 	}
 
 	public static String getId(FreenetURI uri, int randomNumber) {
-		return Base64.encodeStandard(("image[URI:" + uri.toString() + ",random:" + randomNumber + "]").getBytes());
+		return Base64.encodeStandardUTF8(("image[URI:" + uri.toString() + ",random:" + randomNumber + "]"));
 	}
 
 	@Override
@@ -157,7 +159,7 @@ public class ImageElement extends BaseUpdateableElement {
 				whenJsEnabled.addChild(makeHtmlNodeForParsedTag(originalImg));
 			} else {
 				Map<String, String> attr = originalImg.getAttributesAsMap();
-				String sizePart = new String();
+				String sizePart = "";
 				if (attr.containsKey("width") && attr.containsKey("height")) {
 					sizePart = "&width=" + attr.get("width") + "&height=" + attr.get("height");
 				}
@@ -172,7 +174,7 @@ public class ImageElement extends BaseUpdateableElement {
 			FProxyFetchWaiter waiter = null;
 			try {
 				try {
-					waiter = tracker.makeFetcher(key, maxSize, null);
+					waiter = tracker.makeFetcher(key, maxSize, null, REFILTER_POLICY.RE_FILTER);
 					fr = waiter.getResultFast();
 				} catch (FetchException fe) {
 					whenJsEnabled.addChild("div", "error");

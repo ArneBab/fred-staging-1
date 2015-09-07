@@ -3,9 +3,9 @@ package freenet.config;
 import java.io.File;
 import java.io.IOException;
 
-import freenet.node.Ticker;
 import freenet.support.Logger;
 import freenet.support.SimpleFieldSet;
+import freenet.support.Ticker;
 
 public class FreenetFilePersistentConfig extends FilePersistentConfig {
 
@@ -16,6 +16,7 @@ public class FreenetFilePersistentConfig extends FilePersistentConfig {
 
 	private Ticker ticker;
 	public final Runnable thread = new Runnable() {
+		@Override
 		public void run() {
 			synchronized (this) {
 				while(!hasNodeStarted){
@@ -51,11 +52,12 @@ public class FreenetFilePersistentConfig extends FilePersistentConfig {
 
 	@Override
 	public void store() {
+	    // FIXME how to do this without duplicating code and making finishedInit visible?
 		synchronized(this) {
-			if(!finishedInit) {
-				Logger.minor(this, "Initialization not finished, refusing to write config", new Exception("error"));
-				return;
-			}
+	        if(!finishedInit) {
+	            writeOnFinished = true;
+	            return;
+	        }
 		}
 		synchronized(storeSync) {
 			if(isWritingConfig || ticker == null){
@@ -69,8 +71,8 @@ public class FreenetFilePersistentConfig extends FilePersistentConfig {
 	}
 
 	public void finishedInit(Ticker ticker) {
+        this.ticker = ticker;
 		super.finishedInit();
-		this.ticker = ticker;
 	}
 
 	public void setHasNodeStarted() {

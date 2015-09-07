@@ -7,14 +7,14 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.sleepycat.je.DatabaseException;
-
 import freenet.keys.KeyVerifyException;
-import freenet.node.Ticker;
+import freenet.node.stats.StoreAccessStats;
+import freenet.node.useralerts.UserAlertManager;
 import freenet.support.ByteArrayWrapper;
-import freenet.support.LRUHashtable;
+import freenet.support.LRUMap;
 import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
+import freenet.support.Ticker;
 import freenet.support.Logger.LogLevel;
 import freenet.support.api.Bucket;
 import freenet.support.io.TempBucketFactory;
@@ -30,14 +30,12 @@ import freenet.support.io.TempBucketFactory;
  */
 public class SlashdotStore<T extends StorableBlock> implements FreenetStore<T> {
 
-	private static volatile boolean logMINOR;
 	private static volatile boolean logDEBUG;
 
 	static {
 		Logger.registerLogThresholdCallback(new LogThresholdCallback(){
 			@Override
 			public void shouldUpdate(){
-				logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
 				logDEBUG = Logger.shouldLog(LogLevel.DEBUG, this);
 			}
 		});
@@ -59,7 +57,7 @@ public class SlashdotStore<T extends StorableBlock> implements FreenetStore<T> {
 	
 	private final Ticker ticker;
 	
-	private final LRUHashtable<ByteArrayWrapper, DiskBlock> blocksByRoutingKey;
+	private final LRUMap<ByteArrayWrapper, DiskBlock> blocksByRoutingKey;
 	
 	private final StoreCallback<T> callback;
 	
@@ -75,7 +73,7 @@ public class SlashdotStore<T extends StorableBlock> implements FreenetStore<T> {
 	
 	public SlashdotStore(StoreCallback<T> callback, int maxKeys, long maxLifetime, long purgePeriod, Ticker ticker, TempBucketFactory tbf) {
 		this.callback = callback;
-		this.blocksByRoutingKey = new LRUHashtable<ByteArrayWrapper, DiskBlock>();
+		this.blocksByRoutingKey = LRUMap.createSafeMap(ByteArrayWrapper.FAST_COMPARATOR);
 		this.maxKeys = maxKeys;
 		this.bf = tbf;
 		this.ticker = ticker;
@@ -85,13 +83,26 @@ public class SlashdotStore<T extends StorableBlock> implements FreenetStore<T> {
 		this.headerSize = callback.headerLength();
 		this.dataSize = callback.dataLength();
 		this.fullKeySize = callback.fullKeyLength();
+		Runnable purgeOldData = new Runnable() {
+
+			@Override
+			public void run() {
+				try {
+					purgeOldData();
+				} finally {
+					SlashdotStore.this.ticker.queueTimedJob(this, SlashdotStore.this.purgePeriod);
+				}
+			}
+
+		};
 		ticker.queueTimedJob(purgeOldData, maxLifetime + purgePeriod);
 	}
 	
 	/**
 	 * @param meta IGNORED!
 	 */
-	public T fetch(byte[] routingKey, byte[] fullKey, boolean dontPromote, boolean canReadClientCache, boolean canReadSlashdotCache, BlockMetadata meta) throws IOException {
+	@Override
+	public T fetch(byte[] routingKey, byte[] fullKey, boolean dontPromote, boolean canReadClientCache, boolean canReadSlashdotCache, boolean ignoreOldBlocks, BlockMetadata meta) throws IOException {
 		ByteArrayWrapper key = new ByteArrayWrapper(routingKey);
 		DiskBlock block;
 		long timeAccessed;
@@ -123,7 +134,6 @@ public class SlashdotStore<T extends StorableBlock> implements FreenetStore<T> {
 				}
 			}
 			if(logDEBUG) Logger.debug(this, "Block was last accessed "+(System.currentTimeMillis() - timeAccessed)+"ms ago");
-			if(meta != null) meta.noMetadata = true;
 			return ret;
 		} catch (KeyVerifyException e) {
 			block.data.free();
@@ -135,26 +145,32 @@ public class SlashdotStore<T extends StorableBlock> implements FreenetStore<T> {
 		}
 	}
 
+	@Override
 	public long getBloomFalsePositive() {
 		return -1;
 	}
 
+	@Override
 	public long getMaxKeys() {
 		return maxKeys;
 	}
 
+	@Override
 	public long hits() {
 		return hits;
 	}
 
+	@Override
 	public long keyCount() {
 		return blocksByRoutingKey.size();
 	}
 
+	@Override
 	public long misses() {
 		return misses;
 	}
 
+	@Override
 	public boolean probablyInStore(byte[] routingKey) {
 		ByteArrayWrapper key = new ByteArrayWrapper(routingKey);
 		return blocksByRoutingKey.containsKey(key);
@@ -164,23 +180,28 @@ public class SlashdotStore<T extends StorableBlock> implements FreenetStore<T> {
 	 * @param isOldBlock Ignored, we don't distinguish between stuff that should be cached and
 	 * stuff that shouldn't be cached; really it's all in the latter category anyway here!
 	 */
+	@Override
 	public void put(T block, byte[] data, byte[] header, boolean overwrite, boolean isOldBlock) throws IOException, KeyCollisionException {
 		byte[] routingkey = block.getRoutingKey();
 		byte[] fullKey = block.getFullKey();
 		
 		Bucket bucket = bf.makeBucket(fullKeySize + dataSize + headerSize);
 		OutputStream os = bucket.getOutputStream();
+		try {
 		os.write(fullKey);
 		os.write(header);
 		os.write(data);
+		} finally {
 		os.close();
+		}
 		
 		DiskBlock stored = new DiskBlock();
 		stored.data = bucket;
 		purgeOldData(new ByteArrayWrapper(routingkey), stored);
 	}
 
-	public void setMaxKeys(long maxStoreKeys, boolean shrinkNow) throws DatabaseException, IOException {
+	@Override
+	public void setMaxKeys(long maxStoreKeys, boolean shrinkNow) throws IOException {
 		if(maxStoreKeys > Integer.MAX_VALUE) throw new IllegalArgumentException();
 		this.maxKeys = (int) maxStoreKeys;
 		if(shrinkNow) {
@@ -188,6 +209,7 @@ public class SlashdotStore<T extends StorableBlock> implements FreenetStore<T> {
 		} else {
 			ticker.queueTimedJob(new Runnable() {
 
+				@Override
 				public void run() {
 					purgeOldData();
 					// Don't re-schedule
@@ -197,21 +219,10 @@ public class SlashdotStore<T extends StorableBlock> implements FreenetStore<T> {
 		}
 	}
 
+	@Override
 	public long writes() {
 		return writes;
 	}
-
-	private final Runnable purgeOldData = new Runnable() {
-
-		public void run() {
-			try {
-				purgeOldData();
-			} finally {
-				ticker.queueTimedJob(this, purgePeriod);
-			}
-		}
-		
-	};
 
 	protected void purgeOldData() {
 		purgeOldData(null, null);
@@ -219,11 +230,16 @@ public class SlashdotStore<T extends StorableBlock> implements FreenetStore<T> {
 	
 	protected void purgeOldData(ByteArrayWrapper key, DiskBlock addFirst) {
 		List<DiskBlock> blocks = null;
+		DiskBlock oldBlock;
 		synchronized(this) {
 			long now = System.currentTimeMillis();
 			if(addFirst != null) {
 				addFirst.lastAccessed = now;
-				blocksByRoutingKey.push(key, addFirst);
+				oldBlock = blocksByRoutingKey.push(key, addFirst);
+				if(oldBlock != null) {
+	                if(blocks == null) blocks = new ArrayList<DiskBlock>();
+	                blocks.add(oldBlock);
+				}
 				writes++;
 			}
 			while(true) {
@@ -247,5 +263,57 @@ public class SlashdotStore<T extends StorableBlock> implements FreenetStore<T> {
 
 	public synchronized void setLifetime(Long val) {
 		maxLifetime = val;
+	}
+	
+	@Override
+	public StoreAccessStats getSessionAccessStats() {
+		return new StoreAccessStats() {
+
+			@Override
+			public long hits() {
+				return hits;
+			}
+
+			@Override
+			public long misses() {
+				return misses;
+			}
+
+			@Override
+			public long falsePos() {
+				return 0;
+			}
+
+			@Override
+			public long writes() {
+				return writes;
+			}
+			
+		};
+	}
+
+	@Override
+	public StoreAccessStats getTotalAccessStats() {
+		return null;
+	}
+
+	@Override
+	public boolean start(Ticker ticker, boolean longStart) throws IOException {
+		return false;
+	}
+
+	@Override
+	public void setUserAlertManager(UserAlertManager userAlertManager) {
+		// Do nothing
+	}
+
+	@Override
+	public FreenetStore<T> getUnderlyingStore() {
+		return this;
+	}
+
+	@Override
+	public void close() {
+		// Do nothing
 	}
 }

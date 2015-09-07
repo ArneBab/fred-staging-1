@@ -11,6 +11,9 @@ import freenet.node.Node;
 import freenet.node.NodeInitException;
 import freenet.node.NodeStats;
 import freenet.node.PeerNode;
+import freenet.node.DarknetPeerNode.FRIEND_TRUST;
+import freenet.node.DarknetPeerNode.FRIEND_VISIBILITY;
+import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
 
@@ -28,6 +31,19 @@ public class RealNodeTest {
 	static final int EXIT_INSERT_FAILED = EXIT_BASE + 5;
 	static final int EXIT_REQUEST_FAILED = EXIT_BASE + 6;
 	static final int EXIT_BAD_DATA = EXIT_BASE + 7;
+	
+	static final FRIEND_TRUST trust = FRIEND_TRUST.LOW;
+	static final FRIEND_VISIBILITY visibility = FRIEND_VISIBILITY.NO;
+
+        private static volatile boolean logMINOR;
+	static {
+		Logger.registerLogThresholdCallback(new LogThresholdCallback(){
+			@Override
+			public void shouldUpdate(){
+				logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
+			}
+		});
+	}
 	
 	/* Because we start a whole bunch of nodes at once, we will get many "Not reusing
 	 * tracker, so wiping old trackers" messages. This is normal, all the nodes start
@@ -83,14 +99,14 @@ public class RealNodeTest {
 	
 	static void connect(Node a, Node b) {
 		try {
-			a.connect (b);
-			b.connect (a);
+			a.connect (b, trust, visibility);
+			b.connect (a, trust, visibility);
 		} catch (FSParseException e) {
-			Logger.error(RealNodeSecretPingTest.class, "cannot connect!!!!", e);
+			Logger.error(RealNodeTest.class, "cannot connect!!!!", e);
 		} catch (PeerParseException e) {
-			Logger.error(RealNodeSecretPingTest.class, "cannot connect #2!!!!", e);
+			Logger.error(RealNodeTest.class, "cannot connect #2!!!!", e);
 		} catch (freenet.io.comm.ReferenceSignatureVerificationException e) {
-			Logger.error(RealNodeSecretPingTest.class, "cannot connect #3!!!!", e);
+			Logger.error(RealNodeTest.class, "cannot connect #3!!!!", e);
 		}
 	}
 	
@@ -129,7 +145,7 @@ public class RealNodeTest {
 				int countConnected = nodes[i].peers.countConnectedDarknetPeers();
 				int countAlmostConnected = nodes[i].peers.countAlmostConnectedDarknetPeers();
 				int countTotal = nodes[i].peers.countValidPeers();
-				int countBackedOff = nodes[i].peers.countBackedOffPeers();
+				int countBackedOff = nodes[i].peers.countBackedOffPeers(false);
 				int countCompatible = nodes[i].peers.countCompatibleDarknetPeers();
 				totalPeers += countTotal;
 				totalConnections += countConnected;
@@ -144,11 +160,11 @@ public class RealNodeTest {
 					countFullyConnected++;
 					if(countBackedOff == 0) countReallyConnected++;
 				} else {
-					if(Logger.shouldLog(LogLevel.MINOR, RealNodeTest.class)) 
+					if(logMINOR)
 						Logger.minor(RealNodeTest.class, "Connection count for "+nodes[i]+" : "+countConnected+" partial "+countAlmostConnected);
 				}
 				if(countBackedOff > 0) {
-					if(Logger.shouldLog(LogLevel.MINOR, RealNodeTest.class))
+					if(logMINOR)
 						Logger.minor(RealNodeTest.class, "Backed off: "+nodes[i]+" : "+countBackedOff);
 				}
 			}

@@ -12,16 +12,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.zip.CRC32;
 
 import freenet.l10n.NodeL10n;
 import freenet.support.HexUtil;
+import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
-import freenet.support.LoggerHook.InvalidThresholdException;
 import freenet.support.api.Bucket;
 import freenet.support.io.Closer;
 import freenet.support.io.FileBucket;
@@ -56,12 +55,25 @@ public class PNGFilter implements ContentDataFilter {
 	// http://fresh.t-systems-sfr.com/unix/privat/pngcheck-2.3.0.tar.gz:a/pngcheck-2.3.0/pngcheck.c
 	};
 
+        private static volatile boolean logMINOR;
+        private static volatile boolean logDEBUG;
+	static {
+		Logger.registerLogThresholdCallback(new LogThresholdCallback(){
+			@Override
+			public void shouldUpdate(){
+				logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
+                                logDEBUG = Logger.shouldLog(LogLevel.DEBUG, this);
+			}
+		});
+	}
+
 	PNGFilter(boolean deleteText, boolean deleteTimestamp, boolean checkCRCs) {
 		this.deleteText = deleteText;
 		this.deleteTimestamp = deleteTimestamp;
 		this.checkCRCs = checkCRCs;
 	}
 
+	@Override
 	public void readFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
 			FilterCallback cb) throws DataFilterException, IOException {
 		readFilter(input, output, charset, otherParams, cb, deleteText, deleteTimestamp, checkCRCs);
@@ -71,15 +83,17 @@ public class PNGFilter implements ContentDataFilter {
 	public void readFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
 			FilterCallback cb, boolean deleteText, boolean deleteTimestamp, boolean checkCRCs)
 			throws DataFilterException, IOException {
-		boolean logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
-		boolean logDEBUG = Logger.shouldLog(LogLevel.DEBUG, this);
-		InputStream is = null;
 		DataInputStream dis = null;
+		boolean hasSeenIHDR = false;
+		boolean hasSeenIEND = false;
+		boolean hasSeenIDAT = false;
 		try {
+                        long offset = 0;
 			dis = new DataInputStream(input);
 			// Check the header
 			byte[] headerCheck = new byte[pngHeader.length];
 			dis.readFully(headerCheck);
+                        offset+=pngHeader.length;
 			if (!Arrays.equals(headerCheck, pngHeader)) {
 				// Throw an exception
 				String message = l10n("invalidHeader");
@@ -87,42 +101,43 @@ public class PNGFilter implements ContentDataFilter {
 				throw new DataFilterException(title, title, message);
 			}
 
-			ByteArrayOutputStream baos = null;
-			DataOutputStream dos = null;
-			if (output != null) {
-				baos = new ByteArrayOutputStream();
-				dos = new DataOutputStream(baos);
-				output.write(pngHeader);
-				if (logMINOR)
-					Logger.minor(this, "Writing the PNG header to the output bucket");
-			}
+			ByteArrayOutputStream baos = new ByteArrayOutputStream();
+			DataOutputStream dos = new DataOutputStream(baos);
+			output.write(pngHeader);
+			if (logMINOR)
+				Logger.minor(this, "Writing the PNG header to the output bucket");
 
 			// Check the chunks :
 			// @see http://www.libpng.org/pub/png/spec/1.2/PNG-Chunks.html#C.Summary-of-standard-chunks
-			boolean finished = false;
-			boolean hasSeenIHDR = false;
-			boolean hasSeenIEND = false;
-			boolean hasSeenIDAT = false;
 			String lastChunkType = "";
 
-			while (!finished) {
+			while (!hasSeenIEND) {
 				boolean skip = false;
-				if (baos != null)
-					baos.reset();
+				baos.reset();
 				String chunkTypeString = null;
 				// Length of the chunk
 				byte[] lengthBytes = new byte[4];
-				dis.readFully(lengthBytes);
+				try {
+					dis.readFully(lengthBytes);
+					offset+=4;
+				} catch (EOFException e) {
+					// FIXME optimise out the throw, don't use readFully?
+					// This will happen once per filtering.
+					// We can't use available() for reasons explained in
+					// the javadocs for ContentDataFilter.
+					break;
+				}
 
 				int length = ((lengthBytes[0] & 0xff) << 24) + ((lengthBytes[1] & 0xff) << 16)
 				        + ((lengthBytes[2] & 0xff) << 8) + (lengthBytes[3] & 0xff);
 				if (logMINOR)
-					Logger.minor(this, "length " + length);
+					Logger.minor(this, "length " + length+ "(offset=0x"+Long.toHexString(offset)+") ");
 				if (dos != null)
 					dos.write(lengthBytes);
 
 				// Type of the chunk : Should match [a-zA-Z]{4}
 				dis.readFully(lengthBytes);
+                                offset+=4;
 				StringBuilder sb = new StringBuilder();
 				byte[] chunkTypeBytes = new byte[4];
 				for (int i = 0; i < 4; i++) {
@@ -138,23 +153,28 @@ public class PNGFilter implements ContentDataFilter {
 				chunkTypeString = sb.toString();
 				if (logMINOR)
 					Logger.minor(this, "name " + chunkTypeString);
+				if (dos != null)
+					dos.write(chunkTypeBytes);
 
 				// Content of the chunk
 				byte[] chunkData = new byte[length];
-				dis.readFully(chunkData, 0, length);
-				if (logMINOR)
-					if (logDEBUG)
-						Logger.minor(this, "data " + (chunkData.length == 0 ? "null" : HexUtil.bytesToHex(chunkData)));
-					else
-						Logger.minor(this, "data " + chunkData.length);
-				if (dos != null)
-					dos.write(chunkTypeBytes);
-				if (dos != null)
-					dos.write(chunkData);
+				if(length > 0) {
+					dis.readFully(chunkData, 0, length);
+					offset+=length;
+					if (logMINOR)
+						if (logDEBUG)
+							Logger.minor(this, "data (offset=0x"+Long.toHexString(offset)+") "+ (chunkData.length == 0 ? "null" : HexUtil.bytesToHex(chunkData)));
+						else
+							Logger.minor(this, "data " + chunkData.length);
+					if (dos != null)
+						dos.write(chunkData);
+				}
 
 				// CRC of the chunk
 				byte[] crcLengthBytes = new byte[4];
 				dis.readFully(crcLengthBytes);
+				offset+=4;
+				if(logMINOR) Logger.minor(this, "CRC offset=0x"+Long.toHexString(offset));
 				if (dos != null)
 					dos.write(crcLengthBytes);
 
@@ -163,7 +183,8 @@ public class PNGFilter implements ContentDataFilter {
 					        + ((crcLengthBytes[2] & 0xff) << 8) + (crcLengthBytes[3] & 0xff)) & 0x00000000ffffffffL;
 					CRC32 crc = new CRC32();
 					crc.update(chunkTypeBytes);
-					crc.update(chunkData);
+					if(length > 0)
+                                            crc.update(chunkData);
 					long computedCRC = crc.getValue();
 
 					if (readCRC != computedCRC) {
@@ -177,9 +198,49 @@ public class PNGFilter implements ContentDataFilter {
 
 				boolean validChunkType = false;
 
-				if (!skip && "IHDR".equals(chunkTypeString)) {
+				if (!skip && "IHDR".equals(chunkTypeString)) { // http://www.w3.org/TR/PNG/#11IHDR
 					if (hasSeenIHDR)
 						throwError("Duplicate IHDR", "Two IHDR chunks detected!!");
+					if(length != 13)
+						throwError("IHDR length!= 13", "The length of the IHDR file is not 13");
+					long width = ((chunkData[0] & 0xff) << 24) + ((chunkData[1] & 0xff) << 16) + ((chunkData[2] & 0xff) << 8) + (chunkData[3] & 0xff);
+					long height = ((chunkData[4] & 0xff) << 24) + ((chunkData[5] & 0xff) << 16) + ((chunkData[6] & 0xff) << 8) + (chunkData[7] & 0xff);
+					if(width < 1 || height < 1)
+						throwError("Width or Height is invalid", "Width or Height is invalid (<1)");
+					int bitDepth = chunkData[8];
+					int colourType = chunkData[9];
+					switch (bitDepth) {
+					case 1:
+					case 2:
+					case 4:
+						if(colourType != 0 && colourType != 3)
+							throwError("Invalid colourType/bitDepth combination!",
+									"Invalid colourType/bitDepth combination! ("+colourType+'|'+bitDepth+')');
+						break;
+					case 16:
+						if(colourType == 3)
+							throwError("Invalid colourType/bitDepth combination!",
+									"Invalid colourType/bitDepth combination! ("+colourType+'|'+bitDepth+')');
+					case 8:
+						if(colourType == 0 || colourType ==2 || colourType ==3 || colourType ==4|| colourType ==6)
+							break;
+					default: throwError("Invalid colourType/bitDepth combination!",
+							"Invalid colourType/bitDepth combination! ("+colourType+'|'+bitDepth+')');
+					}
+					int compressionMethod = chunkData[10];
+					if(compressionMethod != 0)
+						throwError("Invalid CompressionMethod", "Invalid CompressionMethod! "+compressionMethod);
+					int filterMethod = chunkData[11];
+					if(filterMethod != 0)
+						throwError("Invalid FilterMethod", "Invalid FilterMethod! "+filterMethod);
+					int interlaceMethod = chunkData[12];
+					if(interlaceMethod < 0 || interlaceMethod >1)
+						throwError("Invalid InterlaceMethod", "Invalid InterlaceMethod! "+interlaceMethod);
+					
+					if(logMINOR)
+						Logger.minor(this, "Info from IHDR: width="+width+"px height="+height+"px bitDepth="+bitDepth+
+								" colourType="+colourType+" compressionMethod="+compressionMethod+" filterMethod="+
+								filterMethod+" interlaceMethod="+interlaceMethod);
 					hasSeenIHDR = true;
 					validChunkType = true;
 				}
@@ -188,7 +249,7 @@ public class PNGFilter implements ContentDataFilter {
 					throwError("No IHDR chunk!", "No IHDR chunk!");
 
 				if (!skip && "IEND".equals(chunkTypeString)) {
-					if (hasSeenIEND) // XXX impossible code path: it should have throwed as "IEND not last chunk" 
+					if (hasSeenIEND)
 						throwError("Two IEND chunks detected!!", "Two IEND chunks detected!!");
 					hasSeenIEND = true;
 					validChunkType = true;
@@ -213,12 +274,6 @@ public class PNGFilter implements ContentDataFilter {
 						if (HARMLESS_CHUNK_TYPES[i].equals(chunkTypeString))
 							validChunkType = true;
 					}
-				}
-
-				if (dis.available() < 1) {
-					if (!(hasSeenIEND && hasSeenIHDR))
-						throwError("Missing IEND or IHDR!", "Missing IEND or IHDR!");
-					finished = true;
 				}
 
 				if ("text".equalsIgnoreCase(chunkTypeString) || "itxt".equalsIgnoreCase(chunkTypeString)
@@ -250,13 +305,18 @@ public class PNGFilter implements ContentDataFilter {
 				}
 				lastChunkType = chunkTypeString;
 			}
-			if (hasSeenIEND && dis.available() > 0)
-				throwError("IEND not last chunk", "IEND not last chunk");
+
+			if (!hasSeenIEND)
+				throwError("Missing IEND", "Missing IEND");
+			if (!hasSeenIHDR)
+				throwError("Missing IHDR", "Missing IHDR");
+			return; // Strip everything after IEND.
 		} catch (ArrayIndexOutOfBoundsException e) {
 			throwError("ArrayIndexOutOfBoundsException while filtering", "ArrayIndexOutOfBoundsException while filtering");
 		} catch (NegativeArraySizeException e) {
 			throwError("NegativeArraySizeException while filtering", "NegativeArraySizeException while filtering");
 		} catch (EOFException e) {
+			if(hasSeenIEND && hasSeenIHDR) return;
 			throwError("EOF Exception while filtering", "EOF Exception while filtering");
 		}
 	}
@@ -265,33 +325,28 @@ public class PNGFilter implements ContentDataFilter {
 		return NodeL10n.getBase().getString("PNGFilter." + key);
 	}
 
+	@Override
 	public void writeFilter(InputStream input, OutputStream output, String charset, HashMap<String, String> otherParams,
 	        FilterCallback cb) throws DataFilterException, IOException {
 		// TODO Auto-generated method stub
 		return;
 	}
 
-	public static void main(String arg[]) {
+	public static void main(String arg[]) throws Throwable {
 		final File fin = new File("/tmp/test.png");
 		final File fout = new File("/tmp/test2.png");
 		fout.delete();
-		final Bucket inputBucket = new FileBucket(fin, true, false, false, false, false);
-		final Bucket outputBucket = new FileBucket(fout, false, true, false, false, false);
+		final Bucket inputBucket = new FileBucket(fin, true, false, false, false);
+		final Bucket outputBucket = new FileBucket(fout, false, true, false, false);
 		InputStream inputStream = null;
 		OutputStream outputStream = null;
 		try {
 			inputStream = inputBucket.getInputStream();
 			outputStream = outputBucket.getOutputStream();
 			Logger.setupStdoutLogging(LogLevel.MINOR, "");
+
 			ContentFilter.filter(inputStream, outputStream, "image/png",
 					new URI("http://127.0.0.1:8888/"), null, null, null);
-			inputStream.close();
-			outputStream.close();
-		} catch (IOException e) {
-			System.out.println("Bucket error?: " + e.getMessage());
-		} catch (URISyntaxException e) {
-			System.out.println("Internal error: " + e.getMessage());
-		} catch (InvalidThresholdException e) {
 		} finally {
 			Closer.close(inputStream);
 			Closer.close(outputStream);
@@ -308,8 +363,7 @@ public class PNGFilter implements ContentDataFilter {
 		if (shortReason != null)
 			message += " - " + shortReason;
 		DataFilterException e = new DataFilterException(shortReason, shortReason, message);
-		if (Logger.shouldLog(LogLevel.NORMAL, this))
-			Logger.normal(this, "Throwing " + e, e);
+		Logger.normal(this, "Throwing " + e.getMessage(), e);
 		throw e;
 	}
 }

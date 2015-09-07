@@ -3,6 +3,8 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.node;
 
+import static java.util.concurrent.TimeUnit.MINUTES;
+
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
@@ -15,6 +17,7 @@ import java.text.DecimalFormat;
 
 import freenet.support.Fields;
 import freenet.support.Logger;
+import freenet.support.Ticker;
 import freenet.support.io.Closer;
 
 /**
@@ -25,49 +28,54 @@ import freenet.support.io.Closer;
  * @author toad
  */
 public class UptimeEstimator implements Runnable {
-	
-	static final int PERIOD = 5*60*1000;
-	
+
+	/**
+	 * Five minutes in milliseconds.
+	 */
+	static final long PERIOD = MINUTES.toMillis(5);
+
 	Ticker ticker;
-	
+
 	/** For each 5 minute slot in the last 48 hours, were we online? */
-	private boolean[] wasOnline = new boolean[48*12];
-	
+	private boolean[] wasOnline = new boolean[48*12]; //48 hours * 12 5-minute slots/hour
+	/** Whether the node was online for each 5 minute slot in the last week, */
+	private boolean[] wasOnlineWeek = new boolean[7*24*12]; //7 days/week * 24 hours/day * 12 5-minute slots/hour
+
 	/** Which slot are we up to? We rotate around the array. Slots before us are before us,
 	 * slots after us are also before us (it wraps around). */
 	private int slot;
-	
+
 	/** The file we are writing to */
 	private File logFile;
-	
+
 	/** The previous file. We have read this. When logFile reaches 48 hours, we dump the prevFile,
 	 * move the logFile over it, and write to a new logFile.
 	 */
 	private File prevFile;
-	
+
 	/** We write to disk every 5 minutes. The offset is derived from the node's identity. */
 	private long timeOffset;
-	
-	public UptimeEstimator(File nodeDir, Ticker ticker, byte[] bs) {
+
+	public UptimeEstimator(ProgramDirectory runDir, Ticker ticker, byte[] bs) {
 		this.ticker = ticker;
-		logFile = new File(nodeDir, "uptime.dat");
-		prevFile = new File(nodeDir, "uptime.old.dat");
+		logFile = runDir.file("uptime.dat");
+		prevFile = runDir.file("uptime.old.dat");
 		timeOffset = (int)
 			((((double)(Math.abs(Fields.hashCode(bs, bs.length / 2, bs.length - bs.length / 2)))) /  Integer.MAX_VALUE)
-			* (5*60*1000));
+			* PERIOD);
 	}
 
 	public void start() {
 		long now = System.currentTimeMillis();
 		int fiveMinutesSinceEpoch = (int)(now / PERIOD);
-		int base = fiveMinutesSinceEpoch - wasOnline.length;
+		int base = fiveMinutesSinceEpoch - wasOnlineWeek.length;
 		// Read both files.
 		readData(prevFile, base);
 		readData(logFile, base);
 		schedule(System.currentTimeMillis());
 		System.out.println("Created uptime estimator, time offset is "+timeOffset+" uptime at startup is "+new DecimalFormat("0.00").format(getUptime()));
 	}
-	
+
 	private void readData(File file, int base) {
 		FileInputStream fis = null;
 		try {
@@ -78,13 +86,13 @@ public class UptimeEstimator implements Runnable {
 					int offset = dis.readInt();
 					if(offset < base) continue;
 					int slotNo = offset - base;
-					if(slotNo == wasOnline.length)
+					if(slotNo == wasOnlineWeek.length)
 						break; // Reached the end, restarted within the same timeslot.
-					if(slotNo > wasOnline.length || slotNo < 0) {
-						Logger.error(this, "Corrupt data read from uptime file "+file+": 5-minutes-from-epoch is now "+(base+wasOnline.length)+" but read "+slotNo);
+					if(slotNo > wasOnlineWeek.length || slotNo < 0) {
+						Logger.error(this, "Corrupt data read from uptime file "+file+": 5-minutes-from-epoch is now "+(base+wasOnlineWeek.length)+" but read "+slotNo);
 						break;
 					}
-					wasOnline[slotNo] = true;
+					wasOnline[slotNo % wasOnline.length] = wasOnlineWeek[slotNo] = true;
 				}
 			} catch (EOFException e) {
 				// Finished
@@ -98,13 +106,15 @@ public class UptimeEstimator implements Runnable {
 		}
 	}
 
+	@Override
 	public void run() {
 		synchronized(this) {
-			wasOnline[slot] = true;
-			slot = (slot + 1) % wasOnline.length;
+			wasOnlineWeek[slot] = true;
+			wasOnline[slot % wasOnline.length] = true;
+			slot = (slot + 1) % wasOnlineWeek.length;
 		}
 		long now = System.currentTimeMillis();
-		if(logFile.length() > wasOnline.length*4L) {
+		if(logFile.length() > wasOnlineWeek.length*4L) {
 			prevFile.delete();
 			logFile.renameTo(prevFile);
 		}
@@ -132,16 +142,30 @@ public class UptimeEstimator implements Runnable {
 		if(nextTime < now) nextTime += PERIOD;
 		ticker.queueTimedJob(this, nextTime - System.currentTimeMillis());
 	}
-	
+
 	/**
-	 * Get the node's uptime fraction over the last 48 hours.
+	 * Get the node's uptime fraction over the selected uptime array.
+	 * @return fraction between 0.0 and 1.0.
+	 */
+	private synchronized double getUptime(boolean[] uptime) {
+		int upCount = 0;
+		for(boolean sample : uptime) if(sample) upCount++;
+		return ((double) upCount) / ((double) uptime.length);
+	}
+
+	/**
+	 * Get the node's uptime fraction over the past 48 hours.
+	 * @return fraction between 0.0 and 1.0.
 	 */
 	public synchronized double getUptime() {
-		int upCount = 0;
-		for(int i=0;i<wasOnline.length;i++) {
-			if(wasOnline[i]) upCount++;
-		}
-		return ((double) upCount) / ((double) wasOnline.length);
+		return getUptime(wasOnline);
 	}
-	
+
+	/**
+	 * Get the node's uptime fraction over the past 168 hours.
+	 * @return fraction between 0.0 and 1.0.
+	 */
+	public synchronized double getUptimeWeek() {
+		return getUptime(wasOnlineWeek);
+	}
 }

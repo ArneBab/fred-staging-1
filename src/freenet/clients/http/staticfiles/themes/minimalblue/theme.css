@@ -1,15 +1,19 @@
-/* minimalblue */
+﻿/* minimalblue */
 
-/*****************/
-/* Global config */
-/*****************/
+/* Basic CSS functions */
+@import url(/static/base-old.css);
 
+/* Bookmarks & bookmark editor */
 @import url(/static/bookmark.css);
 
 /* Status bar style & colors */
 @import url(/static/statusbar.css);
 
 /* minimal blue overall settings */
+
+/*****************/
+/* Global config */
+/*****************/
 
 body{
 width: 100%;
@@ -163,7 +167,7 @@ padding-left: 4px;
 padding-right: 4px;
 }
 
-#navlist-selected a{
+.navlist-selected a{
     background: #035196;
     color: #fff;
 }
@@ -610,4 +614,10 @@ div#statusbar-alerts.alerts-line.contains-warning div.infobox-content a {
 
 div#statusbar div#statusbar-alerts.contains-information, div#statusbar div#statusbar-alerts.contains-information a {
 	color: #AAF;
+}
+
+/* Fix: Show hidden list as list */
+.hidden ol li, .hidden ol {
+    list-style: decimal outside none;
+    margin-left: 0px;
 }

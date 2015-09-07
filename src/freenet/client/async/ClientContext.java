@@ -5,26 +5,34 @@ package freenet.client.async;
 
 import java.util.Random;
 
-import com.db4o.ObjectContainer;
-
 import freenet.client.ArchiveManager;
-import freenet.client.FECQueue;
+import freenet.client.FetchContext;
 import freenet.client.FetchException;
+import freenet.client.InsertContext;
 import freenet.client.InsertException;
+import freenet.client.events.SimpleEventProducer;
+import freenet.client.filter.LinkFilterExceptionProvider;
+import freenet.clients.fcp.PersistentRequestRoot;
+import freenet.crypt.MasterSecret;
 import freenet.crypt.RandomSource;
-import freenet.node.KeysFetchingLocally;
-import freenet.node.NodeClientCore;
 import freenet.node.RequestScheduler;
 import freenet.node.RequestStarterGroup;
-import freenet.node.Ticker;
+import freenet.node.useralerts.UserAlert;
+import freenet.node.useralerts.UserAlertManager;
+import freenet.support.DummyJobRunner;
 import freenet.support.Executor;
-import freenet.support.Logger;
+import freenet.support.MemoryLimitedJobRunner;
+import freenet.support.Ticker;
 import freenet.support.api.BucketFactory;
+import freenet.support.api.LockableRandomAccessBufferFactory;
 import freenet.support.compress.RealCompressor;
+import freenet.support.io.DiskSpaceCheckingRandomAccessBufferFactory;
+import freenet.support.io.FileRandomAccessBufferFactory;
 import freenet.support.io.FilenameGenerator;
 import freenet.support.io.NativeThread;
 import freenet.support.io.PersistentFileTracker;
 import freenet.support.io.PersistentTempBucketFactory;
+import freenet.support.io.TempBucketFactory;
 
 /**
  * Object passed in to client-layer operations, containing references to essential but mostly transient 
@@ -33,83 +41,127 @@ import freenet.support.io.PersistentTempBucketFactory;
  */
 public class ClientContext {
 	
-	public transient FECQueue fecQueue;
-	private transient ClientRequestScheduler sskFetchScheduler;
-	private transient ClientRequestScheduler chkFetchScheduler;
-	private transient ClientRequestScheduler sskInsertScheduler;
-	private transient ClientRequestScheduler chkInsertScheduler;
-	public transient final DBJobRunner jobRunner;
+	private transient ClientRequestScheduler sskFetchSchedulerBulk;
+	private transient ClientRequestScheduler chkFetchSchedulerBulk;
+	private transient ClientRequestScheduler sskInsertSchedulerBulk;
+	private transient ClientRequestScheduler chkInsertSchedulerBulk;
+	private transient ClientRequestScheduler sskFetchSchedulerRT;
+	private transient ClientRequestScheduler chkFetchSchedulerRT;
+	private transient ClientRequestScheduler sskInsertSchedulerRT;
+	private transient ClientRequestScheduler chkInsertSchedulerRT;
+	private transient UserAlertManager alerts;
+	/** The main Executor for the node. Jobs for transient requests run here. */
 	public transient final Executor mainExecutor;
-	public transient final long nodeDBHandle;
-	public transient final BackgroundBlockEncoder backgroundBlockEncoder;
+	/** We need to be able to suspend execution of jobs changing persistent state in order to write
+	 * it to disk consistently. Also, some jobs may want to request immediate serialization. */
+	public transient final PersistentJobRunner jobRunner;
 	public transient final RandomSource random;
 	public transient final ArchiveManager archiveManager;
-	public transient PersistentTempBucketFactory persistentBucketFactory;
+	public transient final PersistentTempBucketFactory persistentBucketFactory;
 	public transient PersistentFileTracker persistentFileTracker;
-	public transient final BucketFactory tempBucketFactory;
+	public transient final TempBucketFactory tempBucketFactory;
+	public transient final LockableRandomAccessBufferFactory tempRAFFactory;
+	public transient final LockableRandomAccessBufferFactory persistentRAFFactory;
 	public transient final HealingQueue healingQueue;
 	public transient final USKManager uskManager;
 	public transient final Random fastWeakRandom;
 	public transient final long bootID;
 	public transient final Ticker ticker;
 	public transient final FilenameGenerator fg;
-	public transient FilenameGenerator persistentFG;
+	public transient final FilenameGenerator persistentFG;
 	public transient final RealCompressor rc;
 	public transient final DatastoreChecker checker;
-	public transient final CooldownTracker cooldownTracker;
-	public transient KeysFetchingLocally fetching;
+	public transient DownloadCache downloadCache;
+	/** Used for memory intensive jobs such as in-RAM FEC decodes. Some of these jobs may do disk 
+	 * I/O and we don't guarantee to serialise them. The new splitfile code does FEC decodes 
+	 * entirely in memory, which saves a lot of seeks and improves robustness. */
+	public transient final MemoryLimitedJobRunner memoryLimitedJobRunner;
+	public transient final PersistentRequestRoot persistentRoot;
+	private transient FetchContext defaultPersistentFetchContext;
+	private transient InsertContext defaultPersistentInsertContext;
+	public transient final MasterSecret cryptoSecretTransient;
+	private transient MasterSecret cryptoSecretPersistent;
+	private transient FileRandomAccessBufferFactory fileRAFTransient;
+	private transient FileRandomAccessBufferFactory fileRAFPersistent;
 
-	public ClientContext(NodeClientCore core, FECQueue fecQueue, Executor mainExecutor,
-			BackgroundBlockEncoder blockEncoder, ArchiveManager archiveManager,
-			PersistentTempBucketFactory ptbf, BucketFactory tbf, PersistentFileTracker tracker, HealingQueue hq,
-			USKManager uskManager, RandomSource strongRandom, 
-			Random fastWeakRandom, Ticker ticker, 
-			FilenameGenerator fg, FilenameGenerator persistentFG, RealCompressor rc, DatastoreChecker checker) {
-		this.bootID = core.node.bootID;
-		this.fecQueue = fecQueue;
-		jobRunner = core;
+	/** Provider for link filter exceptions. */
+	public transient final LinkFilterExceptionProvider linkFilterExceptionProvider;
+	/** Transient version of the PersistentJobRunner, just starts stuff immediately. Helpful for
+	 * avoiding having two different API's, e.g. in SplitFileFetcherStorage. */
+    public PersistentJobRunner dummyJobRunner;
+
+	public ClientContext(long bootID, ClientLayerPersister jobRunner, Executor mainExecutor,
+			ArchiveManager archiveManager, PersistentTempBucketFactory ptbf, TempBucketFactory tbf, PersistentFileTracker tracker,
+			HealingQueue hq, USKManager uskManager, RandomSource strongRandom, Random fastWeakRandom, 
+			Ticker ticker, MemoryLimitedJobRunner memoryLimitedJobRunner, FilenameGenerator fg, FilenameGenerator persistentFG,
+			LockableRandomAccessBufferFactory rafFactory, LockableRandomAccessBufferFactory persistentRAFFactory,
+			FileRandomAccessBufferFactory fileRAFTransient, FileRandomAccessBufferFactory fileRAFPersistent,
+			RealCompressor rc, DatastoreChecker checker, PersistentRequestRoot persistentRoot, MasterSecret cryptoSecretTransient,
+			LinkFilterExceptionProvider linkFilterExceptionProvider,
+			FetchContext defaultPersistentFetchContext, InsertContext defaultPersistentInsertContext) {
+		this.bootID = bootID;
+		this.jobRunner = jobRunner;
 		this.mainExecutor = mainExecutor;
-		this.nodeDBHandle = core.node.nodeDBHandle;
-		this.backgroundBlockEncoder = blockEncoder;
 		this.random = strongRandom;
 		this.archiveManager = archiveManager;
 		this.persistentBucketFactory = ptbf;
+		this.persistentFileTracker = ptbf;
 		this.tempBucketFactory = tbf;
-		if(tempBucketFactory == null) throw new NullPointerException();
 		this.healingQueue = hq;
 		this.uskManager = uskManager;
 		this.fastWeakRandom = fastWeakRandom;
 		this.ticker = ticker;
 		this.fg = fg;
 		this.persistentFG = persistentFG;
+		this.persistentRAFFactory = persistentRAFFactory;
+		this.fileRAFPersistent = fileRAFPersistent;
+		this.fileRAFTransient = fileRAFTransient;
 		this.rc = rc;
 		this.checker = checker;
-		this.cooldownTracker = new CooldownTracker();
+		this.linkFilterExceptionProvider = linkFilterExceptionProvider;
+		this.memoryLimitedJobRunner = memoryLimitedJobRunner;
+		this.tempRAFFactory = rafFactory; 
+		this.persistentRoot = persistentRoot;
+		this.dummyJobRunner = new DummyJobRunner(mainExecutor, this);
+		this.defaultPersistentFetchContext = defaultPersistentFetchContext;
+		this.defaultPersistentInsertContext = defaultPersistentInsertContext;
+		this.cryptoSecretTransient = cryptoSecretTransient;
 	}
 	
-	public void init(RequestStarterGroup starters) {
-		this.sskFetchScheduler = starters.sskFetchScheduler;
-		this.chkFetchScheduler = starters.chkFetchScheduler;
-		this.sskInsertScheduler = starters.sskPutScheduler;
-		this.chkInsertScheduler = starters.chkPutScheduler;
-		this.fetching = chkFetchScheduler.fetchingKeys();
-		this.cooldownTracker.startMaintenance(ticker);
+	public void init(RequestStarterGroup starters, UserAlertManager alerts) {
+		this.sskFetchSchedulerBulk = starters.sskFetchSchedulerBulk;
+		this.chkFetchSchedulerBulk = starters.chkFetchSchedulerBulk;
+		this.sskInsertSchedulerBulk = starters.sskPutSchedulerBulk;
+		this.chkInsertSchedulerBulk = starters.chkPutSchedulerBulk;
+		this.sskFetchSchedulerRT = starters.sskFetchSchedulerRT;
+		this.chkFetchSchedulerRT = starters.chkFetchSchedulerRT;
+		this.sskInsertSchedulerRT = starters.sskPutSchedulerRT;
+		this.chkInsertSchedulerRT = starters.chkPutSchedulerRT;
+		this.alerts = alerts;
+	}
+	
+	public synchronized void setPersistentMasterSecret(MasterSecret secret) {
+	    this.cryptoSecretPersistent = secret;
+	}
+	
+	public synchronized MasterSecret getPersistentMasterSecret() {
+	    return cryptoSecretPersistent;
 	}
 
-	public ClientRequestScheduler getSskFetchScheduler() {
-		return sskFetchScheduler;
+	public ClientRequestScheduler getSskFetchScheduler(boolean realTime) {
+		return realTime ? sskFetchSchedulerRT : sskFetchSchedulerBulk;
 	}
 	
-	public ClientRequestScheduler getChkFetchScheduler() {
-		return chkFetchScheduler;
+	public ClientRequestScheduler getChkFetchScheduler(boolean realTime) {
+		return realTime ? chkFetchSchedulerRT : chkFetchSchedulerBulk;
 	}
 	
-	public ClientRequestScheduler getSskInsertScheduler() {
-		return sskInsertScheduler;
+	public ClientRequestScheduler getSskInsertScheduler(boolean realTime) {
+		return realTime ? sskInsertSchedulerRT : sskInsertSchedulerBulk;
 	}
 	
-	public ClientRequestScheduler getChkInsertScheduler() {
-		return chkInsertScheduler;
+	public ClientRequestScheduler getChkInsertScheduler(boolean realTime) {
+		return realTime ? chkInsertSchedulerRT : chkInsertSchedulerBulk;
 	}
 	
 	/** 
@@ -122,24 +174,23 @@ public class ClientContext {
 	 * @throws DatabaseDisabledException If the insert is persistent and the database is disabled (e.g. 
 	 * because it is encrypted and the user hasn't entered the password yet).
 	 */
-	public void start(final ClientPutter inserter, final boolean earlyEncode) throws InsertException, DatabaseDisabledException {
+	public void start(final ClientPutter inserter) throws InsertException, PersistenceDisabledException {
 		if(inserter.persistent()) {
-			jobRunner.queue(new DBJob() {
+			jobRunner.queue(new PersistentJob() {
 				
-				public boolean run(ObjectContainer container, ClientContext context) {
-					container.activate(inserter, 1);
+				@Override
+				public boolean run(ClientContext context) {
 					try {
-						inserter.start(earlyEncode, false, container, context);
+						inserter.start(false, context);
 					} catch (InsertException e) {
-						inserter.client.onFailure(e, inserter, container);
+						inserter.client.onFailure(e, inserter);
 					}
-					container.deactivate(inserter, 1);
 					return true;
 				}
 				
-			}, NativeThread.NORM_PRIORITY, false);
+			}, NativeThread.NORM_PRIORITY);
 		} else {
-			inserter.start(earlyEncode, false, null, this);
+			inserter.start(false, this);
 		}
 	}
 
@@ -150,52 +201,23 @@ public class ClientContext {
 	 * @throws FetchException If the request is transient and failed to start.
 	 * @throws DatabaseDisabledException If the request is persistent and the database is disabled.
 	 */
-	public void start(final ClientGetter getter) throws FetchException, DatabaseDisabledException {
+	public void start(final ClientGetter getter) throws FetchException, PersistenceDisabledException {
 		if(getter.persistent()) {
-			jobRunner.queue(new DBJob() {
+			jobRunner.queue(new PersistentJob() {
 				
-				public boolean run(ObjectContainer container, ClientContext context) {
-					container.activate(getter, 1);
+				@Override
+				public boolean run(ClientContext context) {
 					try {
-						getter.start(container, context);
+						getter.start(context);
 					} catch (FetchException e) {
-						getter.clientCallback.onFailure(e, getter, container);
+						getter.clientCallback.onFailure(e, getter);
 					}
-					container.deactivate(getter, 1);
 					return true;
 				}
 				
-			}, NativeThread.NORM_PRIORITY, false);
+			}, NativeThread.NORM_PRIORITY);
 		} else {
-			getter.start(null, this);
-		}
-	}
-
-	/**
-	 * Start a site insert. Schedule a job on the database thread if it is persistent, otherwise start it 
-	 * immediately.
-	 * @param inserter The request to start.
-	 * @throws InsertException If the insert is transient and failed to start.
-	 * @throws DatabaseDisabledException If the insert is persistent and the database is disabled.
-	 */
-	public void start(final SimpleManifestPutter inserter) throws InsertException, DatabaseDisabledException {
-		if(inserter.persistent()) {
-			jobRunner.queue(new DBJob() {
-				
-				public boolean run(ObjectContainer container, ClientContext context) {
-					container.activate(inserter, 1);
-					try {
-						inserter.start(container, context);
-					} catch (InsertException e) {
-						inserter.cb.onFailure(e, inserter, container);
-					}
-					container.deactivate(inserter, 1);
-					return true;
-				}
-				
-			}, NativeThread.NORM_PRIORITY, false);
-		} else {
-			inserter.start(null, this);
+			getter.start(this);
 		}
 	}
 
@@ -206,24 +228,23 @@ public class ClientContext {
 	 * @throws InsertException If the insert is transient and failed to start.
 	 * @throws DatabaseDisabledException If the insert is persistent and the database is disabled.
 	 */
-	public void start(final BaseManifestPutter inserter) throws InsertException, DatabaseDisabledException {
+	public void start(final BaseManifestPutter inserter) throws InsertException, PersistenceDisabledException {
 		if(inserter.persistent()) {
-			jobRunner.queue(new DBJob() {
+			jobRunner.queue(new PersistentJob() {
 				
-				public boolean run(ObjectContainer container, ClientContext context) {
-					container.activate(inserter, 1);
+				@Override
+				public boolean run(ClientContext context) {
 					try {
-						inserter.start(container, context);
+						inserter.start(context);
 					} catch (InsertException e) {
-						inserter.cb.onFailure(e, inserter, container);
+						inserter.cb.onFailure(e, inserter);
 					}
-					container.deactivate(inserter, 1);
 					return true;
 				}
 				
-			}, NativeThread.NORM_PRIORITY, false);
+			}, NativeThread.NORM_PRIORITY);
 		} else {
-			inserter.start(null, this);
+			inserter.start(this);
 		}
 	}
 
@@ -244,32 +265,50 @@ public class ClientContext {
 	 * Get the RequestScheduler responsible for the given key type. This is used to queue low level requests.
 	 * @param ssk If true, get the SSK request scheduler. If false, get the CHK request scheduler.
 	 */
-	public RequestScheduler getFetchScheduler(boolean ssk) {
-		if(ssk) return sskFetchScheduler;
-		return chkFetchScheduler;
+	public RequestScheduler getFetchScheduler(boolean ssk, boolean realTime) {
+		if(ssk) return realTime ? sskFetchSchedulerRT : sskFetchSchedulerBulk;
+		return realTime ? chkFetchSchedulerRT : chkFetchSchedulerBulk;
 	}
 	
-	/** Tell db4o never to store the ClientContext in the database. If it did it would pull in all sorts of
-	 * stuff and we end up persisting the entire node, which is both dangerous and expensive. */
-	public boolean objectCanNew(ObjectContainer container) {
-		Logger.error(this, "Not storing ClientContext in database", new Exception("error"));
-		return false;
+	public void postUserAlert(final UserAlert alert) {
+		if(alerts == null) {
+			// Wait until after startup
+			ticker.queueTimedJob(new Runnable() {
+
+				@Override
+				public void run() {
+					alerts.register(alert);
+				}
+				
+			}, "Post alert", 0L, false, false);
+		} else {
+			alerts.register(alert);
+		}
 	}
 
-	/** Set the FEC queue after startup e.g. late startup when the database is encrypted. */
-	public void setFECQueue(FECQueue fecQueue2) {
-		this.fecQueue = fecQueue2;
+	public void setDownloadCache(DownloadCache cache) {
+		this.downloadCache = cache;
 	}
 
-	/** Set the persistent bucket factories after pulling them from the database. Normally called after
-	 * a late database startup e.g. when the database is encrypted.
-	 * @param persistentTempBucketFactory The persistent temporary bucket factory.
-	 * @param persistentFilenameGenerator The filename generator underlying the persistent temporary bucket factory.
-	 * This generates filenames, remembers the directory where the files are, etc.
-	 */
-	public void setPersistentBucketFactory(PersistentTempBucketFactory persistentTempBucketFactory, FilenameGenerator persistentFilenameGenerator) {
-		this.persistentBucketFactory = persistentTempBucketFactory;
-		this.persistentFG = persistentFilenameGenerator;
-	}
+    public FetchContext getDefaultPersistentFetchContext() {
+        return new FetchContext(defaultPersistentFetchContext, FetchContext.IDENTICAL_MASK);
+    }
+    
+    public InsertContext getDefaultPersistentInsertContext() {
+        return new InsertContext(defaultPersistentInsertContext, new SimpleEventProducer());
+    }
+    
+    public PersistentJobRunner getJobRunner(boolean persistent) {
+        return persistent ? jobRunner : dummyJobRunner;
+    }
+
+    public FileRandomAccessBufferFactory getFileRandomAccessBufferFactory(boolean persistent) {
+        return persistent ? fileRAFPersistent : fileRAFTransient;
+                 
+    }
+
+    public LockableRandomAccessBufferFactory getRandomAccessBufferFactory(boolean persistent) {
+        return persistent ? persistentRAFFactory : tempBucketFactory;
+    }
 	
 }

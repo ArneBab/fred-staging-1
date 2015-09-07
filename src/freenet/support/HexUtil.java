@@ -17,7 +17,8 @@ import freenet.support.Logger.LogLevel;
  * @author syoung
  */
 public class HexUtil {
-	private static boolean logDEBUG =Logger.logger.instanceShouldLog(LogLevel.DEBUG,HexUtil.class);
+	final
+	private static boolean logDEBUG =Logger.shouldLog(LogLevel.DEBUG,HexUtil.class);
 	private HexUtil() {		
 	}	
 	
@@ -34,19 +35,19 @@ public class HexUtil {
 	 * @return the string of hex chars.
 	 */
 	public static final String bytesToHex(byte[] bs, int off, int length) {
-		if (bs.length <= off || bs.length < off+length)
-			throw new IllegalArgumentException();
+		if (bs.length < off+length)
+			throw new IllegalArgumentException("Total length: " + bs.length + ", offset: " + off + ", length: " + length);
 		StringBuilder sb = new StringBuilder(length * 2);
 		bytesToHexAppend(bs, off, length, sb);
 		return sb.toString();
 	}
 
-	public static final void bytesToHexAppend(
+	public static void bytesToHexAppend(
 		byte[] bs,
 		int off,
 		int length,
 		StringBuilder sb) {
-		if (bs.length <= off || bs.length < off+length)
+		if (bs.length < off+length)
 			throw new IllegalArgumentException();
 		sb.ensureCapacity(sb.length() + length * 2);
 		for (int i = off; i < (off + length); i++) {
@@ -55,15 +56,15 @@ public class HexUtil {
 		}
 	}
 
-	public static final String bytesToHex(byte[] bs) {
+	public static String bytesToHex(byte[] bs) {
 		return bytesToHex(bs, 0, bs.length);
 	}
 
-	public static final byte[] hexToBytes(String s) {
+	public static byte[] hexToBytes(String s) {
 		return hexToBytes(s, 0);
 	}
 
-	public static final byte[] hexToBytes(String s, int off) {
+	public static byte[] hexToBytes(String s, int off) {
 		byte[] bs = new byte[off + (1 + s.length()) / 2];
 		hexToBytes(s, bs, off);
 		return bs;
@@ -80,7 +81,7 @@ public class HexUtil {
 	 * @param off
 	 *            The first byte to write of the array
 	 */
-	public static final void hexToBytes(String s, byte[] out, int off)
+	public static void hexToBytes(String s, byte[] out, int off)
 		throws NumberFormatException, IndexOutOfBoundsException {
 		
 		int slen = s.length();
@@ -116,7 +117,7 @@ public class HexUtil {
 	 * @param ba : the BitSet
 	 * @param size : How many bits shall be taken into account starting from the LSB?
 	 */
-	public final static byte[] bitsToBytes(BitSet ba, int size) {
+	public static byte[] bitsToBytes(BitSet ba, int size) {
 		int bytesAlloc = countBytesForBits(size);
 		byte[] b = new byte[bytesAlloc];
 		StringBuilder sb =null;
@@ -143,8 +144,12 @@ public class HexUtil {
 	 * Pack the bits in ba into a byte[] then convert that
 	 * to a hex string and return it.
 	 */
-	public final static String bitsToHexString(BitSet ba, int size) {
+	public static String bitsToHexString(BitSet ba, int size) {
 		return bytesToHex(bitsToBytes(ba, size));
+	}
+
+	public static String toHexString(BigInteger i) {
+		return bytesToHex(i.toByteArray());
 	}
 
 
@@ -153,8 +158,7 @@ public class HexUtil {
 	 * bitset
 	 */
 	public static int countBytesForBits(int size) {
-		// Brackets matter here! == takes precedence over the rest
-		return (size/8) + ((size % 8) == 0 ? 0:1);
+		return (size + 7)/8;
 	}
 
 
@@ -166,11 +170,11 @@ public class HexUtil {
 	public static void bytesToBits(byte[] b, BitSet ba, int maxSize) {
 		if(logDEBUG) Logger.debug(HexUtil.class, "bytesToBits("+bytesToHex(b)+",ba,"+maxSize);
 		int x = 0;
-		for(int i=0;i<b.length;i++) {
+		for(byte bi: b) {
 			for(int j=0;j<8;j++) {
 				if(x > maxSize) break;
 				int mask = 1 << j;
-				boolean value = (mask & b[i]) != 0;
+				boolean value = (mask & bi) != 0;
 				ba.set(x, value);
 				x++;
 			}
@@ -222,7 +226,7 @@ public class HexUtil {
 
     /**
      * Turn a BigInteger into a hex string.
-     * BigInteger.toString(16) NPEs on Sun JDK 1.4.2_05. :<
+     * BigInteger.toString(16) NPEs on Sun/Oracle JDK 1.4.2_05. :<
      * The bugs in their Big* are getting seriously irritating...
      */
     public static String biToHex(BigInteger bi) {

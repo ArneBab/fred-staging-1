@@ -58,7 +58,10 @@ public class Inet4AddressMatcher implements AddressMatcher {
 			address = convertToBytes(cidrHostname.substring(0, slashPosition));
 			String maskPart = cidrHostname.substring(slashPosition + 1);
 			if (maskPart.indexOf('.') == -1) {
-				networkMask = 0xffffffff << (32 - Integer.parseInt(maskPart));
+				int bits = Integer.parseInt(maskPart);
+				if (bits > 32 || bits < 0)
+					throw new IllegalArgumentException("Mask bits out of range: " + bits + " (" + maskPart + ")");
+				networkMask = 0xffffffff << (32 - bits);
 				if (Integer.parseInt(maskPart) == 0) {
 					networkMask = 0;
 				}
@@ -96,6 +99,7 @@ public class Inet4AddressMatcher implements AddressMatcher {
 	 * @return <code>true</code> if <code>inetAddress</code> matches the
 	 *         specification of this matcher, <code>false</code> otherwise
 	 */
+	@Override
 	public boolean matches(InetAddress inetAddress) {
 		if (!(inetAddress instanceof Inet4Address)) return false;
 		int matchAddress = convertToBytes(inetAddress.getHostAddress());
@@ -120,6 +124,7 @@ public class Inet4AddressMatcher implements AddressMatcher {
 		return new Inet4AddressMatcher(cidrHostname).matches(address);
 	}
 
+	@Override
 	public String getHumanRepresentation() {
 		if(networkMask == -1)
 			return convertToString(address);

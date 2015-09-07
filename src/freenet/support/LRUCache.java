@@ -5,7 +5,7 @@ package freenet.support;
 
 
 /**
- * A key-value cache with a fixed size and expiration time.
+ * A key-value cache with a fixed size and optional expiration time.
  * The least recently used item is removed if the cache is full and a new entry is added.
  * 
  * Existing entries are only returned if they are not expired.
@@ -16,11 +16,11 @@ package freenet.support;
  * 
  * If you want to do a large cache and therefore need periodical garbage collection, please email me and I might implement it.
  * 
- * Pushing and getting are executed in O(1).
+ * Pushing and getting are executed in O(lg N) using a tree, to avoid hash collision DoS'es.
  * 
  * @author xor (xor@freenetproject.org)
  */
-public final class LRUCache<Key, Value> {
+public final class LRUCache<Key extends Comparable<Key>, Value> {
 	
 	private final int mSizeLimit;
 	private final long mExpirationDelay;
@@ -31,7 +31,7 @@ public final class LRUCache<Key, Value> {
 		
 		public Entry(final Value myValue) {
 			mValue = myValue;
-			mExpirationDate = CurrentTimeUTC.getInMillis() + mExpirationDelay; 
+			mExpirationDate = (mExpirationDelay < Long.MAX_VALUE) ? (CurrentTimeUTC.getInMillis() + mExpirationDelay) : (Long.MAX_VALUE); 
 		}
 		
 		public boolean expired(final long time) {
@@ -47,7 +47,17 @@ public final class LRUCache<Key, Value> {
 		}
 	}
 	
-	private final LRUHashtable<Key, Entry> mCache;
+	private final LRUMap<Key, Entry> mCache;
+	
+	/**
+	 * Creates a cache without an expiration time.
+	 * @param sizeLimit The maximal amount of items which the cache should hold.
+	 */
+	public LRUCache(final int sizeLimit) {
+		mCache = LRUMap.createSafeMap();
+		mSizeLimit = sizeLimit;
+		mExpirationDelay = Long.MAX_VALUE;
+	}
 
 
 	/**
@@ -55,7 +65,7 @@ public final class LRUCache<Key, Value> {
 	 * @param expirationDelay The amount of milliseconds after which an entry expires.
 	 */
 	public LRUCache(final int sizeLimit, final long expirationDelay) {
-		mCache = new LRUHashtable<Key, Entry>(sizeLimit * 2);
+		mCache = LRUMap.createSafeMap();
 		mSizeLimit = sizeLimit;
 		mExpirationDelay = expirationDelay;
 	}
@@ -83,19 +93,26 @@ public final class LRUCache<Key, Value> {
 	}
 	
 	/**
-	 * Gets a value from the cache. Returns null if there is no entry for the given key or if the entry is
-	 * expired. If an expired entry was found, it is removed from the cache.
+	 * Gets a value from the cache and moves it to top.
+	 * Returns null if there is no entry for the given key or if the entry is expired.
+	 * If an expired entry was found, it is removed from the cache.
 	 */
 	public Value get(final Key key) {
 		final Entry entry = mCache.get(key);
 		if(entry == null)
 			return null;
 		
-		if(entry.expired()) {
+		if(mExpirationDelay < Long.MAX_VALUE && entry.expired()) {
 			mCache.removeKey(key);
 			return null;
 		}
 		
+		mCache.push(key, entry); // Move the key to top. 
+		
 		return entry.getValue();
+	}
+	
+	public void clear() {
+		mCache.clear();
 	}
 }

@@ -23,14 +23,18 @@ import freenet.support.Logger.LogLevel;
  * into account the fact that reports persist and accumulate. :) 
  * 
  */
-public class TimeDecayingRunningAverage implements RunningAverage {
+public final class TimeDecayingRunningAverage implements RunningAverage, Cloneable {
 
 	private static final long serialVersionUID = -1;
     static final int MAGIC = 0x5ff4ac94;
     
     @Override
-	public final Object clone() {
-        return new TimeDecayingRunningAverage(this);
+	public final TimeDecayingRunningAverage clone() {
+    	// Override clone to synchronize, as per comments in RunningAverage.
+    	// Implement Cloneable to shut up findbugs.
+    	synchronized(this) {
+    		return new TimeDecayingRunningAverage(this);
+    	}
     }
     
 	double curValue;
@@ -178,6 +182,7 @@ public class TimeDecayingRunningAverage implements RunningAverage {
      *
      * @return
      */
+    @Override
     public synchronized double currentValue() {
     	return curValue;
     }
@@ -186,6 +191,7 @@ public class TimeDecayingRunningAverage implements RunningAverage {
      *
      * @param d
      */
+    @Override
     public void report(double d) {
 		synchronized(this) {
 			// Must synchronize first to achieve serialization.
@@ -261,10 +267,12 @@ public class TimeDecayingRunningAverage implements RunningAverage {
          *
          * @param d
          */
+        @Override
         public void report(long d) {
         report((double)d);
     }
 
+    @Override
     public double valueIfReported(double r) {
         throw new UnsupportedOperationException();
     }
@@ -294,6 +302,7 @@ public class TimeDecayingRunningAverage implements RunningAverage {
         return 4 + 4 + 8 + 8 + 1 + 8 + 8;
     }
 
+    @Override
     public synchronized long countReports() {
         return totalReports;
     }

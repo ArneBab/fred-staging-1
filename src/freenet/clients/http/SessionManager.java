@@ -3,20 +3,50 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.clients.http;
 
+import static java.util.concurrent.TimeUnit.HOURS;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.text.ParseException;
 import java.util.Date;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.Hashtable;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import freenet.support.CurrentTimeUTC;
-import freenet.support.LRUHashtable;
+import freenet.support.LRUMap;
 import freenet.support.Logger;
+import freenet.support.StringValidityChecker;
 
 /**
  * A basic session manager for cookie-based HTTP session.
  * It allows its parent web interface to associate a "UserID" (a string) with a session ID.  
+ * 
+ * Formal definition of a SessionManager:
+ * A 1:1 mapping of SessionID to UserID. Queries by SessionID and UserID run in O(1).
+ * The Session ID primary key consists of: Cookie path + Cookie name + random "actual" session ID
+ * The user ID is received from the client application.
+ * 
+ * Therefore, when multiple client applications want to store sessions, each one is supposed
+ * to create its own SessionManager because user IDs might overlap.
+ * 
+ * The sessions of each application then get their {@link Session} by using a different
+ * cookie path OR a different cookie namespace, depending on which constructor you use.
+ * 
+ * Paths are used when client applications do NOT share the same path on the server.
+ * For example "/Chat" would cause the browser to only send back the cookie if the user is
+ * browsing "/Chat/", not for "/". 
+ * BUT usually we want the menu contents of client applications to be in the logged-in state even if 
+ * the user is NOT browsing the client application web interface right now, therefore the "/" path 
+ * must be used in most cases.
+ * If client application cookies shall be received from all paths on the server, the client
+ * application should use the constructor which requires a cookie namespace.
+ * 
+ * The usage of a namespace gurantees that Sessions of different client applications do not overlap.
  * 
  * @author xor (xor@freenetproject.org)
  */
@@ -25,17 +55,19 @@ public final class SessionManager {
 	/**
 	 * The amount of milliseconds after which a session is deleted due to expiration.
 	 */
-	public static final long MAX_SESSION_IDLE_TIME = 1 * 60 * 60 * 1000;
+	public static final long MAX_SESSION_IDLE_TIME = HOURS.toMillis(1);
 	
 	public static final String SESSION_COOKIE_NAME = "SessionID"; 
 	
 	private final URI mCookiePath;
-	private URI mLogInRedirectURI;
+	private final String mCookieNamespace;
+	private final String mCookieName;
 
 	/**
-	 * Constructs a new session manager.
+	 * Constructs a new session manager for use with the given cookie path.
+	 * Cookies are only sent back if the user is browsing the domain within that path.
 	 * 
-	 * @param myCookiePath The path in which the cookies should be valid 
+	 * @param myCookiePath The path in which the cookies should be valid.
 	 */
 	public SessionManager(URI myCookiePath) {
 		if(myCookiePath.isAbsolute())
@@ -44,32 +76,50 @@ public final class SessionManager {
 		if(myCookiePath.toString().startsWith("/") == false)
 			throw new IllegalArgumentException("Illegal cookie path, must start with /: " + myCookiePath);
 		
+		// FIXME: The new constructor was written at 2010-11-15. Uncomment the following safety check after we gave plugins some time to migrate
+		//	if(myCookiePath.getPath().equals("/"))
+		//		throw new IllegalArgumentException("Illegal cookie path '/'. You should use the constructor which allows the specification" +
+		//			"of a namespace for using the global path.");
+		
+		
 		// TODO: Add further checks. 
 		
 		//mCookieDomain = myCookieDomain;
 		mCookiePath = myCookiePath;
-		mLogInRedirectURI = null;
+		mCookieNamespace = "";
+		mCookieName = SESSION_COOKIE_NAME;
 	}
 	
 	/**
-	 * Constructs a new session manager.
-	 * @param myCookiePath The path in which the cookies should be valid
-	 * @param myLogInRedirectURI the URI to which we should redirect if the session is invalid
-	 * @deprecated PluginRespirator stores SessionManagers that can be used for
-	 * 	setting common sessions. Using this with the same myCookiePath will overwrite
-	 * 	other sessions.
+	 * Constructs a new session manager for use with the "/" cookie path
+	 * 
+	 * @param myCookieNamespace The name of the client application which uses this cookie. Must not be empty. Must be latin letters and numbers only.
 	 */
-	@Deprecated
-	public SessionManager(URI myCookiePath, URI myLogInRedirectURI) {
-		this(myCookiePath);
-		mLogInRedirectURI = myLogInRedirectURI;
+	public SessionManager(String myCookieNamespace) {
+		if(myCookieNamespace.length() == 0)
+			throw new IllegalArgumentException("You must specify a cookie namespace or use the constructor " +
+					"which allows specification of a cookie path.");
+		
+		if(!StringValidityChecker.isLatinLettersAndNumbersOnly(myCookieNamespace))
+			throw new IllegalArgumentException("The cookie namespace must be latin letters and numbers only.");
+		
+		//mCookieDomain = myCookieDomain;
+		try {
+			mCookiePath = new URI("/");
+		} catch (URISyntaxException e) {
+			throw new RuntimeException(e);
+		}
+		mCookieNamespace = myCookieNamespace;
+		mCookieName = myCookieNamespace + SESSION_COOKIE_NAME;
 	}
+	
 	
 	public static final class Session {
 
 		private final UUID mID;
 		private final String mUserID;
-		
+		private final Map<String, Object> mAttributes = new HashMap<String, Object>();
+
 		private long mExpiresAtTime;
 		
 		private Session(String myUserID, long currentTime) {
@@ -78,12 +128,19 @@ public final class SessionManager {
 			mExpiresAtTime = currentTime + SessionManager.MAX_SESSION_IDLE_TIME;
 		}
 		
+		@Override
 		public boolean equals(Object obj) {
+			if(obj == null) return false;
+			if(!(obj instanceof Session)) return false;
 			Session other = ((Session)obj);
-			
 			return other.getID().equals(mID);
 		}
 		
+		@Override
+		public int hashCode() {
+			return mID.hashCode();
+		}
+
 		public UUID getID() {
 			return mID;
 		}
@@ -103,11 +160,87 @@ public final class SessionManager {
 		private void updateExpiresAtTime(long currentTime) {
 			mExpiresAtTime = currentTime + SessionManager.MAX_SESSION_IDLE_TIME;
 		}
+
+		/**
+		 * Returns whether this session contains an attribute with the given
+		 * name.
+		 *
+		 * @param name
+		 *            The name of the attribute to check for
+		 * @return {@code true} if this session contains an attribute with the
+		 *         given name, {@code false} otherwise
+		 */
+		public boolean hasAttribute(String name) {
+			return mAttributes.containsKey(name);
+		}
+
+		/**
+		 * Returns the value of the attribute with the given name. If there is
+		 * no attribute with the given name, {@code null} is returned.
+		 *
+		 * @param name
+		 *            The name of the attribute whose value to get
+		 * @return The value of the attribute, or {@code null}
+		 */
+		public Object getAttribute(String name) {
+			return mAttributes.get(name);
+		}
+
+		/**
+		 * Sets the value of the attribute with the given name.
+		 *
+		 * @param name
+		 *            The name of the attribute whose value to set
+		 * @param value
+		 *            The new value of the attribute
+		 */
+		public void setAttribute(String name, Object value) {
+			mAttributes.put(name, value);
+		}
+
+		/**
+		 * Removes the attribute with the given name. Nothing will happen if
+		 * there is no attribute with the given name.
+		 *
+		 * @param name
+		 *            The name of the attribute to remove
+		 */
+		public void removeAttribute(String name) {
+			mAttributes.remove(name);
+		}
+
+		/**
+		 * Returns the names of all currently existing attributes.
+		 *
+		 * @return The names of all attributes
+		 */
+		public Set<String> getAttributeNames() {
+			return mAttributes.keySet();
+		}
+
 	}
 
-	private final LRUHashtable<UUID, Session> mSessionsByID = new LRUHashtable<UUID, Session>();
+	private final LRUMap<UUID, Session> mSessionsByID = new LRUMap<UUID, Session>();
 	private final Hashtable<String, Session> mSessionsByUserID = new Hashtable<String, Session>();
 	
+	
+	/**
+	 * Returns the cookie path as specified in the constructor.
+	 * Returns "/" if the constructor which only requires a namespace was used.
+	 */
+	public URI getCookiePath() {
+		return mCookiePath;
+	}
+	
+	
+	/**
+	 * Returns the namespace as specified in the constructor.
+	 * Returns an empty string if the constructor which requires a cookie path only was used.
+	 */
+	public String getCookieNamespace() {
+		return mCookieNamespace;
+	}
+		
 	
 	/**
 	 * Creates a new session for the given user ID.
@@ -119,7 +252,7 @@ public final class SessionManager {
 	 */
 	public synchronized Session createSession(String userID, ToadletContext context) {
 		// We must synchronize around the fetching of the time and mSessionsByID.push() because mSessionsByID is no sorting data structure: It's a plain
-		// LRUHashtable so to ensure that it stays sorted the operation "getTime(); push();" must be atomic.
+		// LRUMap so to ensure that it stays sorted the operation "getTime(); push();" must be atomic.
 		long time = CurrentTimeUTC.getInMillis();
 		
 		removeExpiredSessions(time);
@@ -158,30 +291,24 @@ public final class SessionManager {
 	 * 
 	 * If the session was valid, then its validity is extended by {@link MAX_SESSION_IDLE_TIME}.
 	 * 
-	 * If the session is not valid anymore, <code>null</code> is returned if the
-	 * new constructor was used (for example by PluginRespirator). If the deprecated
-	 * constructor was used, a RedirectException to the login URI is thrown.
-	 * @throws RedirectException if login redirect URI was set
+	 * If the session did not exist or is not valid anymore, <code>null</code> is returned.
 	 */
-	public synchronized Session useSession(ToadletContext context) throws RedirectException {
+	public synchronized Session useSession(ToadletContext context) {
 		UUID sessionID = getSessionID(context);
-		if(sessionID == null) {
-			if (mLogInRedirectURI == null) return null;
-			throw new RedirectException(mLogInRedirectURI);
-		}
+		if(sessionID == null)
+			return null;
 		
 		// We must synchronize around the fetching of the time and mSessionsByID.push() because mSessionsByID is no sorting data structure: It's a plain
-		// LRUHashtable so to ensure that it stays sorted the operation "getTime(); push();" must be atomic.
+		// LRUMap so to ensure that it stays sorted the operation "getTime(); push();" must be atomic.
 		long time = CurrentTimeUTC.getInMillis();
 		
 		removeExpiredSessions(time);
 		
 		Session session = mSessionsByID.get(sessionID);
 		
-		if(session == null) {
-			if (mLogInRedirectURI == null) return null;
-			throw new RedirectException(mLogInRedirectURI);
-		}
+		if(session == null)
+			return null;
+		
 		
 		session.updateExpiresAtTime(time);
 		mSessionsByID.push(session.getID(), session);
@@ -213,7 +340,7 @@ public final class SessionManager {
 			return null;
 		
 		try {
-			ReceivedCookie sessionCookie = context.getCookie(null, mCookiePath, SESSION_COOKIE_NAME);
+			ReceivedCookie sessionCookie = context.getCookie(null, mCookiePath, mCookieName);
 			
 			return sessionCookie == null ? null : UUID.fromString(sessionCookie.getValue());
 		} catch(ParseException e) {
@@ -231,7 +358,7 @@ public final class SessionManager {
 	 * @param context
 	 */
 	private void setSessionCookie(Session session, ToadletContext context) {
-		context.setCookie(new Cookie(mCookiePath, SESSION_COOKIE_NAME, session.getID().toString(), new Date(session.getExpirationTime())));
+		context.setCookie(new Cookie(mCookiePath, mCookieName, session.getID().toString(), new Date(session.getExpirationTime())));
 	}
 	
 	/**
@@ -295,7 +422,7 @@ public final class SessionManager {
 			Session session = sessions.nextElement();
 			
 			if(session.getExpirationTime() < previousTime) {
-				long sessionAge = (CurrentTimeUTC.getInMillis() - session.getExpirationTime()) / (60 * 60 * 1000);
+				long sessionAge = HOURS.convert(CurrentTimeUTC.getInMillis() - session.getExpirationTime(), MILLISECONDS);
 				Logger.error(this, "Session LRU queue out of order! Found session which is " + sessionAge + " hour old: " + session); 
 				Logger.error(this, "Deleting all sessions...");
 				

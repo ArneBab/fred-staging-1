@@ -3,10 +3,14 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.node.useralerts;
 
+import java.io.File;
+
 import freenet.l10n.NodeL10n;
+import freenet.node.Node;
 import freenet.node.updater.NodeUpdateManager;
 import freenet.node.updater.RevocationChecker;
 import freenet.support.HTMLNode;
+import freenet.support.Logger;
 import freenet.support.TimeUtil;
 
 public class UpdatedVersionAvailableUserAlert extends AbstractUserAlert {
@@ -85,7 +89,22 @@ public class UpdatedVersionAvailableUserAlert extends AbstractUserAlert {
 		
 		if(ut.formText != null) {
 			alertNode.addChild("form", new String[] { "action", "method" }, new String[] { "/", "post" }).addChild("input", new String[] { "type", "name", "value" }, new String[] { "submit", "update", ut.formText });
+			alertNode.addChild("input", new String[] { "type", "name", "value" }, new String[] { "hidden", "formPassword", updater.node.clientCore.formPassword });
 		}
+
+		int version;
+		if (updater.hasNewMainJar()) {
+			version = updater.newMainJarVersion();
+		} else if (updater.fetchingNewMainJar()) {
+			version = updater.fetchingNewMainJarVersion();
+		} else {
+			Logger.minor(this, "Showing version available notification but not fetching or fetched.");
+			// Fallback
+			version = updater.getMainVersion();
+		}
+		updater.addChangelogLinks(version, alertNode);
+		
+		updater.renderProgress(alertNode);
 		
 		return alertNode;
 	}
@@ -105,14 +124,8 @@ public class UpdatedVersionAvailableUserAlert extends AbstractUserAlert {
 		} else {
 			String formText;
 			if(updater.canUpdateNow()) {
-				boolean b = false;
 				if(updater.hasNewMainJar()) {
 					sb.append(l10n("downloadedNewJar", "version", Integer.toString(updater.newMainJarVersion())));
-					sb.append(' ');
-					b = true;
-				}
-				if(updater.hasNewExtJar()) {
-					sb.append(l10n(b ? "alsoDownloadedNewExtJar" : "downloadedNewExtJar", "version", Integer.toString(updater.newExtJarVersion())));
 					sb.append(' ');
 				}
 				if(updater.canUpdateImmediately()) {
@@ -123,20 +136,27 @@ public class UpdatedVersionAvailableUserAlert extends AbstractUserAlert {
 					formText = l10n("updateASAPButton");
 				}
 			} else {
-				boolean fetchingNew = updater.fetchingNewMainJar();
-				boolean fetchingNewExt = updater.fetchingNewExtJar();
-				if(fetchingNew) {
-					if(fetchingNewExt)
-						sb.append(l10n("fetchingNewBoth", new String[] { "nodeVersion", "extVersion" },
-								new String[] { Integer.toString(updater.fetchingNewMainJarVersion()), Integer.toString(updater.fetchingNewExtJarVersion()) }));
-					else
+				if(updater.fetchingFromUOM())
+					sb.append(l10n("fetchingUOM", "updateScript", getUpdateScriptName()));
+				else {
+					boolean fetchingNew = updater.fetchingNewMainJar();
+					if(fetchingNew) {
 						sb.append(l10n("fetchingNewNode", "nodeVersion", Integer.toString(updater.fetchingNewMainJarVersion())));
-				} else {
-					if(fetchingNewExt)
-						sb.append(l10n("fetchingNewExt", "extVersion", Integer.toString(updater.fetchingNewExtJarVersion())));
+					}
 				}
+				sb.append(" ");
 				sb.append(l10n("updateASAPQuestion"));
 				formText = l10n("updateASAPButton");
+			}
+			
+			if(updater.node.updateIsUrgent()) {
+				sb.append(" ");
+				sb.append(l10n("updateIsUrgent"));
+			}
+			
+			if(updater.brokenDependencies()) {
+				sb.append(" ");
+				sb.append(l10n("brokenDependencies", "version", Integer.toString(updater.newMainJarVersion())));
 			}
 			
 			return new UpdateThingy(sb.toString(), formText);
@@ -145,9 +165,26 @@ public class UpdatedVersionAvailableUserAlert extends AbstractUserAlert {
 		return new UpdateThingy(sb.toString(), null);
 	}
 
+	private String getUpdateScriptName() {
+		String name;
+		if(File.separatorChar == '\\') {
+			name = "update.cmd";
+		} else {
+			name = "update.sh";
+		}
+		File f = new File(updater.node.getNodeDir(), name);
+		if(f.exists()) return f.toString();
+		f = new File(new File(updater.node.getNodeDir(), "bin"), name);
+		if(f.exists()) return f.toString();
+		return name;
+	}
+
 	@Override
 	public short getPriorityClass() {
-		if(updater.inFinalCheck() || updater.canUpdateNow())
+		Node node = updater.node;
+		if(node.updateIsUrgent())
+			return UserAlert.CRITICAL_ERROR;
+		if(updater.inFinalCheck() || updater.canUpdateNow() || !updater.isArmed())
 			return UserAlert.ERROR;
 		else
 			return UserAlert.MINOR;
@@ -156,7 +193,7 @@ public class UpdatedVersionAvailableUserAlert extends AbstractUserAlert {
 	@Override
 	public boolean isValid() {
 		return updater.isEnabled() && (!updater.isBlown()) && 
-			(updater.fetchingNewExtJar() || updater.fetchingNewMainJar() || updater.hasNewExtJar() || updater.hasNewMainJar());
+			(updater.fetchingNewMainJar() || updater.hasNewMainJar() || updater.fetchingFromUOM());
 	}
 	
 	@Override

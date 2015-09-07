@@ -3,48 +3,56 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.client.async;
 
-import com.db4o.ObjectContainer;
-
 import freenet.client.FetchContext;
 import freenet.keys.ClientKey;
 import freenet.keys.ClientKeyBlock;
 import freenet.keys.ClientSSKBlock;
 import freenet.node.LowLevelGetException;
+import freenet.node.SendableRequestItem;
+import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
 
 /**
  * Checks a single USK slot.
+ * 
+ * Not persistent, used by USKFetcher.
  */
+@SuppressWarnings("serial")
 class USKChecker extends BaseSingleFileFetcher {
 
 	final USKCheckerCallback cb;
 	private int dnfs;
+	
+	private long cooldownWakeupTime;
 
-	USKChecker(USKCheckerCallback cb, ClientKey key, int maxRetries, FetchContext ctx, ClientRequester parent) {
-		super(key, maxRetries, ctx, parent, false);
-        if(Logger.shouldLog(LogLevel.MINOR, this))
-        	Logger.minor(this, "Created USKChecker for "+key);
+        private static volatile boolean logMINOR;
+	static {
+		Logger.registerLogThresholdCallback(new LogThresholdCallback(){
+			@Override
+			public void shouldUpdate(){
+				logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
+			}
+		});
+	}
+
+	USKChecker(USKCheckerCallback cb, ClientKey key, int maxRetries, FetchContext ctx, ClientRequester parent, boolean realTimeFlag) {
+		super(key, maxRetries, ctx, parent, false, realTimeFlag);
 		this.cb = cb;
+        if(logMINOR)
+            Logger.minor(USKChecker.class, "Created USKChecker for "+key+" : "+this);
 	}
 	
 	@Override
-	public void onSuccess(ClientKeyBlock block, boolean fromStore, Object token, ObjectContainer container, ClientContext context) {
-		if(persistent) {
-			container.activate(this, 1);
-			container.activate(cb, 1);
-		}
+	public void onSuccess(ClientKeyBlock block, boolean fromStore, Object token, ClientContext context) {
+		// No need to check from here since USKFetcher will be told anyway.
 		cb.onSuccess((ClientSSKBlock)block, context);
 	}
 
 	@Override
-	public void onFailure(LowLevelGetException e, Object token, ObjectContainer container, ClientContext context) {
-		if(persistent) {
-			container.activate(this, 1);
-			container.activate(cb, 1);
-		}
-        if(Logger.shouldLog(LogLevel.MINOR, this))
-        	Logger.minor(this, "onFailure: "+e+" for "+this);
+	public void onFailure(LowLevelGetException e, SendableRequestItem token, ClientContext context) {
+	    if(logMINOR)
+	        Logger.minor(this, "onFailure: "+e+" for "+this);
 		// Firstly, can we retry?
 		boolean canRetry;
 		switch(e.code) {
@@ -72,10 +80,10 @@ class USKChecker extends BaseSingleFileFetcher {
 			canRetry = true;
 		}
 
-		if(canRetry && retry(container, context)) return;
+		if(canRetry && retry(context)) return;
 		
 		// Ran out of retries.
-		unregisterAll(container, context);
+		unregisterAll(context);
 		if(e.code == LowLevelGetException.CANCELLED){
 			cb.onCancelled(context);
 			return;
@@ -95,13 +103,37 @@ class USKChecker extends BaseSingleFileFetcher {
 		return "USKChecker for "+key.getURI()+" for "+cb;
 	}
 
-	public void onFailed(KeyListenerConstructionException e, ObjectContainer container, ClientContext context) {
-		onFailure(new LowLevelGetException(LowLevelGetException.INTERNAL_ERROR, "IMPOSSIBLE: Failed to create Bloom filters (we don't have any!)", e), null, container, context);
+	@Override
+	public void onFailed(KeyListenerConstructionException e, ClientContext context) {
+		onFailure(new LowLevelGetException(LowLevelGetException.INTERNAL_ERROR, "IMPOSSIBLE: Failed to create Bloom filters (we don't have any!)", e), null, context);
 	}
 	
 	@Override
-	public short getPriorityClass(ObjectContainer container) {
+	public short getPriorityClass() {
 		return cb.getPriority();
 	}
+	
+	@Override
+	protected void onEnterFiniteCooldown(ClientContext context) {
+		cb.onEnterFiniteCooldown(context);
+	}
+
+	@Override
+	protected void notFoundInStore(ClientContext context) {
+		// Ran out of retries.
+		unregisterAll(context);
+		// Rest are non-fatal. If have DNFs, DNF, else network error.
+		cb.onDNF(context);
+	}
+
+	@Override
+	protected void onBlockDecodeError(SendableRequestItem token, ClientContext context) {
+		onFailure(new LowLevelGetException(LowLevelGetException.DECODE_FAILED), token, context);
+	}
+
+    @Override
+    protected ClientGetState getClientGetState() {
+        return null;
+    }
 
 }

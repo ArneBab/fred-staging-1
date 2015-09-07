@@ -16,16 +16,37 @@ public class FProxyFetchWaiter {
 	private boolean awoken;
 	
 	public FProxyFetchResult getResult() {
+		return getResult(false);
+	}
+	
+	public FProxyFetchResult getResult(boolean waitForever) {
 		boolean waited;
 		synchronized(this) {
-			if(!(finished || hasWaited || awoken)) {
-				awoken = false;
-				try {
-					wait(5000);
-				} catch (InterruptedException e) { 
-					// Not likely
-				};
-				hasWaited = true;
+			if(waitForever) {
+				// FIXME findbugs thinks this will never exit. It should given wakeUp().
+				while(!finished) {
+					try {
+						wait();
+						hasWaited = true;
+					} catch (InterruptedException e) {
+						// Ignore
+					}
+				}
+			} else {
+				/* Wait for 5 seconds or until something happens. The
+				 * most common something other than finishing is a callback
+				 * because the request has finished checking the datastore
+				 * and has been sent to the network, in which case we want
+				 * to show the progress bar. */
+				if(!(finished || hasWaited || awoken)) {
+					awoken = false;
+					try {
+						wait(5000);
+					} catch (InterruptedException e) { 
+						// Not likely
+					}
+					hasWaited = true;
+				}
 			}
 			waited = hasWaited;
 		}
@@ -36,6 +57,10 @@ public class FProxyFetchWaiter {
 	/** Returns the result, without waiting*/
 	public FProxyFetchResult getResultFast(){
 		return progress.innerGetResult(false);
+	}
+	
+	public FProxyFetchInProgress getProgress() {
+		return progress;
 	}
 
 	public void close() {

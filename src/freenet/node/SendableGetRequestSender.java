@@ -3,6 +3,7 @@ package freenet.node;
 import freenet.client.async.ChosenBlock;
 import freenet.client.async.ClientContext;
 import freenet.keys.ClientKey;
+import freenet.keys.Key;
 import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
@@ -21,13 +22,18 @@ public class SendableGetRequestSender implements SendableRequestSender {
 		});
 	}
 	
+	public boolean sendIsBlocking() {
+		return false;
+	}
+	
 	/** Do the request, blocking. Called by RequestStarter. 
 	 * Also responsible for deleting it.
 	 * @return True if a request was executed. False if caller should try to find another request, and remove
 	 * this one from the queue. */
-	public boolean send(NodeClientCore core, final RequestScheduler sched, ClientContext context, ChosenBlock req) {
+	@Override
+	public boolean send(NodeClientCore core, final RequestScheduler sched, final ClientContext context, final ChosenBlock req) {
 		Object keyNum = req.token;
-		ClientKey key = req.ckey;
+		final ClientKey key = req.ckey;
 		if(key == null) {
 			Logger.error(SendableGet.class, "Key is null in send(): keyNum = "+keyNum+" for "+req);
 			return false;
@@ -41,16 +47,25 @@ public class SendableGetRequestSender implements SendableRequestSender {
 		}
 		try {
 			try {
-				core.realGetKey(key, req.localRequestOnly, req.ignoreStore, req.canWriteClientCache);
-			} catch (final LowLevelGetException e) {
-				req.onFailure(e, context);
-				return true;
+				final Key k = key.getNodeKey();
+				core.asyncGet(k, false, new RequestCompletionListener() {
+
+					@Override
+					public void onSucceeded() {
+					    req.onFetchSuccess(context);
+					}
+
+					@Override
+					public void onFailed(LowLevelGetException e) {
+					    req.onFailure(e, context);
+					}
+					
+				}, !req.ignoreStore, req.canWriteClientCache, req.realTimeFlag, req.localRequestOnly, req.ignoreStore);
 			} catch (Throwable t) {
 				Logger.error(this, "Caught "+t, t);
 				req.onFailure(new LowLevelGetException(LowLevelGetException.INTERNAL_ERROR), context);
 				return true;
 			}
-			req.onFetchSuccess(context);
 		} catch (Throwable t) {
 			Logger.error(this, "Caught "+t, t);
 			req.onFailure(new LowLevelGetException(LowLevelGetException.INTERNAL_ERROR), context);

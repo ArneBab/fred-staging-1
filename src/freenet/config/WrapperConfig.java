@@ -28,8 +28,9 @@ public class WrapperConfig {
 	
 	public static String getWrapperProperty(String name) {
 		synchronized(WrapperConfig.class) {
-			if(overrides.containsKey(name))
-				return overrides.get(name);
+			String override = overrides.get(name);
+			if(override != null)
+				return override;
 		}
 		return WrapperManager.getProperties().getProperty(name, null);
 	}
@@ -96,6 +97,7 @@ public class WrapperConfig {
 					bw.write(name+'='+value+'\n');
 					written = true;
 				} else if(line.equalsIgnoreCase("wrapper.restart.reload_configuration=TRUE")) {
+					bw.write(line+'\n');
 					writtenReload = true;
 				} else {
 					bw.write(line+'\n');

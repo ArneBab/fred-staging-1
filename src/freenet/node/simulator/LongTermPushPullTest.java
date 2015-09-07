@@ -1,32 +1,29 @@
 package freenet.node.simulator;
 
+import static java.util.concurrent.TimeUnit.DAYS;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.io.PrintStream;
-import java.text.DateFormat;
 import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.TimeZone;
 import java.util.TreeMap;
-import java.util.Map.Entry;
-
-import com.db4o.ObjectContainer;
 
 import freenet.client.ClientMetadata;
 import freenet.client.FetchException;
+import freenet.client.FetchException.FetchExceptionMode;
 import freenet.client.HighLevelSimpleClient;
 import freenet.client.InsertBlock;
 import freenet.client.InsertException;
@@ -38,11 +35,10 @@ import freenet.keys.FreenetURI;
 import freenet.node.Node;
 import freenet.node.NodeStarter;
 import freenet.node.Version;
-import freenet.support.Fields;
 import freenet.support.Logger;
-import freenet.support.PooledExecutor;
 import freenet.support.Logger.LogLevel;
-import freenet.support.api.Bucket;
+import freenet.support.PooledExecutor;
+import freenet.support.api.RandomAccessBucket;
 import freenet.support.io.FileUtil;
 
 /**
@@ -61,7 +57,7 @@ import freenet.support.io.FileUtil;
  * 
  * @author sdiz
  */
-public class LongTermPushPullTest {
+public class LongTermPushPullTest extends LongTermTest {
 	private static final int TEST_SIZE = 64 * 1024;
 
 	private static final int EXIT_NO_SEEDNODES = 257;
@@ -74,9 +70,6 @@ public class LongTermPushPullTest {
 	private static final int OPENNET_PORT2 = 5013;
 
 	private static final int MAX_N = 8;
-
-	private static final DateFormat dateFormat = new SimpleDateFormat("yyyy.MM.dd", Locale.US);
-	private static final Calendar today = Calendar.getInstance(TimeZone.getTimeZone("GMT"));
 
 	public static void main(String[] args) {
 		if (args.length < 0 || args.length > 2) {
@@ -146,17 +139,14 @@ public class LongTermPushPullTest {
 
 			// PUSH N+1 BLOCKS
 			for (int i = 0; i <= MAX_N; i++) {
-				Bucket data = randomData(node);
-				HighLevelSimpleClient client = node.clientCore.makeClient((short) 0);
+			    RandomAccessBucket data = randomData(node);
+				HighLevelSimpleClient client = node.clientCore.makeClient((short) 0, false, false);
 				FreenetURI uri = new FreenetURI("KSK@" + uid + "-" + dateFormat.format(today.getTime()) + "-" + i);
 				System.out.println("PUSHING " + uri);
 				client.addEventHook(new ClientEventListener() {
 
-					public void onRemoveEventProducer(ObjectContainer container) {
-						// Ignore
-					}
-
-					public void receive(ClientEvent ce, ObjectContainer maybeContainer, ClientContext context) {
+					@Override
+					public void receive(ClientEvent ce, ClientContext context) {
 						System.out.println(ce.getDescription());
 					}
 					
@@ -202,7 +192,7 @@ public class LongTermPushPullTest {
 
 			// PULL N+1 BLOCKS
 			for (int i = 0; i <= MAX_N; i++) {
-				HighLevelSimpleClient client = node2.clientCore.makeClient((short) 0);
+				HighLevelSimpleClient client = node2.clientCore.makeClient((short) 0, false, false);
 				Calendar targetDate = (Calendar) today.clone();
 				targetDate.add(Calendar.DAY_OF_MONTH, -((1 << i) - 1));
 
@@ -217,8 +207,8 @@ public class LongTermPushPullTest {
 					System.out.println("PULL-TIME-" + i + ":" + (t2 - t1));
 					csvLine.add(String.valueOf(t2 - t1));
 				} catch (FetchException e) {
-					if (e.getMode() != FetchException.ALL_DATA_NOT_FOUND
-					        && e.getMode() != FetchException.DATA_NOT_FOUND)
+					if (e.getMode() != FetchExceptionMode.ALL_DATA_NOT_FOUND
+					        && e.getMode() != FetchExceptionMode.DATA_NOT_FOUND)
 						e.printStackTrace();
 					csvLine.add(FetchException.getShortMessage(e.getMode()));
 				}
@@ -238,20 +228,8 @@ public class LongTermPushPullTest {
 			} catch (Throwable t1) {
 			}
 
-			try {
-				File file = new File(uid + ".csv");
-				FileOutputStream fos = new FileOutputStream(file, true);
-				PrintStream ps = new PrintStream(fos);
-
-				ps.println(Fields.commaList(csvLine.toArray()));
-
-				ps.close();
-				fos.close();
-			} catch (IOException e) {
-				e.printStackTrace();
-				exitCode = EXIT_THREW_SOMETHING;
-			}
-			
+			File file = new File(uid + ".csv");
+			writeToStatusLog(file, csvLine);
 			System.exit(exitCode);
 		}
 	}
@@ -259,7 +237,7 @@ public class LongTermPushPullTest {
 	private static void dumpStats(String uid) throws IOException, ParseException {
 		File file = new File(uid + ".csv");
 		FileInputStream fis = new FileInputStream(file);
-		BufferedReader br = new BufferedReader(new InputStreamReader(fis));
+		BufferedReader br = new BufferedReader(new InputStreamReader(fis, ENCODING));
 		String line = null;
 		Calendar prevDate = null;
 		TreeMap<GregorianCalendar,DumpElement> map = new TreeMap<GregorianCalendar,DumpElement>();
@@ -268,19 +246,18 @@ public class LongTermPushPullTest {
 			//System.out.println("LINE: "+line);
 			String[] split = line.split(",");
 			Date date = dateFormat.parse(split[0]);
-			GregorianCalendar calendar = new GregorianCalendar();
+			GregorianCalendar calendar = new GregorianCalendar(TimeZone.getTimeZone("GMT"));
 			calendar.setTime(date);
 			System.out.println("Date: "+dateFormat.format(calendar.getTime()));
 			if(prevDate != null) {
 				long now = calendar.getTimeInMillis();
 				long prev = prevDate.getTimeInMillis();
-				long dist = (now - prev) / (24 * 60 * 60 * 1000);
+				long dist = DAYS.convert(now - prev, MILLISECONDS);
 				if(dist != 1) System.out.println(""+dist+" days since last report");
 			}
 			prevDate = calendar;
 			int version = Integer.parseInt(split[1]);
 			if(split.length > 2) {
-				long seedTime = Long.parseLong(split[2]);
 				int[] pushTimes = new int[MAX_N+1];
 				String[] pushFailures = new String[MAX_N+1];
 				for(int i=0;i<=MAX_N;i++) {
@@ -414,9 +391,10 @@ public class LongTermPushPullTest {
 	}
 	
 
-	private static Bucket randomData(Node node) throws IOException {
-		Bucket data = node.clientCore.tempBucketFactory.makeBucket(TEST_SIZE);
+	private static RandomAccessBucket randomData(Node node) throws IOException {
+	    RandomAccessBucket data = node.clientCore.tempBucketFactory.makeBucket(TEST_SIZE);
 		OutputStream os = data.getOutputStream();
+		try {
 		byte[] buf = new byte[4096];
 		for (long written = 0; written < TEST_SIZE;) {
 			node.fastWeakRandom.nextBytes(buf);
@@ -424,7 +402,9 @@ public class LongTermPushPullTest {
 			os.write(buf, 0, toWrite);
 			written += toWrite;
 		}
+		} finally {
 		os.close();
+		}
 		return data;
 	}
 }

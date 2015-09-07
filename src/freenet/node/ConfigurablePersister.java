@@ -6,12 +6,13 @@ import java.io.IOException;
 import freenet.config.InvalidConfigValueException;
 import freenet.config.SubConfig;
 import freenet.l10n.NodeL10n;
+import freenet.support.Ticker;
 import freenet.support.api.StringCallback;
 
 public class ConfigurablePersister extends Persister {
 
 	public ConfigurablePersister(Persistable t, SubConfig nodeConfig, String optionName, 
-			String defaultFilename, int sortOrder, boolean expert, boolean forceWrite, String shortDesc, String longDesc, PacketSender ps, File baseDir) throws NodeInitException {
+			String defaultFilename, int sortOrder, boolean expert, boolean forceWrite, String shortDesc, String longDesc, Ticker ps, File baseDir) throws NodeInitException {
 		super(t, ps);
 		nodeConfig.register(optionName, new File(baseDir, defaultFilename).toString(), sortOrder, expert, forceWrite, shortDesc, longDesc, new StringCallback() {
 

@@ -3,9 +3,8 @@
  * http://www.gnu.org/ for further details of the GPL. */
 package freenet.client;
 
-import com.db4o.ObjectContainer;
-
 import freenet.keys.FreenetURI;
+import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 import freenet.support.Logger.LogLevel;
 import freenet.support.api.Bucket;
@@ -16,6 +15,16 @@ class RealArchiveStoreItem extends ArchiveStoreItem {
 	private final MultiReaderBucket mb;
 	private final Bucket bucket;
 	private final long spaceUsed;
+
+        private static volatile boolean logMINOR;
+	static {
+		Logger.registerLogThresholdCallback(new LogThresholdCallback(){
+			@Override
+			public void shouldUpdate(){
+				logMINOR = Logger.shouldLog(LogLevel.MINOR, this);
+			}
+		});
+	}
 	
 	/**
 	 * Create an ArchiveStoreElement from a TempStoreElement.
@@ -30,8 +39,8 @@ class RealArchiveStoreItem extends ArchiveStoreItem {
 		mb = new MultiReaderBucket(bucket);
 		this.bucket = mb.getReaderBucket();
 		if(this.bucket == null) throw new NullPointerException();
-		bucket.setReadOnly();
-		spaceUsed = bucket.size();
+		this.bucket.setReadOnly();
+		spaceUsed = this.bucket.size();
 	}
 
 	/**
@@ -58,7 +67,7 @@ class RealArchiveStoreItem extends ArchiveStoreItem {
 	
 	@Override
 	void innerClose() {
-		if(Logger.shouldLog(LogLevel.MINOR, this))
+		if(logMINOR)
 			Logger.minor(this, "innerClose(): "+this+" : "+bucket);
 		if(bucket == null) {
 			// This still happens. It is clearly impossible as we check in the constructor and throw if it is null.
@@ -77,26 +86,6 @@ class RealArchiveStoreItem extends ArchiveStoreItem {
 	@Override
 	Bucket getReaderBucket() throws ArchiveFailureException {
 		return mb.getReaderBucket();
-	}
-	
-	public boolean objectCanNew(ObjectContainer container) {
-		Logger.error(this, "Trying to store an ArchiveStoreItem!", new Exception("error"));
-		return false;
-	}
-	
-	public boolean objectCanUpdate(ObjectContainer container) {
-		Logger.error(this, "Trying to store an ArchiveStoreItem!", new Exception("error"));
-		return false;
-	}
-	
-	public boolean objectCanActivate(ObjectContainer container) {
-		Logger.error(this, "Trying to store an ArchiveStoreItem!", new Exception("error"));
-		return false;
-	}
-	
-	public boolean objectCanDeactivate(ObjectContainer container) {
-		Logger.error(this, "Trying to store an ArchiveStoreItem!", new Exception("error"));
-		return false;
 	}
 	
 }

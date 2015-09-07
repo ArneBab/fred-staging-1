@@ -26,8 +26,14 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Queue;
 import java.util.StringTokenizer;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.tanukisoftware.wrapper.WrapperManager;
 
@@ -59,13 +65,22 @@ public class NetworkInterface implements Closeable {
         public static final String DEFAULT_BIND_TO = "127.0.0.1,0:0:0:0:0:0:0:1";
         
 	/** Object for synchronisation purpose. */
-	protected final Object syncObject = new Object();
+	private final Lock lock = new ReentrantLock();
+	
+	/** Signalled when we have bound the interface i.e. acceptors.size() > 0 */
+	private final Condition boundCondition = lock.newCondition();
+	
+	/** Signalled when !acceptedSockets.isEmpty() */
+	private final Condition socketCondition = lock.newCondition();
+	
+	/** Signalled when an Acceptor has closed */
+	private final Condition acceptorClosedCondition = lock.newCondition();
 
 	/** Acceptors created by this interface. */
 	private final List<Acceptor>  acceptors = new ArrayList<Acceptor>();
 
 	/** Queue of accepted client connections. */
-	protected final List<Socket> acceptedSockets = new ArrayList<Socket>();
+	private final Queue<Socket> acceptedSockets = new ArrayDeque<Socket>();
 	
 	/** AllowedHosts structure */
 	protected final AllowedHosts allowedHosts;
@@ -83,18 +98,14 @@ public class NetworkInterface implements Closeable {
 	
 	private final Executor executor;
 
+	// FIXME make configurable
+	static final int maxQueueLength = 100;
+
 	public static NetworkInterface create(int port, String bindTo, String allowedHosts, Executor executor, boolean ignoreUnbindableIP6) throws IOException {
 		NetworkInterface iface = new NetworkInterface(port, allowedHosts, executor);
-		try {
-			iface.setBindTo(bindTo, ignoreUnbindableIP6);
-		} catch (IOException e) {
-			try {
-				iface.close();
-			} catch (IOException e1) {
-				Logger.error(NetworkInterface.class, "Caught "+e1+" closing after catching "+e+" binding while constructing", e1);
-				// Ignore
-			}
-			throw e;
+		String[] failedBind = iface.setBindTo(bindTo, ignoreUnbindableIP6);
+		if(failedBind != null) {
+			System.err.println("Could not bind to some of the interfaces specified for port "+port+" : "+Arrays.toString(failedBind));
 		}
 		return iface;
 	}
@@ -123,55 +134,74 @@ public class NetworkInterface implements Closeable {
 	 * 
 	 * @param bindTo
 	 *            A comma-separated list of IP address to bind to
+	 * @return List of addresses that we failed to bind to, or null if completely successful.
 	 */
-	public void setBindTo(String bindTo, boolean ignoreUnbindableIP6) throws IOException {
+	public String[] setBindTo(String bindTo, boolean ignoreUnbindableIP6) {
                 if(bindTo == null || bindTo.equals("")) bindTo = NetworkInterface.DEFAULT_BIND_TO;
 		StringTokenizer bindToTokens = new StringTokenizer(bindTo, ",");
 		List<String> bindToTokenList = new ArrayList<String>();
+		List<String> brokenList = null;
 		while (bindToTokens.hasMoreTokens()) {
 			bindToTokenList.add(bindToTokens.nextToken().trim());
 		}
 		/* stop the old acceptors. */
-		for (int acceptorIndex = 0, acceptorCount = acceptors.size(); acceptorIndex < acceptorCount; acceptorIndex++) {
-			Acceptor acceptor = acceptors.get(acceptorIndex);
+		for (Acceptor acceptor : grabAcceptors()) {
 			try {
 				acceptor.close();
 			} catch (IOException e) {
 				/* swallow exception. */
 			}
 		}
-		synchronized (syncObject) {
-			while (runningAcceptors > 0) {
-				try {
-					syncObject.wait();
-				} catch (InterruptedException e) {
-				}
+		lock.lock();
+		try {
+			while(runningAcceptors > 0) {
+				acceptorClosedCondition.awaitUninterruptibly();
+				if(shutdown || WrapperManager.hasShutdownHookBeenTriggered()) return null;
 			}
+		} finally {
+			lock.unlock();
 		}
-		acceptors.clear();
 		for (int serverSocketIndex = 0; serverSocketIndex < bindToTokenList.size(); serverSocketIndex++) {
-			ServerSocket serverSocket = createServerSocket();
 			InetSocketAddress addr = null;
+			String address = bindToTokenList.get(serverSocketIndex);
 			try {
-				addr = new InetSocketAddress(bindToTokenList.get(serverSocketIndex), port);
+				ServerSocket serverSocket = createServerSocket();
+				addr = new InetSocketAddress(address, port);
 				serverSocket.setReuseAddress(true);
 				serverSocket.bind(addr);
-			} catch (SocketException e) {
-				if(ignoreUnbindableIP6 && addr != null && addr.getAddress() instanceof Inet6Address)
+				Acceptor acceptor = new Acceptor(serverSocket);
+				try {
+					acceptor.setSoTimeout(timeout);
+				} catch (SocketException e) {
+					Logger.error(this, "Unable to setSoTimeout in setBindTo() on "+addr);
+				}
+				lock.lock();
+				try {
+					acceptors.add(acceptor);
+					runningAcceptors++;
+					executor.execute(acceptor, "Network Interface Acceptor for "+acceptor.serverSocket);
+				} finally {
+					lock.unlock();
+				}
+			} catch (IOException e) {
+				if(e instanceof SocketException && ignoreUnbindableIP6 && addr != null && 
+						addr.getAddress() instanceof Inet6Address)
 					continue;
-				else
-					throw e;
+				System.err.println("Unable to bind to address "+address+" for port "+port);
+				Logger.error(this, "Unable to bind to address "+address+" for port "+port);
+				if(brokenList == null) brokenList = new ArrayList<String>();
+				brokenList.add(address);
 			}
-			Acceptor acceptor = new Acceptor(serverSocket);
-			acceptors.add(acceptor);
 		}
-		setSoTimeout(timeout);
-		synchronized (syncObject) {
-			for (Acceptor acceptor : this.acceptors) {
-				executor.execute(acceptor, "Network Interface Acceptor for "+acceptor.serverSocket);
-			}
-			syncObject.notifyAll();
+		// Signal at the end, even if the last one didn't succeed.
+		lock.lock();
+		try {
+			boundCondition.signalAll();
+		} finally {
+			lock.unlock();
 		}
+
+		return brokenList == null ? null : brokenList.toArray(new String[brokenList.size()]);
 	}
 
 	public void setAllowedHosts(String allowedHosts) {
@@ -188,7 +218,7 @@ public class NetworkInterface implements Closeable {
 	 * @see ServerSocket#setSoTimeout(int)
 	 */
 	public void setSoTimeout(int timeout) throws SocketException {
-		for (Acceptor acceptor : acceptors) {
+		for (Acceptor acceptor : getAcceptors()) {
 			acceptor.setSoTimeout(timeout);
 		}
 		this.timeout = timeout;
@@ -205,8 +235,10 @@ public class NetworkInterface implements Closeable {
      * if the timeout has expired waiting for a connection
 	 */
 	public Socket accept() {
-		synchronized (syncObject) {
-			while (acceptedSockets.size() == 0 ) {
+		lock.lock();
+		try {
+			Socket socket;
+			while ((socket = acceptedSockets.poll()) == null ) {
 				if (shutdown)
 					return null;
 				if (WrapperManager.hasShutdownHookBeenTriggered())
@@ -214,15 +246,15 @@ public class NetworkInterface implements Closeable {
 				if (acceptors.size() == 0) {
 					return null;
 				}
-				try {
-					syncObject.wait(timeout);
-				} catch (InterruptedException ie1) {
-				}
-				if ((timeout > 0) && (acceptedSockets.size() == 0)) {
-					return null;
+				socketCondition.awaitUninterruptibly();
+				if (timeout > 0) {
+					socket = acceptedSockets.poll();
+					break;
 				}
 			}
-			return acceptedSockets.remove(0);
+			return socket;
+		} finally {
+			lock.unlock();
 		}
 	}
 
@@ -233,21 +265,49 @@ public class NetworkInterface implements Closeable {
 	 *             if an I/O exception occurs
 	 * @see ServerSocket#close()
 	 */
+	@Override
 	public void close() throws IOException {
 		IOException exception = null;
 		shutdown = true;
-		for (Acceptor acceptor : acceptors) {
+		/* stop the old acceptors. */
+		for (Acceptor acceptor : grabAcceptors()) {
 			try {
 				acceptor.close();
 			} catch (IOException ioe1) {
 				exception = ioe1;
 			}
 		}
-		synchronized (syncObject) {
-			syncObject.notifyAll();
+		lock.lock();
+		try {
+			boundCondition.signalAll();
+			acceptorClosedCondition.signalAll();
+			socketCondition.signalAll();
+		} finally {
+			lock.unlock();
 		}
 		if (exception != null) {
 			throw exception;
+		}
+	}
+
+	private Acceptor[] grabAcceptors() {
+		Acceptor[] oldAcceptors;
+		lock.lock();
+		try {
+			oldAcceptors = acceptors.toArray(new Acceptor[acceptors.size()]);
+			acceptors.clear();
+			return oldAcceptors;
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	private Acceptor[] getAcceptors() {
+		lock.lock();
+		try {
+			return acceptors.toArray(new Acceptor[acceptors.size()]);
+		} finally {
+			lock.unlock();
 		}
 	}
 
@@ -255,9 +315,12 @@ public class NetworkInterface implements Closeable {
 	 * Gets called by an acceptor if it has stopped.
 	 */
 	private void acceptorStopped() {
-		synchronized (syncObject) {
+		lock.lock();
+		try {
 			runningAcceptors--;
-			syncObject.notifyAll();
+			acceptorClosedCondition.signalAll();
+		} finally {
+			lock.unlock();
 		}
 	}
 
@@ -318,6 +381,7 @@ public class NetworkInterface implements Closeable {
 		 * 
 		 * @see NetworkInterface#allowedHosts
 		 */
+		@Override
 		public void run() {
 		    freenet.support.Logger.OSThread.logPID(this);
 			while (!closed) {
@@ -330,10 +394,13 @@ public class NetworkInterface implements Closeable {
 					AddressType clientAddressType = AddressIdentifier.getAddressType(clientAddress.getHostAddress());
 
 					/* check if the ip address is allowed */
-					if (allowedHosts.allowed(clientAddressType, clientAddress)) {
-						synchronized (syncObject) {
+					if (allowedHosts.allowed(clientAddressType, clientAddress) && acceptedSockets.size() <= maxQueueLength) {
+						lock.lock();
+						try {
 							acceptedSockets.add(clientSocket);
-							syncObject.notifyAll();
+							socketCondition.signalAll();
+						} finally {
+							lock.unlock();
 						}
 					} else {
 						try {
@@ -360,21 +427,32 @@ public class NetworkInterface implements Closeable {
 	}
 
 	public boolean isBound() {
-		return this.acceptors.size() != 0;
+		lock.lock();
+		try {
+			return this.acceptors.size() != 0;
+		} finally {
+			lock.unlock();
+		}
 	}
 
-	public void waitBound() throws InterruptedException {
-		synchronized(syncObject) {
-			if(isBound()) return;
+	public void waitBound() {
+		lock.lock();
+		try {
+			if(acceptors.size() > 0) return;
 			while (true) {
 				Logger.error(this, "Network interface isn't bound, waiting");
-				syncObject.wait();
-				if(isBound()) {
+				boundCondition.awaitUninterruptibly();
+				if(acceptors.size() > 0) {
 					Logger.error(this, "Finished waiting, network interface is now bound");
 					return;
 				}
+				if (shutdown)
+					return;
+				if (WrapperManager.hasShutdownHookBeenTriggered())
+					return;
 			}
-			
+		} finally {
+			lock.unlock();
 		}
 	}
 
