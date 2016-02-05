@@ -323,16 +323,16 @@ public class ArchiveManager {
 						try {
 							Compressor.COMPRESSOR_TYPE.LZMA_NEW.decompress(is = data.getInputStream(), os, data.size(), expectedSize);
 						} catch (CompressionOutputSizeException e) {
-							Logger.error(this, "Failed to decompress archive: "+e, e);
+							Logger.error(this, "Failed to decompress LZMA_NEW archive: "+e, e);
 							wrapper.set(e);
 						} catch (IOException e) {
-							Logger.error(this, "Failed to decompress archive: "+e, e);
+							Logger.error(this, "Failed to decompress LZMA_NEW archive: "+e, e);
 							wrapper.set(e);
 						} finally {
 							try {
 								os.close();
 							} catch (IOException e) {
-								Logger.error(this, "Failed to close PipedOutputStream: "+e, e);
+								Logger.error(this, "Failed to close LZMA_NEW PipedOutputStream: "+e, e);
 							}
 							Closer.close(is);
 						}
