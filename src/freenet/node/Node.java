@@ -3557,6 +3557,13 @@ public class Node implements TimeSkewDetectorCallback {
 		return sender;
 	}
 
+	/** Do we allow path folding for the given htl?
+	 * We do not path fold until 1 hop below maximum. This is an average of 3
+	 * hops from the originator. */
+	boolean canPathfold(short htl) {
+		return htl <= (maxHTL - 1);
+	}
+
 	/** Can we write to the datastore for a given request?
 	 * We do not write to the datastore until 2 hops below maximum. This is an average of 4
 	 * hops from the originator. Thus, data returned from local requests is never cached,
