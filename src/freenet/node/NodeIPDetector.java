@@ -434,7 +434,8 @@ public class NodeIPDetector {
 				if(overrideIPAddressString == null) return "";
 				else return overrideIPAddressString;
 			}
-			
+
+			// TODO: allow multiple values, as in freenet/io/AllowedHosts.java line 44
 			@Override
 			public void set(String val) throws InvalidConfigValueException {
 				boolean hadValidAddressOverride = hasValidAddressOverride();
