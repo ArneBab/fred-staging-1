@@ -10,7 +10,7 @@ public class IPUtil {
 
 	static final boolean strict = true;
 
-	/** Check if address is in site-local range.
+	/** Check if address is in site-local or the unique local range.
 	 * [Oracle|Open]JDK up to 8 contains obsolete check for site-local ipv6
 	 * addresses, this repaces it with correct one.
 	 */
