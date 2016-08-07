@@ -150,7 +150,7 @@ public class IPAddressDetector implements Runnable {
 					if (ifaceMTU > 0)
 					    detector.reportMTU(ifaceMTU, addr instanceof Inet6Address);
 
-					if ((addr instanceof Inet6Address) && !(addr.isLinkLocalAddress() || IPUtil.isSiteLocalAddress(addr))) {
+					if ((addr instanceof Inet6Address) && !(addr.isLinkLocalAddress())) {
 						try {
 							// strip scope_id from global addresses
 							addr = InetAddress.getByAddress(addr.getAddress());
