@@ -15,7 +15,7 @@ public class IPUtil {
 	 * addresses, this repaces it with correct one.
 	 */
 	public static boolean isSiteLocalAddress(InetAddress i) {
-	    if(i instanceof Inet6Address) {
+		if(i instanceof Inet6Address) {
 			byte [] addr = i.getAddress();
 			assert(addr.length == 128/8);
 			// XXX what about ipv6-mapped ipv4 site-local addresses?
@@ -47,24 +47,33 @@ public class IPUtil {
 				 /* unique local: fc00::/7 */) ||
 				(addr[0] == (byte)0xfe && (addr[1] & (byte)0xc0) == (byte)0xc0
 				 /* DEPRECATED site local: 0xfec0::/10 */);
-	    }
-	    return i.isSiteLocalAddress();
+		}
+		return i.isSiteLocalAddress();
 	}
-        /**
-         *
-         * @param i
-         * @param includeLocalAddressesInNoderefs
-         * @return
-         */
-        public static boolean isValidAddress(InetAddress i, boolean includeLocalAddressesInNoderefs) {
+	/**
+	 *
+	 * @param i
+	 * @param includeLocalAddressesInNoderefs
+	 * @return
+	 */
+	public static boolean isValidAddress(InetAddress i, boolean includeLocalAddressesInNoderefs) {
+		// ignore invalid or problematic addresses
 		if(i.isAnyLocalAddress()) {
-			// Wildcard address, 0.0.0.0, ignore.
+			// AnyLocal means Wildcard address (0.0.0.0)
 			return false;
-		} else if(i.isLinkLocalAddress() || i.isLoopbackAddress() ||
+		}
+		if(i.isLinkLocalAddress() && (i instanceof Inet6Address)) {
+			// For ipv6 link-local addresses need scope which can leak private information.
+			return false;
+		}
+		
+		if(i.isLinkLocalAddress() || i.isLoopbackAddress() ||
 				isSiteLocalAddress(i)) {
 			if(includeLocalAddressesInNoderefs) {
 				return true;
-			} else return false;
+			} else {
+				return false;
+			}
 		} else if(i.isMulticastAddress()) {
 			// Ignore
 			return false;
@@ -76,6 +85,4 @@ public class IPUtil {
 			return true;
 		}
 	}
-
-
 }
