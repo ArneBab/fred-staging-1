@@ -43,7 +43,7 @@ import freenet.support.io.ResumeFailedException;
  *   If the files in the site root directory fits into a container, they are in
  *   the root container (the first fetched container)</BR>
  *   Save formula: (accumulated file size) + (512 Bytes * &lt;subdircount&gt;) &lt; 1,8MB
- * 
+ *
  * @author saces
  */
 
@@ -57,7 +57,8 @@ public class DefaultManifestPutter extends BaseManifestPutter {
 	}
 
 	// the 'physical' limit for container size
-	public static final long DEFAULT_MAX_CONTAINERSIZE = 2048*1024;  
+	public static final long DEFAULT_MAX_CONTAINERSIZE_SSK = 2*1024;
+	public static final long DEFAULT_MAX_CONTAINERSIZE = 2048*1024;
 	public static final long DEFAULT_MAX_CONTAINERITEMSIZE = 1024*1024;
 	// a container > (MAX_CONTAINERSIZE-CONTAINERSIZE_SPARE) is treated as 'full'
 	// this should prevent to big containers
