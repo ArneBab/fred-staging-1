@@ -162,7 +162,7 @@ public class ContainerInserter implements ClientPutState, Serializable {
 
 
 	private void start(ClientContext context) {
-		if(logDEBUG) Logger.debug(this, "Atempt to start a container inserter", new Exception("debug"));
+		if(logDEBUG) Logger.debug(this, "Attempt to start a container inserter", new Exception("debug"));
 		
 		makeMetadata(context);
 		

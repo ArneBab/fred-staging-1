@@ -67,7 +67,7 @@ public class DefaultManifestPutter extends BaseManifestPutter {
 			boolean persistent, byte[] forceCryptoKey, ClientContext context) throws TooManyFilesInsertException {
 		// If the top level key is an SSK, all CHK blocks and particularly splitfiles below it should have
 		// randomised keys. This substantially improves security by making it impossible to identify blocks
-		// even if you know the content. In the user interface, we will offer the option of inserting as a
+		// even if you know the content. In the user interface, we offer the option of inserting as a
 		// random SSK to take advantage of this.
 		super(clientCallback, manifestElements, prioClass, target, defaultName, ctx, ClientPutter.randomiseSplitfileKeys(target, ctx, persistent), forceCryptoKey, context);
 	}
