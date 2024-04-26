@@ -371,14 +371,7 @@ public class PeerManager {
 		notifyPeerStatusChangeListeners();
 		if(!pn.isSeed()) {
 			// LOCKING: addPeer() can be called inside PM lock, so must do this on a separate thread.
-			node.getExecutor().execute(new Runnable() {
-				
-				@Override
-				public void run() {
-					updatePMUserAlert();
-				}
-				
-			});
+			node.getExecutor().execute(this::updatePMUserAlert);
 		}
 		return true;
 	}
