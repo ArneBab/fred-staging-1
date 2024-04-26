@@ -593,12 +593,12 @@ public class NodeCrypto {
 	}
 
 	public PeerNode[] getAnonSetupPeerNodes() {
-		ArrayList<PeerNode> v = new ArrayList<PeerNode>();
+		ArrayList<PeerNode> v = new ArrayList<>();
 		for(PeerNode pn: node.getPeers().myPeers()) {
 			if(pn.handshakeUnknownInitiator() && pn.getOutgoingMangler() == packetMangler)
 				v.add(pn);
 		}
-		return v.toArray(new PeerNode[v.size()]);
+		return v.toArray(new PeerNode[0]);
 	}
 
 	void setPortForwardingBroken() {
