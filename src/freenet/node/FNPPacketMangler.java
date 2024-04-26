@@ -479,19 +479,14 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 		// Therefore, we can only get packets of phase 1 and 3 here.
 
 		if(packetType == 0 || packetType == 2) {
-			this.authHandlingThread.execute(new Runnable() {
-
-				@Override
-				public void run() {
-					if(packetType == 0) {
-						// Phase 1
-						processJFKMessage1(payload,4,null,replyTo, true, setupType, negType);
-					} else if(packetType == 2) {
-						// Phase 3
-						processJFKMessage3(payload, 4, null, replyTo, false, true, setupType, negType);
-					}
+			this.authHandlingThread.execute(() -> {
+				if(packetType == 0) {
+					// Phase 1
+					processJFKMessage1(payload,4,null,replyTo, true, setupType, negType);
+				} else if(packetType == 2) {
+					// Phase 3
+					processJFKMessage3(payload, 4, null, replyTo, false, true, setupType, negType);
 				}
-				
 			});
 		} else {
 			Logger.error(this, "Invalid phase "+packetType+" for anonymous-initiator (we are the responder) from "+replyTo);
