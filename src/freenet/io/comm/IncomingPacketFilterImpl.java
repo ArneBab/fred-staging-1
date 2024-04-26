@@ -68,6 +68,7 @@ public class IncomingPacketFilterImpl implements IncomingPacketFilter {
 		} else {
 			Logger.normal(this, "Got packet from unknown address");
 		}
+		// process message from unknown peer: connection to seednode or using an invitation
 		DECODED decoded = mangler.process(buf, offset, length, peer, opn, now);
 		if(decoded == DECODED.DECODED) {
 			if(logMINOR) successfullyDecodedPackets.incrementAndGet();

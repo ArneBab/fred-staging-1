@@ -27,9 +27,12 @@ import java.io.InputStreamReader;
 import java.io.RandomAccessFile;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -38,6 +41,7 @@ import java.util.Map;
 import java.util.MissingResourceException;
 import java.util.Random;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import freenet.client.FetchContext;
 import freenet.clients.fcp.FCPMessage;
@@ -817,6 +821,16 @@ public class Node implements TimeSkewDetectorCallback {
 	@Deprecated
 	/* It’s not the field that is deprecated but accessing it directly is. */
 	public boolean throttleLocalData;
+	private Set<ByteBuffer> oneTimeInvitationCodesToAccept;
+	/**
+	 * A map from node identity to oneTimeCode.
+	 *
+	 * When trying to connect to a node with the given identity, send an invitation packet
+	 * with the oneTimeCode for the identity and your own noderef.
+	 *
+	 * Filled when importing noderefs: if the noderef has a oneTimeInvitation field, add it to the map.
+	 */
+	private Map<ByteBuffer, ByteBuffer> oneTimeInvitationCodesToUse;
 	private int outputBandwidthLimit;
 	private int inputBandwidthLimit;
 	private long amountOfDataToCheckCompressionRatio;
@@ -1918,6 +1932,72 @@ public class Node implements TimeSkewDetectorCallback {
 		});
 
 		connectionSpeedDetection = nodeConfig.getBoolean("connectionSpeedDetection");
+
+		nodeConfig.register("oneTimeInvitationCodesToAccept", "", sortOrder++, false, false, "Node.oneTimeInvitationCodesToAccept", "Node.oneTimeInvitationCodesToAcceptLong", new StringCallback() {
+
+			@Override
+			public String get() {
+				return oneTimeInvitationCodesToAccept.stream()
+						.map(byteBuffer ->  Base64.getUrlEncoder().encodeToString(byteBuffer.array()))
+						.collect(Collectors.joining(","));
+			}
+
+			@Override
+			public void set(String val) throws InvalidConfigValueException {
+				oneTimeInvitationCodesToAccept = Arrays.stream(val.split(","))
+						.filter(v -> !v.isEmpty())
+						.map(Base64.getUrlDecoder()::decode)
+						.map(ByteBuffer::wrap)
+						.collect(Collectors.toSet());
+			}
+
+		});
+
+		oneTimeInvitationCodesToAccept = Arrays.stream(nodeConfig.getString("oneTimeInvitationCodesToAccept").split(","))
+						.filter(v -> !v.isEmpty())
+						.map(Base64.getUrlDecoder()::decode)
+						.map(ByteBuffer::wrap)
+						.collect(Collectors.toSet());
+
+		nodeConfig.register("oneTimeInvitationCodesToUse", "", sortOrder++, false, false, "Node.oneTimeInvitationCodesToUse", "Node.oneTimeInvitationCodesToUseLong", new StringCallback() {
+
+			@Override
+			public String get() {
+				return oneTimeInvitationCodesToUse.entrySet().stream()
+						.map(entry -> Base64.getUrlEncoder().encodeToString(entry.getKey().array())
+						+ ":"
+						+ Base64.getUrlEncoder().encodeToString(entry.getValue().array()))
+						.collect(Collectors.joining(","));
+			}
+
+			@Override
+			public void set(String val) throws InvalidConfigValueException {
+				oneTimeInvitationCodesToUse = Arrays.stream(val.split(","))
+						.filter(v -> v.contains(".+:.+"))
+						.map(v -> v.split(":"))
+						.map(v -> {
+							Base64.Decoder decoder = Base64.getUrlDecoder();
+							return new ByteBuffer[] {
+								ByteBuffer.wrap(decoder.decode(v[0])),
+										ByteBuffer.wrap(decoder.decode(v[1]))
+							};
+						})
+						.collect(Collectors.toMap(bb -> bb[0], bb -> bb[1]));
+			}
+
+		});
+
+		oneTimeInvitationCodesToUse = Arrays.stream(nodeConfig.getString("oneTimeInvitationCodesToUse").split(","))
+						.filter(v -> v.contains(".+:.+"))
+						.map(v -> v.split(":"))
+						.map(v -> {
+							Base64.Decoder decoder = Base64.getUrlDecoder();
+							return new ByteBuffer[]{
+							    ByteBuffer.wrap(decoder.decode(v[0])),
+									ByteBuffer.wrap(decoder.decode(v[1]))
+						};
+						})
+						.collect(Collectors.toMap(bb -> bb[0], bb -> bb[1]));
 
 		nodeConfig.register("throttleLocalTraffic", false, sortOrder++, true, false, "Node.throttleLocalTraffic", "Node.throttleLocalTrafficLong", new BooleanCallback() {
 
@@ -4242,7 +4322,7 @@ public class Node implements TimeSkewDetectorCallback {
 			Logger.normal(this, "Received differential node reference node to node message from "+src.getPeer());
 			SimpleFieldSet fs = null;
 			try {
-				fs = new SimpleFieldSet(new String(data, StandardCharsets.UTF_8), false, true, false);
+				fs = new SimpleFieldSet(new String(data, UTF_8), false, true, false);
 			} catch (IOException e) {
 				Logger.error(this, "IOException while parsing node to node message data", e);
 				return;
@@ -4272,7 +4352,7 @@ public class Node implements TimeSkewDetectorCallback {
 			Logger.normal(this, "Received N2NTM from '"+darkSource.getPeer()+"'");
 			SimpleFieldSet fs = null;
 			try {
-				fs = new SimpleFieldSet(new String(data, StandardCharsets.UTF_8), false, true, false);
+				fs = new SimpleFieldSet(new String(data, UTF_8), false, true, false);
 			} catch (IOException e) {
 				Logger.error(this, "IOException while parsing node to node message data", e);
 				return;
@@ -4690,10 +4770,11 @@ public class Node implements TimeSkewDetectorCallback {
 	 * The packet receiver calls this upon receiving an unrecognized packet.
 	 */
 	public boolean wantAnonAuth(boolean isOpennet) {
-		if(isOpennet)
+		if(isOpennet) {
 			return opennet != null && acceptSeedConnections;
-		else
-			return false;
+		} else {
+			return !oneTimeInvitationCodesToAccept.isEmpty();
+		}
 	}
 
 	// FIXME make this configurable
@@ -5166,9 +5247,90 @@ public class Node implements TimeSkewDetectorCallback {
 
     public boolean isThrottleLocalData() {
         return throttleLocalData;
-    }
+		}
 
-    public boolean isEnableARKs() {
+	public Map<ByteBuffer, ByteBuffer> getOneTimeInvitationCodesToUse() {
+        return oneTimeInvitationCodesToUse;
+	}
+
+	// TODO: add invite code when parsing noderef with oneTimeInvitation field
+		public void addOneTimeInvitationCodeToUse(ByteBuffer nodeId, ByteBuffer oneTimeCode) {
+				oneTimeInvitationCodesToUse.put(nodeId, oneTimeCode);
+				try {
+						setOneTimeInvitationCodesToUse(oneTimeInvitationCodesToUse);
+				} catch (InvalidConfigValueException e) {
+						Logger.error(this, "One time invitation "
+							+ oneTimeCode.toString()
+							+ "for nodeId "
+							+ nodeId
+							+ " could not be removed.", e);
+				}
+		}
+
+		// TODO: forget one time invitation after connected successfully to nodeId
+		public void forgetOneTimeInvitationCodeToUse(ByteBuffer nodeId) {
+				oneTimeInvitationCodesToUse.remove(nodeId);
+				try {
+						setOneTimeInvitationCodesToUse(oneTimeInvitationCodesToUse);
+				} catch (InvalidConfigValueException e) {
+						Logger.error(this, "One time invitation invitation for nodeId "
+							+ nodeId
+							+ " could not be removed.", e);
+				}
+		}
+
+	private void setOneTimeInvitationCodesToUse(Map<ByteBuffer, ByteBuffer> codes) throws InvalidConfigValueException {
+		oneTimeInvitationCodesToUse = codes;
+		try {
+			this.getConfig().get("node").set("oneTimeInvitationCodesToUse", this.oneTimeInvitationCodesToUse.entrySet().stream()
+						.map(entry -> Base64.getUrlEncoder().encodeToString(entry.getKey().array())
+						+ ":"
+						+ Base64.getUrlEncoder().encodeToString(entry.getValue().array()))
+						.collect(Collectors.joining(",")));
+		} catch (NodeNeedRestartException e) {
+				throw new IllegalStateException(e); // one time invitation code changes need no restart
+		}
+	}
+
+	public Set<ByteBuffer> getOneTimeInvitationCodesToAccept() {
+		return oneTimeInvitationCodesToAccept;
+	}
+
+	// TODO: add oneTimeInvitation when generating an invitation noderef
+		public void addOneTimeInvitationCodeToAccept(ByteBuffer code) {
+				oneTimeInvitationCodesToAccept.add(code);
+				try {
+						setOneTimeInvitationCodesToAccept(oneTimeInvitationCodesToAccept);
+				} catch (InvalidConfigValueException e) {
+						Logger.error(this, "One time invitation code "
+							+ code
+							+ " could not be added.", e);
+				}
+		}
+
+		public void forgetOneTimeInvitationCodeToAccept(ByteBuffer code) {
+				oneTimeInvitationCodesToAccept.remove(code);
+				try {
+						setOneTimeInvitationCodesToAccept(oneTimeInvitationCodesToAccept);
+				} catch (InvalidConfigValueException e) {
+						Logger.error(this, "One time invitation code "
+							+ code
+							+ " could not be removed.", e);
+				}
+		}
+
+	private void setOneTimeInvitationCodesToAccept(Set<ByteBuffer> codes) throws InvalidConfigValueException {
+		oneTimeInvitationCodesToAccept = codes;
+		try {
+			this.getConfig().get("node").set("oneTimeInvitationCodesToAccept", this.oneTimeInvitationCodesToAccept.stream()
+					.map(byteBuffer -> Base64.getUrlEncoder().encodeToString(byteBuffer.array()))
+					.collect(Collectors.joining(",")));
+		} catch (NodeNeedRestartException e) {
+				throw new IllegalStateException(e); // one time invitation code changes need no restart
+		}
+	}
+
+	public boolean isEnableARKs() {
         return enableARKs;
     }
 

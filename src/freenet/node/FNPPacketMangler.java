@@ -9,12 +9,14 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 
 import java.io.File;
 import java.net.InetAddress;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.interfaces.ECPublicKey;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.Set;
 
 import freenet.crypt.BlockCipher;
 import freenet.crypt.ECDH;
@@ -63,7 +65,10 @@ import freenet.support.io.NativeThread;
  * @see NewPacketFormat
  */
 public class FNPPacketMangler implements OutgoingPacketMangler {
-    static { Logger.registerClass(FNPPacketMangler.class); }
+
+	private static final int INVITATION_KEY_LENGTH_BYTES = 100;
+
+	static { Logger.registerClass(FNPPacketMangler.class); }
 	private static volatile boolean logMINOR;
 	private static volatile boolean logDEBUG;
 
@@ -150,7 +155,6 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 			Logger.error(this, "Apparently contacted by "+opn+") on "+this, new Exception("error"));
 			opn = null;
 		}
-		boolean wantAnonAuth = crypto.wantAnonAuth();
 
 		if(opn != null) {
 			if(logMINOR) Logger.minor(this, "Trying exact match");
@@ -187,7 +191,8 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 				}
 			}
 		}
-		
+
+		boolean wantAnonAuth = crypto.wantAnonAuth();
 		boolean wantAnonAuthChangeIP = wantAnonAuth && crypto.wantAnonAuthChangeIP();
 		
 		if(wantAnonAuth && wantAnonAuthChangeIP) {
@@ -425,6 +430,10 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 	/** Connect to a node hoping it will act as a seednode for us */
 	static final byte SETUP_OPENNET_SEEDNODE = 1;
 
+	// Anonymous-initiator setup types
+	/** Connect to a node using a one-time invitation key. */
+	static final byte SETUP_DARKNET_ONE_TIME_INVITATION = 2;
+
 	/**
 	 * Process an anonymous-initiator connection setup packet. For a normal setup
 	 * (@see processDecryptedAuth()), we know the node that is trying to contact us.
@@ -471,7 +480,7 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 		}
 
 		// Known setup types
-		if(setupType != SETUP_OPENNET_SEEDNODE) {
+		if(setupType != SETUP_OPENNET_SEEDNODE && setupType != SETUP_DARKNET_ONE_TIME_INVITATION) {
 			Logger.error(this, "Unknown setup type "+negType);
 			return;
 		}
@@ -526,8 +535,8 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 		}
 
 		// Known setup types
-		if(setupType != SETUP_OPENNET_SEEDNODE) {
-			Logger.error(this, "Unknown setup type "+negType);
+		if(setupType != SETUP_OPENNET_SEEDNODE && setupType != SETUP_DARKNET_ONE_TIME_INVITATION) {
+			Logger.error(this, "Unknown setup type "+setupType);
 			return;
 		}
 
@@ -1226,11 +1235,11 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 		ptr += 8;
 		long bootID = Fields.bytesToLong(data, ptr);
 		ptr += 8;
-		byte[] hisRef = Arrays.copyOfRange(data, ptr, data.length);
+		byte[] theirRefOrKeyAndRef = Arrays.copyOfRange(data, ptr, data.length);
 
 		// construct the peernode
 		if(unknownInitiator) {
-			pn = getPeerNodeFromUnknownInitiator(hisRef, setupType, pn, replyTo);
+			pn = getPeerNodeFromUnknownInitiator(theirRefOrKeyAndRef, setupType, pn, replyTo);
 		}
 		if(pn == null) {
 			if(unknownInitiator) {
@@ -1297,7 +1306,7 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 		}
 
 		long newTrackerID = pn.completedHandshake(
-				bootID, hisRef, 0, hisRef.length, outgoingCipher, outgoingKey, incommingCipher,
+				bootID, theirRefOrKeyAndRef, 0, theirRefOrKeyAndRef.length, outgoingCipher, outgoingKey, incommingCipher,
 				incommingKey, replyTo, true, negType, trackerID, false, false, hmacKey, ivCipher,
 				ivNonce, ourInitialSeqNum, theirInitialSeqNum, ourInitialMsgID, theirInitialMsgID);
 		
@@ -1305,7 +1314,7 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 
 			// Send reply
 			sendJFKMessage4(1, negType, 3, nonceInitiatorHashed, nonceResponder,initiatorExponential, responderExponential,
-					c, Ke, Ka, authenticator, hisRef, pn, replyTo, unknownInitiator, setupType, newTrackerID, newTrackerID == trackerID);
+					c, Ke, Ka, authenticator, theirRefOrKeyAndRef, pn, replyTo, unknownInitiator, setupType, newTrackerID, newTrackerID == trackerID);
 
 			if(dontWant) {
 				node.getPeers().disconnectAndRemove(pn, true, true, true); // Let it connect then tell it to remove it.
@@ -1325,7 +1334,7 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 		}
 	}
 
-	private PeerNode getPeerNodeFromUnknownInitiator(byte[] hisRef, int setupType, PeerNode pn, Peer from) {
+	private PeerNode getPeerNodeFromUnknownInitiator(byte[] theirRefOrKeyAndRef, int setupType, PeerNode pn, Peer from) {
 		if(setupType == SETUP_OPENNET_SEEDNODE) {
 			OpennetManager om = node.getOpennet();
 			if(om == null) {
@@ -1333,7 +1342,7 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 				// FIXME Send some sort of explicit rejection message.
 				return null;
 			}
-			SimpleFieldSet ref = OpennetManager.validateNoderef(hisRef, 0, hisRef.length, null, true);
+			SimpleFieldSet ref = OpennetManager.validateNoderef(theirRefOrKeyAndRef, 0, theirRefOrKeyAndRef.length, null, true);
 			if(ref == null) {
 				Logger.error(this, "Invalid noderef");
 				// FIXME Send some sort of explicit rejection message.
@@ -1353,6 +1362,38 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 			}
 			node.getPeers().addPeer(seed);
 			return seed;
+		} else if (setupType == SETUP_DARKNET_ONE_TIME_INVITATION) {
+			// TODO: replace dummies => move to central place
+			Set<ByteBuffer> knownOneTimeKeys = node.getOneTimeInvitationCodesToAccept();
+			// length must be at least key + noderef
+			if (theirRefOrKeyAndRef.length < INVITATION_KEY_LENGTH_BYTES + 1) {
+				Logger.error(this, "Invalid invitation message: data length must be larger than " + INVITATION_KEY_LENGTH_BYTES
+						+ " but is " + theirRefOrKeyAndRef.length);
+				return null;
+			}
+			ByteBuffer theirKeyPart = ByteBuffer.wrap(Arrays.copyOfRange(theirRefOrKeyAndRef, 0,
+					INVITATION_KEY_LENGTH_BYTES));
+			if (!knownOneTimeKeys.contains(theirKeyPart)) {
+				// does not include all the keys in the error message, because that is an O(N) operation and
+				// could therefore spill information about the number of keys.
+				Logger.error(this, "Invitation must start with a known key, but the key part " + theirKeyPart + " is not one of the known keys.");
+				return null;
+			}
+			// forget the used one-time key
+			node.forgetOneTimeInvitationCodeToAccept(theirKeyPart);
+			byte[] theirNoderef = Arrays.copyOfRange(theirRefOrKeyAndRef,
+					INVITATION_KEY_LENGTH_BYTES, theirRefOrKeyAndRef.length);
+			SimpleFieldSet ref = OpennetManager.validateNoderef(theirNoderef, 0, theirNoderef.length, null, true);
+			// TODO: check whether fromLocal = false is correct.
+			PeerNode invited;
+			try {
+				invited = new DarknetPeerNode(ref, node, crypto, false, DarknetPeerNode.FRIEND_TRUST.LOW, DarknetPeerNode.FRIEND_VISIBILITY.NO);
+			} catch (FSParseException | PeerParseException | ReferenceSignatureVerificationException | PeerTooOldException e) {
+				Logger.error(this, "Invalid invited client noderef: "+e+" from "+from, e);
+				return null;
+			}
+			node.getPeers().addPeer(invited);
+			return invited;
 		} else {
 			Logger.error(this, "Unknown setup type");
 			return null;
@@ -1597,7 +1638,15 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 		if(ctx == null) return;
 		byte[] ourExponential = ctx.getPublicKeyNetworkFormat();
 		pn.jfkMyRef = unknownInitiator ? crypto.myCompressedHeavySetupRef() : crypto.myCompressedSetupRef();
-		byte[] data = new byte[8 + 8 + pn.jfkMyRef.length];
+		byte[] data;
+		if (setupType == SETUP_DARKNET_ONE_TIME_INVITATION
+				&& node.getOneTimeInvitationCodesToUse().containsKey(ByteBuffer.wrap(pn.identity))
+				&& node.getOneTimeInvitationCodesToUse()
+				.get(ByteBuffer.wrap(pn.identity)).array().length == INVITATION_KEY_LENGTH_BYTES) {
+			data = new byte[8 + 8 + INVITATION_KEY_LENGTH_BYTES + pn.jfkMyRef.length];
+		} else {
+			data = new byte[8 + 8 + pn.jfkMyRef.length];
+		}
 		int ptr = 0;
 		long trackerID;
 		trackerID = pn.getReusableTrackerID();
@@ -1606,6 +1655,23 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 		if(logMINOR) Logger.minor(this, "Sending tracker ID "+trackerID+" in JFK(3)");
 		System.arraycopy(Fields.longToBytes(pn.getOutgoingBootID()), 0, data, ptr, 8);
 		ptr += 8;
+		if (setupType == SETUP_DARKNET_ONE_TIME_INVITATION && node.getOneTimeInvitationCodesToUse()
+				.containsKey(ByteBuffer.wrap(pn.identity))) {
+			ByteBuffer invite = node.getOneTimeInvitationCodesToUse().get(ByteBuffer.wrap(pn.identity));
+			if (invite.array().length == INVITATION_KEY_LENGTH_BYTES) {
+				System.arraycopy(invite.array(), 0, data, ptr, INVITATION_KEY_LENGTH_BYTES);
+				ptr += INVITATION_KEY_LENGTH_BYTES;
+			} else {
+				Logger.error(this, "Cannot use invite to connect to node with id "
+						+ pn.identity
+						+ ": supplied invite code "
+						+ invite
+						+ " with length "
+						+ invite.array().length
+						+ " does not match the required fixed key length "
+						+ INVITATION_KEY_LENGTH_BYTES);
+			}
+		}
 		System.arraycopy(pn.jfkMyRef, 0, data, ptr, pn.jfkMyRef.length);
 		final byte[] message3 = new byte[nonceSize*2 + // nI, nR
 		                           modulusLength*2 + // g^i, g^r
@@ -1613,7 +1679,7 @@ public class FNPPacketMangler implements OutgoingPacketMangler {
 		                           HASH_LENGTH + // HMAC(cyphertext)
 		                           (c.getBlockSize() >> 3) + // IV
 		                           signLength + // Signature
-		                           data.length]; // The bootid+noderef
+		                           data.length]; // The bootid+noderef or bootid+invite+noderef
 		int offset = 0;
 		// Ni
 		System.arraycopy(nonceInitiator, 0, message3, offset, nonceSize);
